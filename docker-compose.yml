@@ -1,0 +1,21 @@
+services:
+  web:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: genai-app-web
+    ports:
+      - "3000:3000"
+    env_file:
+      - .env.local         # PROJECT_ID 等
+    environment:
+      - NODE_ENV=development
+      - WATCHPACK_POLLING=true
+      - CHOKIDAR_USEPOLLING=true
+      - NEXT_WEBPACK_USEPOLLING=1
+    volumes:
+      - .:/app             # ソースコード
+      - genai-node-modules:/app/node_modules  # node_modules をコンテナ側に保持
+
+volumes:
+  genai-node-modules:
