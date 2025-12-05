@@ -5,6 +5,7 @@ import vertexai
 from dotenv import load_dotenv
 from pathlib import Path
 from routers import generate
+from routers import generate_genai 
 
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
@@ -35,6 +36,7 @@ except Exception as e:
 
 # Include routers
 app.include_router(generate.router, prefix="/api", tags=["generate"])
+app.include_router(generate_genai.router, prefix="/api", tags=["generate_genai"])
 
 @app.get("/health")
 async def health_check():

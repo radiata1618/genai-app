@@ -28,7 +28,7 @@ export default function Home() {
     setResponse("");
 
     try {
-      const res = await fetch("http://localhost:8000/api/generate", {
+      const res = await fetch("http://localhost:8000/api/generate_genai", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

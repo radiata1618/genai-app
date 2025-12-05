@@ -28,6 +28,7 @@ services:
       - .env.local
     volumes:
       - ./backend:/app
+      - ./key.json:/app/key.json:ro
 
 volumes:
   genai-node-modules:
