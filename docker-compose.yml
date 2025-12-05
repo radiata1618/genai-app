@@ -7,15 +7,27 @@ services:
     ports:
       - "3000:3000"
     env_file:
-      - .env.local         # PROJECT_ID 等
+      - .env.local # PROJECT_ID 等
     environment:
       - NODE_ENV=development
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
       - NEXT_WEBPACK_USEPOLLING=1
     volumes:
-      - .:/app             # ソースコード
-      - genai-node-modules:/app/node_modules  # node_modules をコンテナ側に保持
+      - .:/app # ソースコード
+      - genai-node-modules:/app/node_modules # node_modules をコンテナ側に保持
+
+  backend:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    container_name: genai-app-backend
+    ports:
+      - "8000:8000"
+    env_file:
+      - .env.local
+    volumes:
+      - ./backend:/app
 
 volumes:
   genai-node-modules:
