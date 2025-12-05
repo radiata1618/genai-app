@@ -3,7 +3,7 @@ import { VertexAI } from "@google-cloud/vertexai";
 
 export async function POST(req) {
     try {
-        const { query } = await req.json();
+        const { query, image, mimeType } = await req.json();
 
         const vertexAI = new VertexAI({
             project: process.env.PROJECT_ID,
@@ -15,13 +15,27 @@ export async function POST(req) {
 
         const generativeModel = vertexAI.getGenerativeModel({
             model: "gemini-2.0-flash-001",
+            tools: [{ googleSearch: {} }],
         });
+
+        const parts = [];
+        if (query) {
+            parts.push({ text: query });
+        }
+        if (image && mimeType) {
+            parts.push({
+                inlineData: {
+                    mimeType: mimeType,
+                    data: image,
+                },
+            });
+        }
 
         const request = {
             contents: [
                 {
                     role: "user",
-                    parts: [{ text: query }],
+                    parts: parts,
                 },
             ],
         };
