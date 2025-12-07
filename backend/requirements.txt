@@ -3,3 +3,8 @@ uvicorn
 google-cloud-aiplatform>=1.60.0
 python-dotenv
 google-genai>=0.4.0
+google-cloud-storage
+python-multipart
+pdf2image
+sqlalchemy
+google-cloud-firestore

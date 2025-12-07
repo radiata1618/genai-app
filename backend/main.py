@@ -6,6 +6,9 @@ from dotenv import load_dotenv
 from pathlib import Path
 from routers import generate
 from routers import generate_genai 
+from routers import rag
+from routers import management
+from routers import tasks
 
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
@@ -37,6 +40,9 @@ except Exception as e:
 # Include routers
 app.include_router(generate.router, prefix="/api", tags=["generate"])
 app.include_router(generate_genai.router, prefix="/api", tags=["generate_genai"])
+app.include_router(rag.router, prefix="/api", tags=["rag"])
+app.include_router(management.router, prefix="/api", tags=["management"])
+app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 
 @app.get("/health")
 async def health_check():

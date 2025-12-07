@@ -8,6 +8,36 @@ export default function Home() {
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedMimeType, setSelectedMimeType] = useState(null);
 
+  const RefreshButton = () => {
+    const [refreshing, setRefreshing] = useState(false);
+
+    const handleRefresh = async () => {
+      if (!confirm("GCSのマニュアル画像を再スキャンしてインデックスファイルを更新しますか？\n(注意: Vertex AI Vector Searchへの反映はGCPコンソールでの操作が必要な場合があります)")) return;
+
+      setRefreshing(true);
+      try {
+        const res = await fetch("http://localhost:8000/api/management/refresh_index", { method: "POST" });
+        const data = await res.json();
+        alert(data.message || "処理を開始しました");
+      } catch (e) {
+        alert("エラー: " + e.message);
+      } finally {
+        setRefreshing(false);
+      }
+    };
+
+    return (
+      <button
+        onClick={handleRefresh}
+        disabled={refreshing}
+        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-medium border border-slate-300 transition-colors flex items-center"
+        title="データを再スキャン"
+      >
+        {refreshing ? "更新中..." : "🔄 データ更新"}
+      </button>
+    );
+  };
+
   const handleFileChange = (e) => {
     const file = e.target.files[0];
     if (!file) return;
@@ -28,7 +58,7 @@ export default function Home() {
     setResponse("");
 
     try {
-      const res = await fetch("http://localhost:8000/api/generate_genai", {
+      const res = await fetch("http://localhost:8000/api/rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -40,6 +70,9 @@ export default function Home() {
 
       const data = await res.json();
       setResponse(data.answer || data.error || data.detail || "No response");
+      if (data.retrieved_images && data.retrieved_images.length > 0) {
+        setResponse(prev => prev + "\n\n(Retrieved: " + data.retrieved_images.join(", ") + ")");
+      }
     } catch (e) {
       setResponse("Request failed: " + e.message);
     } finally {
@@ -52,11 +85,12 @@ export default function Home() {
       {/* Header Section */}
       <div className="flex items-center justify-between">
         <div>
-          <h2 className="text-2xl font-bold text-slate-800">Multimodalテスト</h2>
-          <p className="text-slate-500">Geminiのマルチモーダル機能をテキストと画像でテストします。</p>
+          <h2 className="text-2xl font-bold text-slate-800">Visual Manual Search</h2>
+          <p className="text-slate-500">マニュアル画像を検索して回答するマルチモーダルRAGデモ</p>
         </div>
-        <div className="flex space-x-2">
-          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">Active</span>
+        <div className="flex space-x-2 items-center">
+          <RefreshButton />
+          <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">RAG Active</span>
         </div>
       </div>
 
