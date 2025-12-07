@@ -7,36 +7,7 @@ export default function Home() {
   const [loading, setLoading] = useState(false);
   const [selectedImage, setSelectedImage] = useState(null);
   const [selectedMimeType, setSelectedMimeType] = useState(null);
-
-  const RefreshButton = () => {
-    const [refreshing, setRefreshing] = useState(false);
-
-    const handleRefresh = async () => {
-      if (!confirm("GCSのマニュアル画像を再スキャンしてインデックスファイルを更新しますか？\n(注意: Vertex AI Vector Searchへの反映はGCPコンソールでの操作が必要な場合があります)")) return;
-
-      setRefreshing(true);
-      try {
-        const res = await fetch("http://localhost:8000/api/management/refresh_index", { method: "POST" });
-        const data = await res.json();
-        alert(data.message || "処理を開始しました");
-      } catch (e) {
-        alert("エラー: " + e.message);
-      } finally {
-        setRefreshing(false);
-      }
-    };
-
-    return (
-      <button
-        onClick={handleRefresh}
-        disabled={refreshing}
-        className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded-md text-xs font-medium border border-slate-300 transition-colors flex items-center"
-        title="データを再スキャン"
-      >
-        {refreshing ? "更新中..." : "🔄 データ更新"}
-      </button>
-    );
-  };
+  const [retrievedContexts, setRetrievedContexts] = useState([]);
 
   const handleFileChange = (e) => {
     const file = e.target.files[0];
@@ -70,13 +41,26 @@ export default function Home() {
 
       const data = await res.json();
       setResponse(data.answer || data.error || data.detail || "No response");
-      if (data.retrieved_images && data.retrieved_images.length > 0) {
-        setResponse(prev => prev + "\n\n(Retrieved: " + data.retrieved_images.join(", ") + ")");
-      }
+      setRetrievedContexts(data.retrieved_contexts || []);
+
     } catch (e) {
       setResponse("Request failed: " + e.message);
     } finally {
       setLoading(false);
+    }
+  };
+
+  const handleRefresh = async () => {
+    if (!confirm("GCSのデータを元にインデックスを再構築しますか？")) return;
+    try {
+      const res = await fetch("http://localhost:8000/api/management/refresh_index", { method: "POST" });
+      if (res.ok) {
+        alert("再構築タスクを開始しました。(バックグラウンドで実行中)");
+      } else {
+        alert("エラーが発生しました");
+      }
+    } catch (e) {
+      alert("リクエストに失敗しました: " + e.message);
     }
   };
 
@@ -89,7 +73,12 @@ export default function Home() {
           <p className="text-slate-500">マニュアル画像を検索して回答するマルチモーダルRAGデモ</p>
         </div>
         <div className="flex space-x-2 items-center">
-          <RefreshButton />
+          <button
+            onClick={handleRefresh}
+            className="px-3 py-1 bg-slate-100 hover:bg-slate-200 text-slate-600 rounded text-sm border border-slate-300 mr-2 transition-colors"
+          >
+            🔄 データ更新
+          </button>
           <span className="px-3 py-1 bg-green-100 text-green-700 rounded-full text-xs font-semibold">RAG Active</span>
         </div>
       </div>
@@ -180,13 +169,58 @@ export default function Home() {
 
       {/* Response Section */}
       {response && (
-        <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6 animate-fade-in">
-          <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center">
-            <span className="mr-2">💡</span> 分析結果
-          </h3>
-          <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 text-slate-700 leading-relaxed whitespace-pre-wrap">
-            {response}
+        <div className="space-y-6 animate-fade-in">
+          <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+            <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center">
+              <span className="mr-2">💡</span> 分析結果
+            </h3>
+            <div className="bg-slate-50 p-4 rounded-lg border border-slate-100 text-slate-700 leading-relaxed whitespace-pre-wrap">
+              {response}
+            </div>
           </div>
+
+          {/* Retrieved Contexts Section */}
+          {retrievedContexts.length > 0 && (
+            <div className="bg-white rounded-xl shadow-sm border border-slate-200 p-6">
+              <h3 className="text-lg font-semibold text-slate-700 mb-3 flex items-center">
+                <span className="mr-2">🔍</span> 参照データ (RAG取得結果)
+              </h3>
+              <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
+                {retrievedContexts.map((ctx, index) => (
+                  <div key={index} className="border border-slate-200 rounded-lg p-3 hover:shadow-md transition-shadow">
+                    <div className="flex items-start space-x-3">
+                      <div className="flex-shrink-0">
+                        {ctx.signed_url ? (
+                          <a href={ctx.signed_url} target="_blank" rel="noopener noreferrer">
+                            <img
+                              src={ctx.signed_url}
+                              alt={`Context ${index + 1}`}
+                              className="w-20 h-20 object-cover rounded bg-slate-100 border border-slate-100"
+                            />
+                          </a>
+                        ) : (
+                          <div className="w-20 h-20 bg-slate-100 rounded flex items-center justify-center text-2xl">📄</div>
+                        )}
+                      </div>
+                      <div className="min-w-0 flex-1">
+                        <p className="text-xs font-mono text-slate-500 truncate" title={ctx.uri}>
+                          {ctx.uri.split("/").pop()}
+                        </p>
+                        <div className="mt-1 flex items-center space-x-2">
+                          <span className="text-xs font-semibold bg-blue-50 text-blue-700 px-2 py-0.5 rounded">
+                            Dist: {ctx.distance?.toFixed(4)}
+                          </span>
+                        </div>
+                        <p className="text-xs text-slate-400 mt-1 break-all line-clamp-2">
+                          {ctx.uri}
+                        </p>
+                      </div>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )}
         </div>
       )}
     </div>

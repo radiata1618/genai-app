@@ -1,18 +1,17 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 from datetime import date, datetime
-import uuid
 import enum
 from google.cloud import firestore
-from database import get_firestore_client
+from database import get_db
 
 router = APIRouter(
     prefix="/tasks",
     tags=["tasks"],
 )
 
-# --- Enums & Pydantic Models ---
+# --- Enums & Models ---
 
 class RoutineType(str, enum.Enum):
     ACTION = "ACTION"
@@ -38,7 +37,7 @@ class BacklogItemResponse(BacklogItemCreate):
     created_at: datetime
     is_archived: bool
 
-# Routine
+# Routine & Frequency
 class FrequencyType(str, enum.Enum):
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
@@ -52,7 +51,6 @@ class FrequencyConfig(BaseModel):
 class RoutineCreate(BaseModel):
     title: str
     routine_type: RoutineType
-    # Replaced cron with structural config
     frequency: Optional[FrequencyConfig] = None
     icon: Optional[str] = None
 
@@ -60,36 +58,50 @@ class RoutineResponse(RoutineCreate):
     id: str
     created_at: datetime
 
-
-
 # Daily Task
 class DailyTaskResponse(BaseModel):
     id: str
     source_id: str
     source_type: SourceType
     status: TaskStatus
-    target_date: str # Firestore stores dates as timestamps/strings usually, keeping simple for JSON
+    target_date: str 
     title: Optional[str] = None
     completed_at: Optional[datetime] = None
 
+# --- API Endpoints ---
 
-# --- Helper Functions ---
+@router.post("/backlog", response_model=BacklogItemResponse)
+def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("backlog_items").document()
+    data = item.dict()
+    data.update({
+        "id": doc_ref.id,
+        "created_at": datetime.now(),
+        "is_archived": False
+    })
+    doc_ref.set(data)
+    return data
 
-def get_db():
-    return get_firestore_client()
+@router.get("/backlog", response_model=List[BacklogItemResponse])
+def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
+    docs = db.collection("backlog_items").where("is_archived", "==", False).limit(limit).stream()
+    items = []
+    for doc in docs:
+        items.append(doc.to_dict())
+    return items
 
-# --- API Endpoints: Backlog ---
-# ... (Backlog endpoints remain same) ...
-
-# --- API Endpoints: Routines ---
+@router.patch("/backlog/{item_id}/archive")
+def archive_backlog_item(item_id: str, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("backlog_items").document(item_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    doc_ref.update({"is_archived": True})
+    return {"status": "archived"}
 
 @router.post("/routines", response_model=RoutineResponse)
 def create_routine(routine: RoutineCreate, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("routines").document()
     data = routine.dict()
-    # Pydantic to dict might need custom encoder for Enums if not automatic, 
-    # but FastAPI/Pydantic usually handles it. Firestore needs strings for enums.
-    # We explicitly convert enums to value for storage safety.
     data['routine_type'] = routine.routine_type.value
     if routine.frequency:
         data['frequency'] = routine.frequency.dict()
@@ -107,26 +119,22 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
     query = db.collection("routines")
     if type:
         query = query.where("routine_type", "==", type.value)
-        
+    
     docs = query.stream()
     routines = []
     for doc in docs:
         d = doc.to_dict()
-        # Handle legacy data or missing frequency
         if 'frequency' not in d or d['frequency'] is None:
              d['frequency'] = {"type": "DAILY", "weekdays": [], "month_days": []}
         routines.append(d)
     return routines
 
-# --- API Endpoints: Daily Tasks ---
-
 @router.post("/generate-daily")
 def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
     target_date_str = target_date.isoformat()
-    weekday = target_date.weekday() # 0=Mon, 6=Sun
+    weekday = target_date.weekday()
     day_of_month = target_date.day
     
-    # 1. Get all ACTION routines
     routines_stream = db.collection("routines").where("routine_type", "==", RoutineType.ACTION.value).stream()
     routines = [d.to_dict() for d in routines_stream]
     
@@ -134,29 +142,22 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
     batch = db.batch()
     
     for r in routines:
-        # Check Frequency
         freq = r.get('frequency', {})
         f_type = freq.get('type', 'DAILY')
         
         should_run = False
-        if f_type == 'DAILY':
-            should_run = True
+        if f_type == 'DAILY': should_run = True
         elif f_type == 'WEEKLY':
-            if weekday in freq.get('weekdays', []):
-                should_run = True
+            if weekday in freq.get('weekdays', []): should_run = True
         elif f_type == 'MONTHLY':
-            if day_of_month in freq.get('month_days', []):
-                should_run = True
-                
-        if not should_run:
-            continue
+            if day_of_month in freq.get('month_days', []): should_run = True
+            
+        if not should_run: continue
 
-        # Use deterministic ID to prevent duplicates
         doc_id = f"{r['id']}_{target_date_str}"
         doc_ref = db.collection("daily_tasks").document(doc_id)
         
-        snapshot = doc_ref.get()
-        if not snapshot.exists:
+        if not doc_ref.get().exists:
             new_task = {
                 "id": doc_id,
                 "source_id": r['id'],
@@ -169,7 +170,7 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
             created_count += 1
             
     batch.commit()
-    return {"message": f"Generated {created_count} tasks from routines", "date": target_date_str}
+    return {"message": f"Generated {created_count} tasks", "date": target_date_str}
 
 @router.get("/daily", response_model=List[DailyTaskResponse])
 def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
@@ -177,36 +178,26 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
     docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
     
     tasks = []
-    # Note: This N+1 query pattern is slow but acceptable for MVP
-    # Optimization: perform batch get or keep titles in daily_tasks
-    
     for doc in docs:
         t = doc.to_dict()
         title = "Unknown"
-        
-        # Fetch Source Title
         if t['source_type'] == SourceType.BACKLOG.value:
-            src_doc = db.collection("backlog_items").document(t['source_id']).get()
-            if src_doc.exists: title = src_doc.to_dict().get('title', 'Unknown')
+            src = db.collection("backlog_items").document(t['source_id']).get()
+            if src.exists: title = src.to_dict().get('title', 'Unknown')
         elif t['source_type'] == SourceType.ROUTINE.value:
-            src_doc = db.collection("routines").document(t['source_id']).get()
-            if src_doc.exists: title = src_doc.to_dict().get('title', 'Unknown')
-            
+            src = db.collection("routines").document(t['source_id']).get()
+            if src.exists: title = src.to_dict().get('title', 'Unknown')
         t['title'] = title
         tasks.append(t)
-        
     return tasks
 
 @router.post("/daily/pick")
 def pick_from_backlog(backlog_id: str, target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
     target_date_str = target_date.isoformat()
-    
-    # Verify backlog item
     item_ref = db.collection("backlog_items").document(backlog_id)
     if not item_ref.get().exists:
         raise HTTPException(status_code=404, detail="Backlog item not found")
         
-    # Use deterministic ID
     doc_id = f"{backlog_id}_{target_date_str}"
     doc_ref = db.collection("daily_tasks").document(doc_id)
     
@@ -227,8 +218,8 @@ def pick_from_backlog(backlog_id: str, target_date: date = date.today(), db: fir
 @router.patch("/daily/{task_id}/complete")
 def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("daily_tasks").document(task_id)
-    snapshot = doc_ref.get()
-    if not snapshot.exists:
+    snap = doc_ref.get()
+    if not snap.exists:
         raise HTTPException(status_code=404, detail="Task not found")
     
     updates = {
@@ -236,4 +227,4 @@ def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Clie
         "completed_at": datetime.now() if completed else None
     }
     doc_ref.update(updates)
-    return {**snapshot.to_dict(), **updates}
+    return {**snap.to_dict(), **updates}

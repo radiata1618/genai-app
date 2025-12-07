@@ -26,21 +26,23 @@ export const api = {
         return res.json();
     },
 
-    // Routines
-    getRoutines: async () => {
-        const res = await fetch(`${API_BASE}/routines`);
+    // Routines (Actions & Mindsets)
+    getRoutines: async (type = null) => {
+        let url = `${API_BASE}/routines`;
+        if (type) url += `?type=${type}`;
+        const res = await fetch(url);
         if (!res.ok) throw new Error('Failed to fetch routines');
         return res.json();
     },
 
-    addRoutine: async (title, type, cron, icon) => {
+    addRoutine: async (title, type, frequency = null, icon = null) => {
         const res = await fetch(`${API_BASE}/routines`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify({
                 title,
                 routine_type: type,
-                frequency_cron: cron,
+                frequency: frequency,
                 icon
             }),
         });
@@ -77,6 +79,32 @@ export const api = {
             method: 'PATCH',
         });
         if (!res.ok) throw new Error('Failed to update status');
+        return res.json();
+    },
+
+    // File Management
+    getFiles: async () => {
+        const res = await fetch(`${API_BASE.replace('/tasks', '')}/management/files`);
+        if (!res.ok) throw new Error('Failed to fetch files');
+        return res.json();
+    },
+
+    uploadFile: async (file) => {
+        const formData = new FormData();
+        formData.append('file', file);
+        const res = await fetch(`${API_BASE.replace('/tasks', '')}/management/files`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) throw new Error('Failed to upload file');
+        return res.json();
+    },
+
+    deleteFile: async (filename) => {
+        const res = await fetch(`${API_BASE.replace('/tasks', '')}/management/files/${filename}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) throw new Error('Failed to delete file');
         return res.json();
     }
 };

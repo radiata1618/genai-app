@@ -17,7 +17,8 @@ const navItems = [
         items: [
             { name: "Today's Focus", icon: "☀️", href: "/dashboard" },
             { name: "Stock (Backlog)", icon: "📦", href: "/backlog" },
-            { name: "Habits (Settings)", icon: "🔄", href: "/routines" },
+            { name: "Actions (Habits)", icon: "🔥", href: "/actions" },
+            { name: "Mindsets (Rules)", icon: "🧠", href: "/mindsets" },
         ],
     },
 ];

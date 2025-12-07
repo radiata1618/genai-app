@@ -88,8 +88,8 @@ def generate_embeddings():
             f.write(json.dumps(record) + '\n')
             
     print("Done! Now you need to:")
-    print(f"1. Upload {OUTPUT_FILE} to GCS (inside a folder, e.g., 'embeddings/').")
-    print("2. Create a Vector Search Index from that folder.")
+    print(f"1. Upload {OUTPUT_FILE} to GCS.")
+    print("2. Create a Vector Search Index from this file.")
     print("3. Deploy the Index to an Endpoint.")
 
 if __name__ == "__main__":
