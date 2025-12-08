@@ -6,3 +6,4 @@ google-genai>=0.4.0
 google-cloud-storage
 python-multipart
 google-cloud-firestore
+google-api-python-client

@@ -21,6 +21,13 @@ const navItems = [
             { name: "Mindsets (Rules)", icon: "🧠", href: "/mindsets" },
         ],
     },
+    {
+        category: "Car Quiz",
+        items: [
+            { name: "Admin Dashboard", icon: "🛠️", href: "/car-quiz/admin" },
+            { name: "Play Quiz", icon: "🚗", href: "/car-quiz" },
+        ],
+    },
 ];
 
 export default function Sidebar() {

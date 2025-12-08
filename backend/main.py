@@ -9,6 +9,7 @@ from routers import generate_genai
 from routers import rag
 from routers import management
 from routers import tasks
+from routers import car_quiz
 
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
@@ -26,7 +27,7 @@ app.add_middleware(
 
 # Initialize Vertex AI
 PROJECT_ID = os.getenv("PROJECT_ID")
-LOCATION = os.getenv("LOCATION")
+LOCATION = os.getenv("LOCATION_FOR_CAR_QUIZZ")
 
 # Check if environment variables are set
 if not PROJECT_ID or not LOCATION:
@@ -43,6 +44,7 @@ app.include_router(generate_genai.router, prefix="/api", tags=["generate_genai"]
 app.include_router(rag.router, prefix="/api", tags=["rag"])
 app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
+app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 
 @app.get("/health")
 async def health_check():
