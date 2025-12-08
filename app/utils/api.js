@@ -50,6 +50,39 @@ export const api = {
         return res.json();
     },
 
+    updateRoutine: async (id, title, type, frequency = null, icon = null) => {
+        const res = await fetch(`${API_BASE}/routines/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                title,
+                routine_type: type,
+                frequency: frequency,
+                icon
+            }),
+        });
+        if (!res.ok) throw new Error('Failed to update routine');
+        return res.json();
+    },
+
+    deleteRoutine: async (id) => {
+        const res = await fetch(`${API_BASE}/routines/${id}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) throw new Error('Failed to delete routine');
+        return res.json();
+    },
+
+    reorderRoutines: async (orderedIds) => {
+        const res = await fetch(`${API_BASE}/routines/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: orderedIds }),
+        });
+        if (!res.ok) throw new Error('Failed to reorder routines');
+        return res.json();
+    },
+
     // Factory (Generate Daily)
     generateDailyTasks: async () => {
         const res = await fetch(`${API_BASE}/generate-daily`, {

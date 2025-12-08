@@ -43,7 +43,7 @@ def get_custom_search_service():
 async def generate_car_list(request: GenerationRequest):
     """Generates a list of cars using Vertex AI based on the prompt."""
     try:
-        model = GenerativeModel("gemini-3-pro-preview") # Updated to 3.0 Pro Preview as requested
+        model = GenerativeModel("gemini-1.5-pro") # Reverted to 1.5 Pro as 3.0 is not available
         
         # Construct prompt to ensure JSON output
         full_prompt = f"""

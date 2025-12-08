@@ -53,6 +53,7 @@ class RoutineCreate(BaseModel):
     routine_type: RoutineType
     frequency: Optional[FrequencyConfig] = None
     icon: Optional[str] = None
+    order: int = 0
 
 class RoutineResponse(RoutineCreate):
     id: str
@@ -68,7 +69,19 @@ class DailyTaskResponse(BaseModel):
     title: Optional[str] = None
     completed_at: Optional[datetime] = None
 
+class ReorderRequest(BaseModel):
+    ids: List[str]
+
 # --- API Endpoints ---
+
+@router.put("/routines/reorder")
+def reorder_routines(request: ReorderRequest, db: firestore.Client = Depends(get_db)):
+    batch = db.batch()
+    for index, r_id in enumerate(request.ids):
+        ref = db.collection("routines").document(r_id)
+        batch.update(ref, {"order": index})
+    batch.commit()
+    return {"status": "reordered", "count": len(request.ids)}
 
 @router.post("/backlog", response_model=BacklogItemResponse)
 def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
@@ -129,6 +142,40 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
         routines.append(d)
     return routines
 
+@router.put("/routines/{routine_id}", response_model=RoutineResponse)
+def update_routine(routine_id: str, routine: RoutineCreate, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("routines").document(routine_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    
+    data = routine.dict()
+    data['routine_type'] = routine.routine_type.value
+    if routine.frequency:
+        data['frequency'] = routine.frequency.dict()
+        data['frequency']['type'] = routine.frequency.type.value
+    
+    # Preserve creation time and ID
+    data['id'] = routine_id
+    # We might want to keep the original created_at, so we utilize set with merge=True or just update specific fields.
+    # However, RoutineResponse expects created_at. Let's fetch the original first or just update.
+    # For simplicity in this schema, we will overwrite the main fields but keep created_at if possible.
+    # Actually, to return the full object, let's just update and assume the client handles the freshness.
+    
+    # To do it properly:
+    current_data = doc_ref.get().to_dict()
+    data['created_at'] = current_data.get('created_at', datetime.now()) # Keep original or valid default
+    
+    doc_ref.set(data) # Overwrite with new data
+    return data
+
+@router.delete("/routines/{routine_id}")
+def delete_routine(routine_id: str, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("routines").document(routine_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Routine not found")
+    doc_ref.delete()
+    return {"status": "deleted", "id": routine_id}
+
 @router.post("/generate-daily")
 def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
     target_date_str = target_date.isoformat()
@@ -164,7 +211,8 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
                 "source_type": SourceType.ROUTINE.value,
                 "target_date": target_date_str,
                 "status": TaskStatus.TODO.value,
-                "created_at": datetime.now()
+                "created_at": datetime.now(),
+                "title": r.get('title', 'Untitled')
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -180,15 +228,30 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
     tasks = []
     for doc in docs:
         t = doc.to_dict()
-        title = "Unknown"
+        title = t.get('title', "Unknown")
+        source_exists = True
+
         if t['source_type'] == SourceType.BACKLOG.value:
             src = db.collection("backlog_items").document(t['source_id']).get()
-            if src.exists: title = src.to_dict().get('title', 'Unknown')
+            if src.exists: 
+                title = src.to_dict().get('title', 'Unknown')
+            else:
+                source_exists = False
         elif t['source_type'] == SourceType.ROUTINE.value:
             src = db.collection("routines").document(t['source_id']).get()
-            if src.exists: title = src.to_dict().get('title', 'Unknown')
-        t['title'] = title
-        tasks.append(t)
+            if src.exists: 
+                title = src.to_dict().get('title', 'Unknown')
+            else:
+                source_exists = False
+        
+        # If we have a stored title, we might choose to show it even if source is gone,
+        # OR we hide it as per the user request "actions task is deleted -> remove from today".
+        # The user said: "Actionsのタスクが削除されるとUnknownというタスクが残ってしまう この現象を修正したい"
+        # So filtering out is the correct approach.
+        
+        if source_exists:
+            t['title'] = title
+            tasks.append(t)
     return tasks
 
 @router.post("/daily/pick")
