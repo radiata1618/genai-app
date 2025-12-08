@@ -61,3 +61,6 @@ steps:
 images:
   - 'gcr.io/$PROJECT_ID/genai-app-backend'
   - 'gcr.io/$PROJECT_ID/genai-app-frontend'
+
+options:
+  logging: CLOUD_LOGGING_ONLY
