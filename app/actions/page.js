@@ -18,7 +18,9 @@ export default function ActionsPage() {
     const [icon, setIcon] = useState('🔥');
     const [freqType, setFreqType] = useState('DAILY'); // DAILY, WEEKLY, MONTHLY
     const [selectedWeekdays, setSelectedWeekdays] = useState([]); // 0-6
+
     const [selectedMonthDays, setSelectedMonthDays] = useState([]); // 1-31
+    const [scheduledTime, setScheduledTime] = useState('05:00');
 
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
@@ -47,6 +49,7 @@ export default function ActionsPage() {
         setFreqType('DAILY');
         setSelectedWeekdays([]);
         setSelectedMonthDays([]);
+        setScheduledTime('05:00');
         setIsModalOpen(true);
     };
 
@@ -57,6 +60,7 @@ export default function ActionsPage() {
         setFreqType(r.frequency?.type || 'DAILY');
         setSelectedWeekdays(r.frequency?.weekdays || []);
         setSelectedMonthDays(r.frequency?.month_days || []);
+        setScheduledTime(r.scheduled_time || '05:00');
         setIsModalOpen(true);
     };
 
@@ -86,9 +90,9 @@ export default function ActionsPage() {
             };
 
             if (editingId) {
-                await api.updateRoutine(editingId, title, 'ACTION', frequency, icon);
+                await api.updateRoutine(editingId, title, 'ACTION', frequency, icon, scheduledTime);
             } else {
-                await api.addRoutine(title, 'ACTION', frequency, icon);
+                await api.addRoutine(title, 'ACTION', frequency, icon, scheduledTime);
             }
 
             setIsModalOpen(false);
@@ -216,7 +220,10 @@ export default function ActionsPage() {
                                                     {r.frequency?.type || 'DAILY'}
                                                 </span>
                                                 {r.frequency?.type === 'WEEKLY' && <span>{r.frequency.weekdays.map(d => WEEKDAYS[d]).join(', ')}</span>}
+
                                                 {r.frequency?.type === 'MONTHLY' && <span>Days: {r.frequency.month_days.join(', ')}</span>}
+                                                <span className="text-slate-300">|</span>
+                                                <span>{r.scheduled_time || '05:00'}</span>
                                             </div>
                                         </div>
                                     </div>
@@ -261,7 +268,7 @@ export default function ActionsPage() {
                                         <input
                                             value={title} onChange={e => setTitle(e.target.value)}
                                             onKeyDown={e => e.key === 'Enter' && handleSave(e)}
-                                            className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
                                             placeholder="e.g. Read a book"
                                             autoFocus
                                         />
@@ -270,19 +277,28 @@ export default function ActionsPage() {
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Icon</label>
                                         <input
                                             value={icon} onChange={e => setIcon(e.target.value)}
-                                            className="w-full p-2.5 border border-slate-200 rounded-lg bg-slate-50 text-center text-lg outline-none focus:border-indigo-500 transition-all"
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-center text-lg outline-none focus:border-indigo-500 transition-all font-medium"
+                                        />
+                                    </div>
+                                    <div className="w-28 space-y-1">
+                                        <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time</label>
+                                        <input
+                                            type="time"
+                                            value={scheduledTime}
+                                            onChange={e => setScheduledTime(e.target.value)}
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all text-center"
                                         />
                                     </div>
                                 </div>
 
                                 <div className="space-y-3">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Frequency</label>
-                                    <div className="flex bg-slate-100 p-1 rounded-lg w-fit">
+                                    <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
                                         {['DAILY', 'WEEKLY', 'MONTHLY'].map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => setFreqType(t)}
-                                                className={`px-4 py-1.5 rounded-md text-sm font-bold transition-all ${freqType === t ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
+                                                className={`px-4 py-1.5 rounded-lg text-sm font-bold transition-all ${freqType === t ? 'bg-white shadow text-indigo-600' : 'text-slate-500 hover:text-slate-700'}`}
                                             >
                                                 {t}
                                             </button>
@@ -295,7 +311,7 @@ export default function ActionsPage() {
                                                 <button
                                                     key={day}
                                                     onClick={() => toggleWeekday(idx)}
-                                                    className={`w-9 h-9 rounded-lg text-xs font-bold border transition-all flex items-center justify-center
+                                                    className={`w-10 h-10 rounded-xl text-xs font-bold border transition-all flex items-center justify-center
                                                         ${selectedWeekdays.includes(idx)
                                                             ? 'border-indigo-500 bg-indigo-50 text-indigo-700 shadow-sm'
                                                             : 'border-slate-200 text-slate-400 hover:border-slate-300 bg-white'}
@@ -313,7 +329,7 @@ export default function ActionsPage() {
                                                 <button
                                                     key={day}
                                                     onClick={() => toggleMonthDay(day)}
-                                                    className={`w-8 h-8 rounded text-[10px] font-bold transition-all flex items-center justify-center
+                                                    className={`w-9 h-9 rounded-lg text-[10px] font-bold transition-all flex items-center justify-center
                                                         ${selectedMonthDays.includes(day)
                                                             ? 'bg-indigo-500 text-white shadow-sm'
                                                             : 'bg-slate-100 text-slate-400 hover:bg-slate-200'}
@@ -329,7 +345,7 @@ export default function ActionsPage() {
 
                             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancel</button>
-                                <button onClick={handleSave} disabled={!title} className="px-6 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 shadow-md transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
+                                <button onClick={handleSave} disabled={!title} className="px-6 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 shadow-md transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                                     {editingId ? 'Save Changes' : 'Create Action'}
                                 </button>
                             </div>

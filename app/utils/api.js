@@ -8,23 +8,46 @@ export const api = {
         return res.json();
     },
 
-    addBacklogItem: async (title, category = 'General', effort = 1) => {
+    addBacklogItem: async (taskData) => {
+        // taskData: { title, category, priority, deadline, scheduled_date, order }
         const res = await fetch(`${API_BASE}/backlog`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({ title, category, estimated_effort: effort }),
+            body: JSON.stringify(taskData),
         });
         if (!res.ok) throw new Error('Failed to add item');
         return res.json();
     },
 
-    archiveBacklogItem: async (id) => {
-        const res = await fetch(`${API_BASE}/backlog/${id}/archive`, {
-            method: 'PATCH',
+    updateBacklogItem: async (id, taskData) => {
+        const res = await fetch(`${API_BASE}/backlog/${id}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(taskData),
         });
-        if (!res.ok) throw new Error('Failed to archive item');
+        if (!res.ok) throw new Error('Failed to update item');
         return res.json();
     },
+
+    deleteBacklogItem: async (id) => {
+        const res = await fetch(`${API_BASE}/backlog/${id}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) throw new Error('Failed to delete item');
+        return res.json();
+    },
+
+    reorderBacklogItems: async (orderedIds) => {
+        const res = await fetch(`${API_BASE}/backlog/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: orderedIds }),
+        });
+        if (!res.ok) throw new Error('Failed to reorder items');
+        return res.json();
+    },
+
+
 
     // Routines (Actions & Mindsets)
     getRoutines: async (type = null) => {
@@ -35,7 +58,7 @@ export const api = {
         return res.json();
     },
 
-    addRoutine: async (title, type, frequency = null, icon = null) => {
+    addRoutine: async (title, type, frequency = null, icon = null, scheduled_time = "05:00") => {
         const res = await fetch(`${API_BASE}/routines`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -43,14 +66,15 @@ export const api = {
                 title,
                 routine_type: type,
                 frequency: frequency,
-                icon
+                icon,
+                scheduled_time
             }),
         });
         if (!res.ok) throw new Error('Failed to add routine');
         return res.json();
     },
 
-    updateRoutine: async (id, title, type, frequency = null, icon = null) => {
+    updateRoutine: async (id, title, type, frequency = null, icon = null, scheduled_time = "05:00") => {
         const res = await fetch(`${API_BASE}/routines/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -58,7 +82,8 @@ export const api = {
                 title,
                 routine_type: type,
                 frequency: frequency,
-                icon
+                icon,
+                scheduled_time
             }),
         });
         if (!res.ok) throw new Error('Failed to update routine');
@@ -112,6 +137,14 @@ export const api = {
             method: 'PATCH',
         });
         if (!res.ok) throw new Error('Failed to update status');
+        return res.json();
+    },
+
+    skipTask: async (id) => {
+        const res = await fetch(`${API_BASE}/daily/${id}/skip`, {
+            method: 'PATCH',
+        });
+        if (!res.ok) throw new Error('Failed to skip task');
         return res.json();
     },
 

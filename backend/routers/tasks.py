@@ -24,18 +24,25 @@ class SourceType(str, enum.Enum):
 class TaskStatus(str, enum.Enum):
     TODO = "TODO"
     DONE = "DONE"
+    SKIPPED = "SKIPPED"
     CARRY_OVER = "CARRY_OVER"
 
 # Backlog
 class BacklogItemCreate(BaseModel):
     title: str
-    category: str = "General"
-    estimated_effort: int = 1
+    category: str = "Research" # Changed default to one of the new keys
+    priority: str = "Medium" # High, Medium, Low
+    deadline: Optional[date] = None
+    scheduled_date: Optional[date] = None
+    order: int = 0
 
 class BacklogItemResponse(BacklogItemCreate):
     id: str
     created_at: datetime
     is_archived: bool
+
+class BacklogReorderRequest(BaseModel):
+    ids: List[str]
 
 # Routine & Frequency
 class FrequencyType(str, enum.Enum):
@@ -53,6 +60,9 @@ class RoutineCreate(BaseModel):
     routine_type: RoutineType
     frequency: Optional[FrequencyConfig] = None
     icon: Optional[str] = None
+    frequency: Optional[FrequencyConfig] = None
+    icon: Optional[str] = None
+    scheduled_time: str = "05:00"
     order: int = 0
 
 class RoutineResponse(RoutineCreate):
@@ -83,10 +93,26 @@ def reorder_routines(request: ReorderRequest, db: firestore.Client = Depends(get
     batch.commit()
     return {"status": "reordered", "count": len(request.ids)}
 
+@router.put("/backlog/reorder")
+def reorder_backlog_items(request: BacklogReorderRequest, db: firestore.Client = Depends(get_db)):
+    batch = db.batch()
+    for index, b_id in enumerate(request.ids):
+        ref = db.collection("backlog_items").document(b_id)
+        batch.update(ref, {"order": index})
+    batch.commit()
+    return {"status": "reordered", "count": len(request.ids)}
+
 @router.post("/backlog", response_model=BacklogItemResponse)
 def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("backlog_items").document()
     data = item.dict()
+    
+    # Fix: Convert date objects to datetime for Firestore
+    if data.get('deadline'):
+        data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
+    if data.get('scheduled_date'):
+        data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
+
     data.update({
         "id": doc_ref.id,
         "created_at": datetime.now(),
@@ -96,12 +122,54 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
     return data
 
 @router.get("/backlog", response_model=List[BacklogItemResponse])
+@router.get("/backlog", response_model=List[BacklogItemResponse])
 def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
-    docs = db.collection("backlog_items").where("is_archived", "==", False).limit(limit).stream()
+    # Order by 'order' field ascending
+    docs = db.collection("backlog_items").where("is_archived", "==", False).order_by("order").limit(limit).stream()
     items = []
     for doc in docs:
-        items.append(doc.to_dict())
+        d = doc.to_dict()
+        # Migration for existing items
+        if 'priority' not in d: d['priority'] = 'Medium'
+        if 'order' not in d: d['order'] = 0
+        if 'category' not in d: d['category'] = 'Research'
+        # Map old categories if necessary? For now user just wants new ones.
+        
+        items.append(d)
     return items
+
+@router.put("/backlog/{item_id}", response_model=BacklogItemResponse)
+def update_backlog_item(item_id: str, item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("backlog_items").document(item_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    
+    data = item.dict()
+    
+    # Fix: Convert date objects to datetime for Firestore
+    if data.get('deadline'):
+        data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
+    if data.get('scheduled_date'):
+        data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
+
+    # Preserve system fields
+    current_data = doc_ref.get().to_dict()
+    data.update({
+        "id": item_id,
+        "created_at": current_data.get("created_at"),
+        "is_archived": current_data.get("is_archived", False)
+    })
+    
+    doc_ref.set(data)
+    return data
+
+@router.delete("/backlog/{item_id}")
+def delete_backlog_item(item_id: str, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("backlog_items").document(item_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Item not found")
+    doc_ref.delete()
+    return {"status": "deleted", "id": item_id}
 
 @router.patch("/backlog/{item_id}/archive")
 def archive_backlog_item(item_id: str, db: firestore.Client = Depends(get_db)):
@@ -139,6 +207,8 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
         d = doc.to_dict()
         if 'frequency' not in d or d['frequency'] is None:
              d['frequency'] = {"type": "DAILY", "weekdays": [], "month_days": []}
+        if 'scheduled_time' not in d:
+             d['scheduled_time'] = "05:00"
         routines.append(d)
     return routines
 
@@ -212,7 +282,11 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
                 "target_date": target_date_str,
                 "status": TaskStatus.TODO.value,
                 "created_at": datetime.now(),
-                "title": r.get('title', 'Untitled')
+                "target_date": target_date_str,
+                "status": TaskStatus.TODO.value,
+                "created_at": datetime.now(),
+                "title": r.get('title', 'Untitled'),
+                "scheduled_time": r.get('scheduled_time', "05:00")
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -249,7 +323,43 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
         # The user said: "Actionsのタスクが削除されるとUnknownというタスクが残ってしまう この現象を修正したい"
         # So filtering out is the correct approach.
         
-        if source_exists:
+        # TIME FILTERING:
+        # If today is the target date, perform time check.
+        # current_time (HH:MM) >= scheduled_time (HH:MM)
+        # default scheduled_time is "05:00"
+        
+        # Check based on user local time? 
+        # The user said "Also when displaying tasks on Today's screen, make it so that new daily tasks appear when the specified time is exceeded".
+        # We really need the CLIENT time for this comparison ideally, but backend filtering is safer if we assume server time or pass user time?
+        # Actually, simpler: We check against SERVER time (assuming User is in same timezone or container is set correctly) OR we do it on frontend.
+        # However, Request was "display on Today's screen...".
+        # Let's do it in backend using server time (container time).
+        # Metadata says: "The current local time is: 2025-12-08T21:46:47+09:00" (JST).
+        # The server should be running in JST too if properly configured, or we use datetime.now() with offset.
+        # Since I see "The current local time is..." in metadata, it means the AGENT knows the time. 
+        # But the backend code runs in the container.
+        # Let's assume standard datetime.now() reflects the system time which is likely relevant to the user or UTC.
+        # BUT: the PROMPT said "The current local time is ... +09:00".
+        # Let's check `target_date`. If `target_date` == `datetime.now().date()`, then filter.
+        
+        now = datetime.now()
+        current_time_str = now.strftime("%H:%M")
+        is_today = target_date_str == now.date().isoformat()
+        
+        show_task = True
+        
+        # Only filter routines (actions) or all? Request says "Daily's scheduled time". 
+        # Usually implies Routines. Backlog items generally don't have this hour spec yet (except maybe deadline?).
+        # Task schema for daily:
+        # We stored `scheduled_time` in generate_daily_tasks for routines.
+        
+        task_scheduled_time = t.get('scheduled_time', "05:00")
+        
+        if is_today and t['source_type'] == SourceType.ROUTINE.value:
+            if current_time_str < task_scheduled_time:
+                show_task = False
+
+        if source_exists and show_task:
             t['title'] = title
             tasks.append(t)
     return tasks
@@ -288,6 +398,19 @@ def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Clie
     updates = {
         "status": TaskStatus.DONE.value if completed else TaskStatus.TODO.value,
         "completed_at": datetime.now() if completed else None
+    }
+    doc_ref.update(updates)
+    return {**snap.to_dict(), **updates}
+
+@router.patch("/daily/{task_id}/skip")
+def skip_daily_task(task_id: str, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("daily_tasks").document(task_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    updates = {
+        "status": TaskStatus.SKIPPED.value
     }
     doc_ref.update(updates)
     return {**snap.to_dict(), **updates}

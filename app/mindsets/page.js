@@ -174,14 +174,14 @@ export default function MindsetsPage() {
                 {/* Edit/Create Modal */}
                 {isModalOpen && (
                     <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-sm flex items-center justify-center p-4 z-50 animate-in fade-in duration-200">
-                        <div className="bg-white rounded-2xl shadow-xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
                             <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
                                 <h2 className="font-bold text-slate-800 text-lg">{editingId ? 'Edit Mindset' : 'New Mindset'}</h2>
                                 <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
                                     <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
                                 </button>
                             </div>
-                            <div className="p-6 space-y-4">
+                            <div className="p-6 space-y-5">
                                 <div>
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Title</label>
                                     <input
@@ -202,7 +202,7 @@ export default function MindsetsPage() {
                             </div>
                             <div className="p-4 bg-slate-50 border-t border-slate-100 flex justify-end gap-3">
                                 <button onClick={() => setIsModalOpen(false)} className="px-4 py-2 text-sm font-bold text-slate-500 hover:text-slate-700">Cancel</button>
-                                <button onClick={handleSave} disabled={!title} className="px-6 py-2 bg-indigo-600 text-white text-sm font-bold rounded-lg hover:bg-indigo-700 shadow-md disabled:opacity-50 disabled:cursor-not-allowed transition-all">
+                                <button onClick={handleSave} disabled={!title} className="px-6 py-2 bg-indigo-600 text-white text-sm font-bold rounded-xl hover:bg-indigo-700 shadow-md transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed">
                                     {editingId ? 'Save Changes' : 'Create Rule'}
                                 </button>
                             </div>

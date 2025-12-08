@@ -3,26 +3,55 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 
+const CATEGORIES = {
+    'Research': { label: '情報収集', icon: '🔍' },
+    'Digital': { label: 'Digital', icon: '💻' },
+    'English': { label: '英語', icon: '🅰️' },
+    'Food': { label: '食', icon: '🍔' },
+    'Dog': { label: '犬', icon: '🐕' },
+    'Outing': { label: 'お出かけ', icon: '🏞️' },
+    'Chores': { label: '雑務', icon: '🧹' },
+    'Other': { label: 'その他', icon: '📦' },
+};
+const CATEGORY_KEYS = Object.keys(CATEGORIES);
+
+const PRIORITIES = {
+    'High': { label: '高', color: 'text-red-600 bg-red-50 border-red-200' },
+    'Medium': { label: '中', color: 'text-amber-600 bg-amber-50 border-amber-200' },
+    'Low': { label: '低', color: 'text-slate-600 bg-slate-50 border-slate-200' },
+};
+
 export default function DashboardPage() {
     const [routines, setRoutines] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
-    const [showCompleted, setShowCompleted] = useState(true);
+    const [showCompleted, setShowCompleted] = useState(false);
+
+    // Add Task Modal State
+    const [isModalOpen, setIsModalOpen] = useState(false);
+    const [isSubmitting, setIsSubmitting] = useState(false);
+    const [newTask, setNewTask] = useState({
+        title: '',
+        category: 'Research',
+        priority: 'Medium'
+    });
+
+    const init = async () => {
+        setLoading(true);
+        try {
+            await api.generateDailyTasks();
+            const r = await api.getRoutines();
+            setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
+            const t = await api.getDaily();
+            setTasks(t);
+        } catch (e) {
+            console.error(e);
+        } finally {
+            setLoading(false);
+        }
+    };
 
     useEffect(() => {
-        const init = async () => {
-            try {
-                await api.generateDailyTasks();
-                const r = await api.getRoutines();
-                setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
-                const t = await api.getDaily();
-                setTasks(t);
-            } catch (e) {
-                console.error(e);
-            } finally {
-                setLoading(false);
-            }
-        };
         init();
     }, []);
 
@@ -36,7 +65,52 @@ export default function DashboardPage() {
         }
     };
 
-    const visibleTasks = showCompleted ? tasks : tasks.filter(t => t.status !== 'DONE');
+    const handleAddTask = async (e) => {
+        e.preventDefault();
+        if (!newTask.title.trim()) return;
+
+        setIsSubmitting(true);
+        try {
+            const todayStr = new Date().toISOString().split('T')[0];
+            // 1. Create in Backlog
+            const createdItem = await api.addBacklogItem({
+                ...newTask,
+                deadline: todayStr,
+                scheduled_date: todayStr
+            });
+
+            // 2. Pick for Today
+            await api.pickFromBacklog(createdItem.id);
+
+            // 3. Refresh
+            await init();
+
+            setIsModalOpen(false);
+            setNewTask({ title: '', category: 'Research', priority: 'Medium' });
+        } catch (e) {
+            console.error(e);
+            alert('Failed to add task');
+        } finally {
+            setIsSubmitting(false);
+        }
+    };
+
+    const visibleTasks = showCompleted ? tasks : tasks.filter(t => t.status !== 'DONE' && t.status !== 'SKIPPED');
+
+    const [openMenuId, setOpenMenuId] = useState(null);
+
+    const handleSkip = async (id, e) => {
+        e.stopPropagation();
+        setOpenMenuId(null);
+        // Optimistic update
+        setTasks(tasks.map(t => t.id === id ? { ...t, status: 'SKIPPED' } : t));
+        try {
+            await api.skipTask(id);
+        } catch (e) {
+            console.error("Failed to skip", e);
+            // Revert on error? For now simple log
+        }
+    };
 
     return (
         <div className="min-h-screen bg-slate-50 p-2 font-sans no-scrollbar">
@@ -47,29 +121,37 @@ export default function DashboardPage() {
 
                     {/* Header */}
                     <div className="flex-shrink-0 flex justify-between items-end">
-                        <div>
+                        <div onClick={() => setOpenMenuId(null)} className="flex-1">
                             <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
                             <p className="text-xs text-slate-500 font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
                         </div>
-                        <button
-                            onClick={() => setShowCompleted(!showCompleted)}
-                            className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1.5
-                                ${showCompleted
-                                    ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
-                                    : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
-                                }`}
-                        >
-                            <span className={`w-1.5 h-1.5 rounded-full ${showCompleted ? 'bg-indigo-500' : 'bg-slate-300'}`} />
-                            {showCompleted ? 'Showing All' : 'Hiding Done'}
-                        </button>
+                        <div className="flex items-center gap-2">
+                            <button
+                                onClick={() => setIsModalOpen(true)}
+                                className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-md hover:bg-slate-800 transition-all flex items-center gap-1"
+                            >
+                                <span>+</span> Add Task
+                            </button>
+                            <button
+                                onClick={() => setShowCompleted(!showCompleted)}
+                                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1.5
+                                    ${showCompleted
+                                        ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
+                                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                    }`}
+                            >
+                                <span className={`w-1.5 h-1.5 rounded-full ${showCompleted ? 'bg-indigo-500' : 'bg-slate-300'}`} />
+                                {showCompleted ? 'Showing All' : 'Hiding Done'}
+                            </button>
+                        </div>
                     </div>
 
                     {/* Tasks List - Scrollable Area */}
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
+                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => setOpenMenuId(null)}>
                         <div className="h-1 bg-indigo-500 w-full flex-shrink-0" />
 
                         <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar">
-                            {loading ? <div className="text-center py-10 opacity-50 text-xs">Loading Focus...</div> : visibleTasks.length === 0 ? (
+                            {loading && tasks.length === 0 ? <div className="text-center py-10 opacity-50 text-xs">Loading Focus...</div> : visibleTasks.length === 0 ? (
                                 <div className="text-center py-20">
                                     <div className="text-4xl mb-2">☕</div>
                                     <h3 className="font-bold text-slate-800">
@@ -83,25 +165,52 @@ export default function DashboardPage() {
                                 visibleTasks.map(t => (
                                     <div key={t.id}
                                         onClick={() => handleToggle(t.id, t.status)}
-                                        className={`group cursor-pointer p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none
-                                             ${t.status === 'DONE'
+                                        className={`group cursor-pointer p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
+                                             ${t.status === 'DONE' || t.status === 'SKIPPED'
                                                 ? 'bg-slate-50 border-slate-50 opacity-50'
                                                 : 'bg-white border-transparent hover:border-indigo-100 hover:bg-slate-50 hover:shadow-sm'
                                             }`}
                                     >
                                         <div className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center transition-colors
-                                           ${t.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 bg-white group-hover:border-indigo-400'}
+                                           ${t.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' :
+                                                t.status === 'SKIPPED' ? 'bg-slate-200 border-slate-200' :
+                                                    'border-slate-300 bg-white group-hover:border-indigo-400'}
                                        `}>
                                             {t.status === 'DONE' && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                            {t.status === 'SKIPPED' && <span className="text-[8px]">⏭️</span>}
                                         </div>
                                         <div className="flex-1 min-w-0 flex items-center justify-between">
-                                            <div className={`font-semibold text-sm truncate ${t.status === 'DONE' ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                            <div className={`font-semibold text-sm truncate ${t.status === 'DONE' || t.status === 'SKIPPED' ? 'line-through text-slate-400' : 'text-slate-700'}`}>
                                                 {t.title || 'Unknown Task'}
                                             </div>
-                                            <div className="flex gap-2 text-[9px]">
+                                            <div className="flex gap-2 text-[9px] items-center">
                                                 <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
                                                     {t.source_type}
                                                 </span>
+                                                {/* Menu Trigger */}
+                                                <button
+                                                    onClick={(e) => {
+                                                        e.stopPropagation();
+                                                        setOpenMenuId(openMenuId === t.id ? null : t.id);
+                                                    }}
+                                                    className="p-1 hover:bg-slate-200 rounded-full text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"
+                                                >
+                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
+                                                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
+                                                    </svg>
+                                                </button>
+
+                                                {/* Menu Dropdown */}
+                                                {openMenuId === t.id && (
+                                                    <div className="absolute right-0 top-6 w-24 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in duration-100">
+                                                        <button
+                                                            onClick={(e) => handleSkip(t.id, e)}
+                                                            className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                        >
+                                                            <span>⏭️</span> Skip
+                                                        </button>
+                                                    </div>
+                                                )}
                                             </div>
                                         </div>
                                     </div>
@@ -125,8 +234,88 @@ export default function DashboardPage() {
                         </div>
                     </div>
                 )}
-
             </div>
+
+            {/* Add Task Modal */}
+            {isModalOpen && (
+                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
+                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
+                            <h3 className="font-bold text-slate-800 text-lg">Add to Today</h3>
+                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
+                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                            </button>
+                        </div>
+                        <form onSubmit={handleAddTask} className="p-6 space-y-5">
+                            <div>
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Task Title</label>
+                                <input
+                                    type="text"
+                                    value={newTask.title}
+                                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
+                                    className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
+                                    placeholder="What do you want to do today?"
+                                    autoFocus
+                                />
+                            </div>
+
+                            <div className="grid grid-cols-2 gap-5">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Category</label>
+                                    <div className="relative">
+                                        <select
+                                            value={newTask.category}
+                                            onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all appearance-none text-slate-700 font-medium text-sm"
+                                        >
+                                            {CATEGORY_KEYS.map(key => (
+                                                <option key={key} value={key}>{CATEGORIES[key].label}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Priority</label>
+                                    <div className="relative">
+                                        <select
+                                            value={newTask.priority}
+                                            onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all appearance-none text-slate-700 font-medium text-sm"
+                                        >
+                                            {Object.keys(PRIORITIES).map(key => (
+                                                <option key={key} value={key}>{PRIORITIES[key].label}</option>
+                                            ))}
+                                        </select>
+                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
+                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
+                                        </div>
+                                    </div>
+                                </div>
+                            </div>
+
+                            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100 mt-4">
+                                <button
+                                    type="button"
+                                    onClick={() => setIsModalOpen(false)}
+                                    className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold text-sm"
+                                >
+                                    Cancel
+                                </button>
+                                <button
+                                    type="submit"
+                                    disabled={isSubmitting || !newTask.title.trim()}
+                                    className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 hover:shadow-lg transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                                >
+                                    {isSubmitting ? 'Adding...' : 'Add Task'}
+                                </button>
+                            </div>
+                        </form>
+                    </div>
+                </div>
+            )}
         </div>
     );
 }
