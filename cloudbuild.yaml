@@ -32,31 +32,25 @@ steps:
   # 4. Build Frontend Image
   # ... (Scanning skipped lines) ...
 
-  # 6. Deploy Frontend to Cloud Run
+  # 6. Deploy Frontend to Cloud Run (Dynamic BACKEND_URL)
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: gcloud
+    entrypoint: 'bash'
     args:
-      - 'run'
-      - 'deploy'
-      - 'genai-app-frontend'
-      - '--image'
-      - 'gcr.io/$PROJECT_ID/genai-app-frontend'
-      - '--region'
-      - 'us-central1'
-      - '--platform'
-      - 'managed'
-      - '--allow-unauthenticated'
-      - '--service-account'
-      - 'app-account@trial-project-ushikoshi.iam.gserviceaccount.com'
-      # Set BACKEND_URL to the URL of the deployed backend service
-      # NOTE: We might not know the URL until after step 3. 
-      # A common pattern is to deploy backend, get URL, then deploy frontend.
-      # For simplicity here, we assume you might need to update this env var manually once or automate it with a script.
-      # BUT, Cloud Run URLs are deterministic if you use the same service name. 
-      # https://REGION-PROJECT_ID.cloudrun.app usually.
-      # Let's try to fetch it dynamically or just set it to a placeholder you can update.
-      # Better approach: We can use a script in Cloud Build to capture the output.
-      # For now, let's just deploy and you can update the env var in the Console, or we add a step to get it.
+      - '-c'
+      - |
+        # 1. Get Backend URL
+        echo "Fetching Backend URL..."
+        BACKEND_URL=$(gcloud run services describe genai-app-backend --region us-central1 --format='value(status.url)')
+        echo "Backend URL: $BACKEND_URL"
+
+        # 2. Deploy Frontend with BACKEND_URL
+        gcloud run deploy genai-app-frontend \
+          --image gcr.io/$PROJECT_ID/genai-app-frontend \
+          --region us-central1 \
+          --platform managed \
+          --allow-unauthenticated \
+          --service-account app-account@trial-project-ushikoshi.iam.gserviceaccount.com \
+          --set-env-vars BACKEND_URL=$BACKEND_URL
     
 images:
   - 'gcr.io/$PROJECT_ID/genai-app-backend'
