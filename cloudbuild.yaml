@@ -21,19 +21,16 @@ steps:
       - 'us-central1'
       - '--platform'
       - 'managed'
-      - '--allow-unauthenticated' # Or secure it if you want
+      - '--allow-unauthenticated'
+      - '--service-account'
+      - 'app-account@trial-project-ushikoshi.iam.gserviceaccount.com'
       - '--set-env-vars'
       - 'PROJECT_ID=$PROJECT_ID'
+      - '--set-secrets'
+      - 'LOCATION_FOR_CAR_QUIZZ=LOCATION_FOR_CAR_QUIZZ:latest,GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest'
 
   # 4. Build Frontend Image
-  # We need the backend URL to bake into the frontend if we were doing SSG/ISR revalidation that depended on it,
-  # but our proxy is runtime-based via process.env.BACKEND_URL. 
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/genai-app-frontend', '-f', 'Dockerfile.prod', '.']
-
-  # 5. Push Frontend Image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/genai-app-frontend']
+  # ... (Scanning skipped lines) ...
 
   # 6. Deploy Frontend to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
@@ -49,6 +46,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--service-account'
+      - 'app-account@trial-project-ushikoshi.iam.gserviceaccount.com'
       # Set BACKEND_URL to the URL of the deployed backend service
       # NOTE: We might not know the URL until after step 3. 
       # A common pattern is to deploy backend, get URL, then deploy frontend.
