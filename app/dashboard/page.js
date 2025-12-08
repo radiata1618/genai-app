@@ -12,6 +12,7 @@ const CATEGORIES = {
     'Outing': { label: 'お出かけ', icon: '🏞️' },
     'Chores': { label: '雑務', icon: '🧹' },
     'Shopping': { label: '買い物', icon: '🛒' },
+    'Book': { label: '本', icon: '📚' },
     'Other': { label: 'その他', icon: '📦' },
 };
 const CATEGORY_KEYS = Object.keys(CATEGORIES);

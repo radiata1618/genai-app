@@ -27,7 +27,7 @@ steps:
       - '--set-env-vars'
       - 'PROJECT_ID=$PROJECT_ID'
       - '--set-secrets'
-      - 'LOCATION_FOR_CAR_QUIZZ=LOCATION_FOR_CAR_QUIZZ:latest,GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest'
+      - 'LOCATION_FOR_CAR_QUIZZ=LOCATION_FOR_CAR_QUIZZ:latest,GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,INTERNAL_API_KEY=INTERNAL_API_KEY:latest'
 
   # 4. Build Frontend Image
   - name: 'gcr.io/cloud-builders/docker'
@@ -43,19 +43,23 @@ steps:
     args:
       - '-c'
       - |
-        # 1. Get Backend URL
-        echo "Fetching Backend URL..."
+        # 1. Get Service URLs
+        echo "Fetching Service URLs..."
         BACKEND_URL=$$(gcloud run services describe genai-app-backend --region us-central1 --format='value(status.url)')
+        FRONTEND_URL=$$(gcloud run services describe genai-app-frontend --region us-central1 --format='value(status.url)')
+        
         echo "Backend URL: $$BACKEND_URL"
+        echo "Frontend URL: $$FRONTEND_URL"
 
-        # 2. Deploy Frontend with BACKEND_URL
+        # 2. Deploy Frontend
         gcloud run deploy genai-app-frontend \
           --image gcr.io/$PROJECT_ID/genai-app-frontend \
           --region us-central1 \
           --platform managed \
           --allow-unauthenticated \
           --service-account app-account@trial-project-ushikoshi.iam.gserviceaccount.com \
-          --set-env-vars BACKEND_URL=$$BACKEND_URL
+          --set-env-vars BACKEND_URL=$$BACKEND_URL,ALLOWED_EMAIL=haruki.u@gmail.com,NEXTAUTH_URL=$$FRONTEND_URL \
+          --set-secrets GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest,INTERNAL_API_KEY=INTERNAL_API_KEY:latest
     
 images:
   - 'gcr.io/$PROJECT_ID/genai-app-backend'

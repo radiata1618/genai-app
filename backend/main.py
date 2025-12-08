@@ -19,11 +19,41 @@ app = FastAPI()
 # Configure CORS
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000"],
+    allow_origins=["*"], # Allow all for public access, auth handled by App
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+# --- Security Middleware ---
+from fastapi import Request, HTTPException
+from starlette.middleware.base import BaseHTTPMiddleware
+
+class APIKeyMiddleware(BaseHTTPMiddleware):
+    async def dispatch(self, request: Request, call_next):
+        # Skip check for health check or OPTIONS requests
+        if request.url.path == "/health" or request.method == "OPTIONS":
+            return await call_next(request)
+
+        # Retrieve API Key from header
+        api_key = request.headers.get("X-INTERNAL-API-KEY")
+        internal_key = os.getenv("INTERNAL_API_KEY")
+
+        # If INTERNAL_API_KEY is set in env, enforce it
+        if internal_key:
+            if not api_key or api_key != internal_key:
+                # Reject request
+                return  JSONResponse(
+                    status_code=403,
+                    content={"detail": "Forbidden: Invalid API Key"}
+                )
+        
+        response = await call_next(request)
+        return response
+
+from fastapi.responses import JSONResponse
+app.add_middleware(APIKeyMiddleware)
+# ---------------------------
 
 # Initialize Vertex AI
 PROJECT_ID = os.getenv("PROJECT_ID")

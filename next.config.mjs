@@ -4,7 +4,8 @@ const nextConfig = {
     async rewrites() {
         return [
             {
-                source: '/api/:path*',
+                // Exclude /api/auth/* from being rewritten to the backend (handled by Next.js)
+                source: '/api/:path((?!auth).*)',
                 destination: process.env.BACKEND_URL
                     ? `${process.env.BACKEND_URL}/api/:path*`
                     : 'http://localhost:8000/api/:path*',
