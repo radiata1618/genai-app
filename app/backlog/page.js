@@ -11,6 +11,7 @@ const CATEGORIES = {
     'Dog': { label: '犬', icon: '🐕' },
     'Outing': { label: 'お出かけ', icon: '🏞️' },
     'Chores': { label: '雑務', icon: '🧹' },
+    'Shopping': { label: '買い物', icon: '🛒' },
     'Other': { label: 'その他', icon: '📦' },
 };
 

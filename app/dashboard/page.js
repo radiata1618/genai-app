@@ -11,6 +11,7 @@ const CATEGORIES = {
     'Dog': { label: '犬', icon: '🐕' },
     'Outing': { label: 'お出かけ', icon: '🏞️' },
     'Chores': { label: '雑務', icon: '🧹' },
+    'Shopping': { label: '買い物', icon: '🛒' },
     'Other': { label: 'その他', icon: '📦' },
 };
 const CATEGORY_KEYS = Object.keys(CATEGORIES);
@@ -35,6 +36,9 @@ export default function DashboardPage() {
         category: 'Research',
         priority: 'Medium'
     });
+
+    // Drag State
+    const [draggedItem, setDraggedItem] = useState(null);
 
     const init = async () => {
         setLoading(true);
@@ -112,6 +116,44 @@ export default function DashboardPage() {
         }
     };
 
+    // Drag & Drop Handlers
+    const onDragStart = (e, task) => {
+        setDraggedItem(task);
+        e.dataTransfer.effectAllowed = 'move';
+        // e.dataTransfer.setDragImage(e.target, 0, 0); // Optional: customize drag image
+    };
+
+    const onDragOver = (e, targetTask) => {
+        e.preventDefault();
+        if (!draggedItem || draggedItem.id === targetTask.id) return;
+
+        const oldIndex = tasks.findIndex(t => t.id === draggedItem.id);
+        const newIndex = tasks.findIndex(t => t.id === targetTask.id);
+
+        if (oldIndex === -1 || newIndex === -1) return;
+
+        // Create new array
+        const newTasks = [...tasks];
+        // Remove dragged item
+        newTasks.splice(oldIndex, 1);
+        // Insert at new position
+        newTasks.splice(newIndex, 0, draggedItem);
+
+        setTasks(newTasks);
+    };
+
+    const onDragEnd = async () => {
+        if (!draggedItem) return;
+        setDraggedItem(null);
+
+        const ids = tasks.map(t => t.id);
+        try {
+            await api.reorderDaily(ids);
+        } catch (e) {
+            console.error("Failed to reorder", e);
+        }
+    };
+
     return (
         <div className="min-h-screen bg-slate-50 p-2 font-sans no-scrollbar">
             <div className="max-w-4xl mx-auto flex gap-6 items-start h-[calc(100vh-1rem)]">
@@ -164,13 +206,37 @@ export default function DashboardPage() {
                             ) : (
                                 visibleTasks.map(t => (
                                     <div key={t.id}
+                                        draggable
+                                        onDragStart={(e) => onDragStart(e, t)}
+                                        onDragOver={(e) => onDragOver(e, t)}
+                                        onDragEnd={onDragEnd}
                                         onClick={() => handleToggle(t.id, t.status)}
                                         className={`group cursor-pointer p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
                                              ${t.status === 'DONE' || t.status === 'SKIPPED'
                                                 ? 'bg-slate-50 border-slate-50 opacity-50'
                                                 : 'bg-white border-transparent hover:border-indigo-100 hover:bg-slate-50 hover:shadow-sm'
                                             }`}
+                                        style={{ opacity: draggedItem?.id === t.id ? 0.3 : (t.status === 'DONE' || t.status === 'SKIPPED' ? 0.5 : 1) }}
                                     >
+                                        {/* Drag Handle */}
+                                        <div
+                                            className="text-slate-300 cursor-grab active:cursor-grabbing p-0.5 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-5 w-3 opacity-0 group-hover:opacity-100"
+                                            onClick={(e) => e.stopPropagation()}
+                                        >
+                                            <div className="flex gap-0.5">
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                            </div>
+                                            <div className="flex gap-0.5 mt-0.5">
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                            </div>
+                                            <div className="flex gap-0.5 mt-0.5">
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                            </div>
+                                        </div>
+
                                         <div className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center transition-colors
                                            ${t.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' :
                                                 t.status === 'SKIPPED' ? 'bg-slate-200 border-slate-200' :

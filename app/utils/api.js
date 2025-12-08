@@ -140,6 +140,16 @@ export const api = {
         return res.json();
     },
 
+    reorderDaily: async (orderedIds) => {
+        const res = await fetch(`${API_BASE}/daily/reorder`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids: orderedIds }),
+        });
+        if (!res.ok) throw new Error('Failed to reorder daily tasks');
+        return res.json();
+    },
+
     skipTask: async (id) => {
         const res = await fetch(`${API_BASE}/daily/${id}/skip`, {
             method: 'PATCH',

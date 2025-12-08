@@ -60,8 +60,6 @@ class RoutineCreate(BaseModel):
     routine_type: RoutineType
     frequency: Optional[FrequencyConfig] = None
     icon: Optional[str] = None
-    frequency: Optional[FrequencyConfig] = None
-    icon: Optional[str] = None
     scheduled_time: str = "05:00"
     order: int = 0
 
@@ -78,11 +76,22 @@ class DailyTaskResponse(BaseModel):
     target_date: str 
     title: Optional[str] = None
     completed_at: Optional[datetime] = None
+    order: int = 0
+    scheduled_time: Optional[str] = "05:00"
 
 class ReorderRequest(BaseModel):
     ids: List[str]
 
 # --- API Endpoints ---
+
+@router.put("/daily/reorder")
+def reorder_daily_tasks(request: ReorderRequest, db: firestore.Client = Depends(get_db)):
+    batch = db.batch()
+    for index, t_id in enumerate(request.ids):
+        ref = db.collection("daily_tasks").document(t_id)
+        batch.update(ref, {"order": index})
+    batch.commit()
+    return {"status": "reordered", "count": len(request.ids)}
 
 @router.put("/routines/reorder")
 def reorder_routines(request: ReorderRequest, db: firestore.Client = Depends(get_db)):
@@ -122,7 +131,6 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
     return data
 
 @router.get("/backlog", response_model=List[BacklogItemResponse])
-@router.get("/backlog", response_model=List[BacklogItemResponse])
 def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
     # Order by 'order' field ascending
     docs = db.collection("backlog_items").where("is_archived", "==", False).order_by("order").limit(limit).stream()
@@ -133,7 +141,6 @@ def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
         if 'priority' not in d: d['priority'] = 'Medium'
         if 'order' not in d: d['order'] = 0
         if 'category' not in d: d['category'] = 'Research'
-        # Map old categories if necessary? For now user just wants new ones.
         
         items.append(d)
     return items
@@ -226,12 +233,6 @@ def update_routine(routine_id: str, routine: RoutineCreate, db: firestore.Client
     
     # Preserve creation time and ID
     data['id'] = routine_id
-    # We might want to keep the original created_at, so we utilize set with merge=True or just update specific fields.
-    # However, RoutineResponse expects created_at. Let's fetch the original first or just update.
-    # For simplicity in this schema, we will overwrite the main fields but keep created_at if possible.
-    # Actually, to return the full object, let's just update and assume the client handles the freshness.
-    
-    # To do it properly:
     current_data = doc_ref.get().to_dict()
     data['created_at'] = current_data.get('created_at', datetime.now()) # Keep original or valid default
     
@@ -282,11 +283,9 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
                 "target_date": target_date_str,
                 "status": TaskStatus.TODO.value,
                 "created_at": datetime.now(),
-                "target_date": target_date_str,
-                "status": TaskStatus.TODO.value,
-                "created_at": datetime.now(),
                 "title": r.get('title', 'Untitled'),
-                "scheduled_time": r.get('scheduled_time', "05:00")
+                "scheduled_time": r.get('scheduled_time', "05:00"),
+                "order": 1000 # Put routines at end by default? Or 0? Let's say 0 but they can be reordered.
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -297,6 +296,7 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
 @router.get("/daily", response_model=List[DailyTaskResponse])
 def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
     target_date_str = target_date.isoformat()
+    # Remove .order_by("order") to include docs without the field
     docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
     
     tasks = []
@@ -318,50 +318,28 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
             else:
                 source_exists = False
         
-        # If we have a stored title, we might choose to show it even if source is gone,
-        # OR we hide it as per the user request "actions task is deleted -> remove from today".
-        # The user said: "Actionsのタスクが削除されるとUnknownというタスクが残ってしまう この現象を修正したい"
-        # So filtering out is the correct approach.
-        
-        # TIME FILTERING:
-        # If today is the target date, perform time check.
-        # current_time (HH:MM) >= scheduled_time (HH:MM)
-        # default scheduled_time is "05:00"
-        
-        # Check based on user local time? 
-        # The user said "Also when displaying tasks on Today's screen, make it so that new daily tasks appear when the specified time is exceeded".
-        # We really need the CLIENT time for this comparison ideally, but backend filtering is safer if we assume server time or pass user time?
-        # Actually, simpler: We check against SERVER time (assuming User is in same timezone or container is set correctly) OR we do it on frontend.
-        # However, Request was "display on Today's screen...".
-        # Let's do it in backend using server time (container time).
-        # Metadata says: "The current local time is: 2025-12-08T21:46:47+09:00" (JST).
-        # The server should be running in JST too if properly configured, or we use datetime.now() with offset.
-        # Since I see "The current local time is..." in metadata, it means the AGENT knows the time. 
-        # But the backend code runs in the container.
-        # Let's assume standard datetime.now() reflects the system time which is likely relevant to the user or UTC.
-        # BUT: the PROMPT said "The current local time is ... +09:00".
-        # Let's check `target_date`. If `target_date` == `datetime.now().date()`, then filter.
-        
+        # TIME FILTERING logic
         now = datetime.now()
         current_time_str = now.strftime("%H:%M")
         is_today = target_date_str == now.date().isoformat()
         
         show_task = True
         
-        # Only filter routines (actions) or all? Request says "Daily's scheduled time". 
-        # Usually implies Routines. Backlog items generally don't have this hour spec yet (except maybe deadline?).
-        # Task schema for daily:
-        # We stored `scheduled_time` in generate_daily_tasks for routines.
-        
         task_scheduled_time = t.get('scheduled_time', "05:00")
         
         if is_today and t['source_type'] == SourceType.ROUTINE.value:
             if current_time_str < task_scheduled_time:
                 show_task = False
+        
+        if 'order' not in t:
+             t['order'] = 0
 
         if source_exists and show_task:
             t['title'] = title
             tasks.append(t)
+    
+    # Sort in memory
+    tasks.sort(key=lambda x: x.get('order', 0))
     return tasks
 
 @router.post("/daily/pick")
@@ -383,7 +361,8 @@ def pick_from_backlog(backlog_id: str, target_date: date = date.today(), db: fir
         "source_type": SourceType.BACKLOG.value,
         "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
-        "created_at": datetime.now()
+        "created_at": datetime.now(),
+        "order": 0 # Default order
     }
     doc_ref.set(new_task)
     return new_task
