@@ -40,8 +40,8 @@ steps:
       - |
         # 1. Get Backend URL
         echo "Fetching Backend URL..."
-        BACKEND_URL=$(gcloud run services describe genai-app-backend --region us-central1 --format='value(status.url)')
-        echo "Backend URL: $BACKEND_URL"
+        BACKEND_URL=$$(gcloud run services describe genai-app-backend --region us-central1 --format='value(status.url)')
+        echo "Backend URL: $$BACKEND_URL"
 
         # 2. Deploy Frontend with BACKEND_URL
         gcloud run deploy genai-app-frontend \
@@ -50,7 +50,7 @@ steps:
           --platform managed \
           --allow-unauthenticated \
           --service-account app-account@trial-project-ushikoshi.iam.gserviceaccount.com \
-          --set-env-vars BACKEND_URL=$BACKEND_URL
+          --set-env-vars BACKEND_URL=$$BACKEND_URL
     
 images:
   - 'gcr.io/$PROJECT_ID/genai-app-backend'
