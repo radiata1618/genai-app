@@ -40,6 +40,7 @@ export default function DashboardPage() {
 
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
+    const [todayStr, setTodayStr] = useState('');
 
     const init = async () => {
         setLoading(true);
@@ -57,6 +58,7 @@ export default function DashboardPage() {
     };
 
     useEffect(() => {
+        setTodayStr(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
         init();
     }, []);
 
@@ -166,7 +168,7 @@ export default function DashboardPage() {
                     <div className="flex-shrink-0 flex justify-between items-end">
                         <div onClick={() => setOpenMenuId(null)} className="flex-1">
                             <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
-                            <p className="text-xs text-slate-500 font-medium">{new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' })}</p>
+                            <p className="text-xs text-slate-500 font-medium">{todayStr}</p>
                         </div>
                         <div className="flex items-center gap-2">
                             <button

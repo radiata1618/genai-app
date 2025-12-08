@@ -1,10 +1,12 @@
 from fastapi import APIRouter, HTTPException, Depends
 from typing import List, Optional
 from pydantic import BaseModel
-from datetime import date, datetime
+from datetime import date, datetime, timezone, timedelta
 import enum
 from google.cloud import firestore
 from database import get_db
+
+JST = timezone(timedelta(hours=9))
 
 router = APIRouter(
     prefix="/tasks",
@@ -124,7 +126,7 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
 
     data.update({
         "id": doc_ref.id,
-        "created_at": datetime.now(),
+        "created_at": datetime.now(JST),
         "is_archived": False
     })
     doc_ref.set(data)
@@ -197,7 +199,7 @@ def create_routine(routine: RoutineCreate, db: firestore.Client = Depends(get_db
     
     data.update({
         "id": doc_ref.id,
-        "created_at": datetime.now()
+        "created_at": datetime.now(JST)
     })
     doc_ref.set(data)
     return data
@@ -234,7 +236,7 @@ def update_routine(routine_id: str, routine: RoutineCreate, db: firestore.Client
     # Preserve creation time and ID
     data['id'] = routine_id
     current_data = doc_ref.get().to_dict()
-    data['created_at'] = current_data.get('created_at', datetime.now()) # Keep original or valid default
+    data['created_at'] = current_data.get('created_at', datetime.now(JST)) # Keep original or valid default
     
     doc_ref.set(data) # Overwrite with new data
     return data
@@ -248,7 +250,9 @@ def delete_routine(routine_id: str, db: firestore.Client = Depends(get_db)):
     return {"status": "deleted", "id": routine_id}
 
 @router.post("/generate-daily")
-def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
+def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    if target_date is None:
+        target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
     weekday = target_date.weekday()
     day_of_month = target_date.day
@@ -282,10 +286,10 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
                 "source_type": SourceType.ROUTINE.value,
                 "target_date": target_date_str,
                 "status": TaskStatus.TODO.value,
-                "created_at": datetime.now(),
+                "created_at": datetime.now(JST),
                 "title": r.get('title', 'Untitled'),
                 "scheduled_time": r.get('scheduled_time', "05:00"),
-                "order": 1000 # Put routines at end by default? Or 0? Let's say 0 but they can be reordered.
+                "order": r.get('order', 1000) # Use routine's order
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -294,7 +298,9 @@ def generate_daily_tasks(target_date: date = date.today(), db: firestore.Client 
     return {"message": f"Generated {created_count} tasks", "date": target_date_str}
 
 @router.get("/daily", response_model=List[DailyTaskResponse])
-def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
+def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    if target_date is None:
+        target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
     # Remove .order_by("order") to include docs without the field
     docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
@@ -319,7 +325,7 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
                 source_exists = False
         
         # TIME FILTERING logic
-        now = datetime.now()
+        now = datetime.now(JST)
         current_time_str = now.strftime("%H:%M")
         is_today = target_date_str == now.date().isoformat()
         
@@ -343,7 +349,9 @@ def get_daily_tasks(target_date: date = date.today(), db: firestore.Client = Dep
     return tasks
 
 @router.post("/daily/pick")
-def pick_from_backlog(backlog_id: str, target_date: date = date.today(), db: firestore.Client = Depends(get_db)):
+def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    if target_date is None:
+        target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
     item_ref = db.collection("backlog_items").document(backlog_id)
     if not item_ref.get().exists:
@@ -355,14 +363,22 @@ def pick_from_backlog(backlog_id: str, target_date: date = date.today(), db: fir
     if doc_ref.get().exists:
          return {"message": "Already picked"}
 
+    # Calculate order: max(existing_orders) + 1
+    existing_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
+    max_order = -1
+    for d in existing_docs:
+        d_dict = d.to_dict()
+        o = d_dict.get('order', 0)
+        if o > max_order: max_order = o
+    
     new_task = {
         "id": doc_id,
         "source_id": backlog_id,
         "source_type": SourceType.BACKLOG.value,
         "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
-        "created_at": datetime.now(),
-        "order": 0 # Default order
+        "created_at": datetime.now(JST),
+        "order": max_order + 1
     }
     doc_ref.set(new_task)
     return new_task
@@ -376,7 +392,7 @@ def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Clie
     
     updates = {
         "status": TaskStatus.DONE.value if completed else TaskStatus.TODO.value,
-        "completed_at": datetime.now() if completed else None
+        "completed_at": datetime.now(JST) if completed else None
     }
     doc_ref.update(updates)
     return {**snap.to_dict(), **updates}
