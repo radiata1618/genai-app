@@ -13,6 +13,7 @@ services:
       - WATCHPACK_POLLING=true
       - CHOKIDAR_USEPOLLING=true
       - NEXT_WEBPACK_USEPOLLING=1
+      - BACKEND_URL=http://backend:8000
     volumes:
       - .:/app # ソースコード
       - genai-node-modules:/app/node_modules # node_modules をコンテナ側に保持

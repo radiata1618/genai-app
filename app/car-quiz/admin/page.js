@@ -15,7 +15,7 @@ export default function AdminPage() {
         setLoading(true);
         setMessage('');
         try {
-            const res = await fetch('http://localhost:8000/api/car-quiz/generate-list', {
+            const res = await fetch('/api/car-quiz/generate-list', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ prompt }),
@@ -41,7 +41,7 @@ export default function AdminPage() {
         setCollectingImages(true);
         setMessage('Collecting images...');
         try {
-            const res = await fetch('http://localhost:8000/api/car-quiz/collect-images', {
+            const res = await fetch('/api/car-quiz/collect-images', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ cars: generatedCars }),
@@ -67,7 +67,7 @@ export default function AdminPage() {
             newCars[index].saving = true;
             setGeneratedCars(newCars);
 
-            const res = await fetch('http://localhost:8000/api/car-quiz/save-car', {
+            const res = await fetch('/api/car-quiz/save-car', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify(car),
@@ -102,7 +102,7 @@ export default function AdminPage() {
         setLoading(true);
         setMessage('Loading from database...');
         try {
-            const res = await fetch('http://localhost:8000/api/car-quiz/fetch-list');
+            const res = await fetch('/api/car-quiz/fetch-list');
             if (!res.ok) throw new Error('Failed to fetch list');
             const data = await res.json();
             setGeneratedCars(data);

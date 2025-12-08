@@ -2,9 +2,10 @@ from fastapi import APIRouter, HTTPException, UploadFile, File
 from pydantic import BaseModel
 from typing import List, Optional
 import os
-import vertexai
-from vertexai.generative_models import GenerativeModel, Part, FinishReason
-import vertexai.preview.generative_models as generative_models
+
+from google import genai
+from google.genai import types
+
 from googleapiclient.discovery import build
 from database import get_firestore_client, get_storage_client
 import uuid
@@ -41,11 +42,14 @@ def get_custom_search_service():
 
 @router.post("/car-quiz/generate-list")
 async def generate_car_list(request: GenerationRequest):
-    """Generates a list of cars using Vertex AI based on the prompt."""
+    """Generates a list of cars using Google GenAI SDK (Gemini 3.0) based on the prompt."""
     try:
-        model = GenerativeModel("gemini-1.5-pro") # Reverted to 1.5 Pro as 3.0 is not available
-        
-        # Construct prompt to ensure JSON output
+        # Initialize GenAI Client
+        # Assumes GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI are handled by environment or default
+        # If needed explicitly:
+        # client = genai.Client(vertexai=True, project=..., location=...)
+        client = genai.Client(vertexai=True, location='us-central1') 
+
         full_prompt = f"""
         Rank the following request and generate a list of cars in JSON format.
         Request: {request.prompt}
@@ -67,19 +71,22 @@ async def generate_car_list(request: GenerationRequest):
         Only return the JSON array.
         """
         
-        response = model.generate_content(
-            full_prompt,
-            generation_config={
-                "max_output_tokens": 8192,
-                "temperature": 0.5,
-                "top_p": 0.95,
-            },
+        response = client.models.generate_content(
+            model="gemini-3-pro-preview",
+            contents=full_prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json", # Direct JSON output request
+                max_output_tokens=8192,
+                temperature=0.5,
+                top_p=0.95,
+                 # thinking_config=types.ThinkingConfig(thinking_level="low") # Verify if needed/supported for 3.0 preview yet
+            ),
         )
         
         # Parse JSON from response
         try:
             text = response.text
-            # Basic cleanup if markdown backticks are present
+            # Basic cleanup if markdown backticks are present (though response_mime_type should help)
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0]
             elif "```" in text:
@@ -89,10 +96,12 @@ async def generate_car_list(request: GenerationRequest):
             return car_list
         except Exception as e:
             print(f"Failed to parse JSON: {e}")
+            # Fallback parsing attempt or raw text log
+            print(f"Raw response: {text}")
             raise HTTPException(status_code=500, detail="Failed to parse AI response.")
 
     except Exception as e:
-        print(f"Vertex AI Error: {e}")
+        print(f"GenAI Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/car-quiz/collect-images")

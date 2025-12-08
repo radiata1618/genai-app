@@ -24,7 +24,7 @@ export default function QuizPage() {
             if (filters.manufacturer) params.append('manufacturer', filters.manufacturer);
             if (filters.bodyType) params.append('body_type', filters.bodyType);
 
-            const res = await fetch(`http://localhost:8000/api/car-quiz/questions?${params.toString()}&limit=5`);
+            const res = await fetch(`/api/car-quiz/questions?${params.toString()}&limit=5`);
             const data = await res.json();
 
             if (data.length === 0) {

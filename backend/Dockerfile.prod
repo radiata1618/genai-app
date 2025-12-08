@@ -1,0 +1,21 @@
+
+FROM python:3.12-slim
+
+WORKDIR /app
+
+# Copy requirements first to leverage cache
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt gunicorn
+
+# Copy application code
+COPY . .
+
+# Set environment to signal production (optional, but good practice)
+ENV PYTHONUNBUFFERED=1
+
+# Expose the expected port
+EXPOSE 8080
+
+# Use Gunicorn as the production WSGI server, wrapping Uvicorn workers
+# Cloud Run expects the container to listen on $PORT (default 8080)
+CMD exec gunicorn --bind :$PORT --workers 1 --worker-class uvicorn.workers.UvicornWorker --threads 8 --timeout 0 main:app

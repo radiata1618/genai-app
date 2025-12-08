@@ -29,7 +29,7 @@ export default function Home() {
     setResponse("");
 
     try {
-      const res = await fetch("http://localhost:8000/api/rag", {
+      const res = await fetch("/api/rag", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
@@ -53,7 +53,7 @@ export default function Home() {
   const handleRefresh = async () => {
     if (!confirm("GCSのデータを元にインデックスを再構築しますか？")) return;
     try {
-      const res = await fetch("http://localhost:8000/api/management/refresh_index", { method: "POST" });
+      const res = await fetch("/api/management/refresh_index", { method: "POST" });
       if (res.ok) {
         alert("再構築タスクを開始しました。(バックグラウンドで実行中)");
       } else {
