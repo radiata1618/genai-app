@@ -116,22 +116,27 @@ def reorder_backlog_items(request: BacklogReorderRequest, db: firestore.Client =
 
 @router.post("/backlog", response_model=BacklogItemResponse)
 def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
-    doc_ref = db.collection("backlog_items").document()
-    data = item.dict()
-    
-    # Fix: Convert date objects to datetime for Firestore
-    if data.get('deadline'):
-        data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
-    if data.get('scheduled_date'):
-        data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
+    try:
+        doc_ref = db.collection("backlog_items").document()
+        data = item.dict()
+        
+        # Fix: Convert date objects to datetime for Firestore
+        if data.get('deadline'):
+            data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
+        if data.get('scheduled_date'):
+            data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
 
-    data.update({
-        "id": doc_ref.id,
-        "created_at": datetime.now(JST),
-        "is_archived": False
-    })
-    doc_ref.set(data)
-    return data
+        data.update({
+            "id": doc_ref.id,
+            "created_at": datetime.now(JST),
+            "is_archived": False
+        })
+        doc_ref.set(data)
+        return data
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Internal Server Error: {str(e)}")
 
 @router.get("/backlog", response_model=List[BacklogItemResponse])
 def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
