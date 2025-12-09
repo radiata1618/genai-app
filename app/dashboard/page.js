@@ -29,6 +29,7 @@ export default function DashboardPage() {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
     const [showCompleted, setShowCompleted] = useState(false);
+    const [undoHistory, setUndoHistory] = useState([]);
 
     // Add Task Modal State
     const [isModalOpen, setIsModalOpen] = useState(false);
@@ -65,11 +66,36 @@ export default function DashboardPage() {
 
     const handleToggle = async (id, currentStatus) => {
         const isDone = currentStatus !== 'DONE';
+
+        // Add to history
+        setUndoHistory(prev => {
+            const newHistory = [...prev, { id, status: currentStatus }];
+            if (newHistory.length > 3) newHistory.shift();
+            return newHistory;
+        });
+
         setTasks(tasks.map(t => t.id === id ? { ...t, status: isDone ? 'DONE' : 'TODO' } : t));
         try {
             await api.toggleComplete(id, isDone);
         } catch (e) {
             console.error("Failed to toggle", e);
+        }
+    };
+
+    const handleUndo = async () => {
+        if (undoHistory.length === 0) return;
+
+        const lastAction = undoHistory[undoHistory.length - 1];
+        setUndoHistory(prev => prev.slice(0, -1));
+
+        // Optimistic update to previous status
+        setTasks(tasks.map(t => t.id === lastAction.id ? { ...t, status: lastAction.status } : t));
+
+        try {
+            const isDone = lastAction.status === 'DONE';
+            await api.toggleComplete(lastAction.id, isDone);
+        } catch (e) {
+            console.error("Failed to undo", e);
         }
     };
 
@@ -176,6 +202,17 @@ export default function DashboardPage() {
                                 className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-md hover:bg-slate-800 transition-all flex items-center gap-1"
                             >
                                 <span>+</span> Add Task
+                            </button>
+                            <button
+                                onClick={handleUndo}
+                                disabled={undoHistory.length === 0}
+                                className={`text-[10px] font-bold px-3 py-1 rounded-full shadow-sm transition-all flex items-center gap-1
+                                    ${undoHistory.length > 0
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                                        : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                    }`}
+                            >
+                                <span>↩️</span> Undo
                             </button>
                             <button
                                 onClick={() => setShowCompleted(!showCompleted)}
