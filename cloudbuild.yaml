@@ -43,10 +43,10 @@ steps:
     args:
       - '-c'
       - |
-        # 1. Get Service URLs
-        echo "Fetching Service URLs..."
-        BACKEND_URL=$$(gcloud run services describe genai-app-backend --region us-central1 --format='value(status.url)')
-        FRONTEND_URL=$$(gcloud run services describe genai-app-frontend --region us-central1 --format='value(status.url)')
+        # 1. Hardcoded Service URLs (Reliability Fix)
+        echo "Using Hardcoded Service URLs..."
+        BACKEND_URL="https://genai-app-backend-yg7yzstuza-uc.a.run.app"
+        FRONTEND_URL="https://genai-app-frontend-yg7yzstuza-uc.a.run.app"
         
         echo "Backend URL: $$BACKEND_URL"
         echo "Frontend URL: $$FRONTEND_URL"
