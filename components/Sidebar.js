@@ -6,13 +6,6 @@ import { usePathname } from "next/navigation";
 // Navigation Items Configuration
 const navItems = [
     {
-        category: "AI PoC",
-        items: [
-            { name: "Multimodalテスト", icon: "📝", href: "/" },
-            { name: "ファイル管理", icon: "📂", href: "/files" },
-        ],
-    },
-    {
         category: "タスク管理",
         items: [
             { name: "Today's Focus", icon: "☀️", href: "/dashboard" },
@@ -26,6 +19,13 @@ const navItems = [
         items: [
             { name: "Admin Dashboard", icon: "🛠️", href: "/car-quiz/admin" },
             { name: "Play Quiz", icon: "🚗", href: "/car-quiz" },
+        ],
+    },
+    {
+        category: "AI PoC",
+        items: [
+            { name: "Multimodalテスト", icon: "📝", href: "/" },
+            { name: "ファイル管理", icon: "📂", href: "/files" },
         ],
     },
 ];
