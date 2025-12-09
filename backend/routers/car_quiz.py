@@ -84,9 +84,9 @@ async def generate_car_list(request: GenerationRequest):
                     top_p=0.95,
                 ),
             )
-        except Exception as e:
-            # Fallback to 1.5 Pro if 3.0 Preview fails (e.g. 404 Not Found or 400 Bad Request)
-            print(f"Gemini 3.0 failed, falling back to 1.5 Pro: {e}")
+        except Exception:
+            # Fallback to 1.5 Pro silently if 3.0 fails
+            # print(f"Gemini 3.0 failed: {e}") # Removed to avoid UnicodeEncodeError
             response = client.models.generate_content(
                 model="gemini-1.5-pro",
                 contents=full_prompt,
@@ -101,7 +101,7 @@ async def generate_car_list(request: GenerationRequest):
         # Parse JSON from response
         try:
             text = response.text
-            # Basic cleanup if markdown backticks are present (though response_mime_type should help)
+            # Basic cleanup if markdown backticks are present
             if "```json" in text:
                 text = text.split("```json")[1].split("```")[0]
             elif "```" in text:
@@ -109,15 +109,14 @@ async def generate_car_list(request: GenerationRequest):
             
             car_list = json.loads(text)
             return car_list
-        except Exception as e:
-            print(f"Failed to parse JSON: {e}")
-            # Fallback parsing attempt or raw text log
-            print(f"Raw response: {text}")
+        except Exception as parse_error:
+            # print(f"Failed to parse JSON: {parse_error}")
             raise HTTPException(status_code=500, detail="Failed to parse AI response.")
 
     except Exception as e:
-        print(f"GenAI Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        # print(f"GenAI Error: {e}")
+        # Return a safe error message
+        raise HTTPException(status_code=500, detail=f"AI Generation Failed: {str(e)[:100]}")
 
 @router.post("/car-quiz/collect-images")
 async def collect_images(request: ImageCollectionRequest):
