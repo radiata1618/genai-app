@@ -42,13 +42,15 @@ def get_custom_search_service():
 
 @router.post("/car-quiz/generate-list")
 async def generate_car_list(request: GenerationRequest):
-    """Generates a list of cars using Google GenAI SDK (Gemini 3.0) based on the prompt."""
+    """Generates a list of cars using Google GenAI SDK (Gemini 1.5 Pro) based on the prompt."""
     try:
-        # Initialize GenAI Client
-        # Assumes GOOGLE_CLOUD_PROJECT, GOOGLE_CLOUD_LOCATION, GOOGLE_GENAI_USE_VERTEXAI are handled by environment or default
-        # If needed explicitly:
-        # client = genai.Client(vertexai=True, project=..., location=...)
-        client = genai.Client(vertexai=True, location='us-central1') 
+        project_id = os.getenv("PROJECT_ID")
+        location = os.getenv("LOCATION_FOR_CAR_QUIZZ") or os.getenv("LOCATION") or "us-central1"
+        
+        if not project_id:
+            print("Warning: PROJECT_ID not found in env, using default or implicit.")
+
+        client = genai.Client(vertexai=True, project=project_id, location=location) 
 
         full_prompt = f"""
         Rank the following request and generate a list of cars in JSON format.
@@ -71,17 +73,30 @@ async def generate_car_list(request: GenerationRequest):
         Only return the JSON array.
         """
         
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview",
-            contents=full_prompt,
-            config=types.GenerateContentConfig(
-                response_mime_type="application/json", # Direct JSON output request
-                max_output_tokens=8192,
-                temperature=0.5,
-                top_p=0.95,
-                 # thinking_config=types.ThinkingConfig(thinking_level="low") # Verify if needed/supported for 3.0 preview yet
-            ),
-        )
+        try:
+            response = client.models.generate_content(
+                model="gemini-3-pro-preview",
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=8192,
+                    temperature=0.5,
+                    top_p=0.95,
+                ),
+            )
+        except Exception as e:
+            # Fallback to 1.5 Pro if 3.0 Preview fails (e.g. 404 Not Found or 400 Bad Request)
+            print(f"Gemini 3.0 failed, falling back to 1.5 Pro: {e}")
+            response = client.models.generate_content(
+                model="gemini-1.5-pro",
+                contents=full_prompt,
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json",
+                    max_output_tokens=8192,
+                    temperature=0.5,
+                    top_p=0.95,
+                ),
+            )
         
         # Parse JSON from response
         try:

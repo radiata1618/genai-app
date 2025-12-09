@@ -1,0 +1,15 @@
+ERROR: (gcloud) Invalid choice: 'curl'.
+Maybe you meant:
+  gcloud ai custom-jobs
+  gcloud ai endpoints
+  gcloud ai hp-tuning-jobs
+  gcloud ai index-endpoints
+  gcloud ai indexes
+  gcloud ai model-monitoring-jobs
+  gcloud ai models
+  gcloud ai operations
+  gcloud ai persistent-resources
+  gcloud ai tensorboards
+
+To search the help text of gcloud commands, run:
+  gcloud help -- SEARCH_TERMS

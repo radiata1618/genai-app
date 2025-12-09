@@ -34,7 +34,7 @@ export default function Sidebar() {
     const pathname = usePathname();
 
     return (
-        <aside className="w-64 bg-[#0e7490] text-white flex flex-col h-screen fixed left-0 top-0 shadow-xl z-50 font-sans">
+        <aside className="w-52 bg-[#0e7490] text-white flex flex-col h-screen fixed left-0 top-0 shadow-xl z-50 font-sans">
             {/* Logo Area */}
             <div className="h-16 flex items-center px-6 bg-[#0891b2] shadow-sm">
                 <h1 className="text-xl font-bold tracking-widest uppercase">Genai-app</h1>
