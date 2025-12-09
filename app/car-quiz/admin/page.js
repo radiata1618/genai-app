@@ -25,8 +25,8 @@ export default function AdminPage() {
                 throw new Error(errData.detail || 'Failed to generate list');
             }
             const data = await res.json();
-            setGeneratedCars(data);
-            setMessage(`Successfully generated ${data.length} cars.`);
+            setGeneratedCars(data.cars);
+            setMessage(`Successfully generated ${data.cars.length} cars by ${data.model_name}.`);
         } catch (e) {
             console.error(e);
             setMessage(`Error: ${e.message}`);

@@ -8,6 +8,7 @@ from google.genai import types
 
 from googleapiclient.discovery import build
 from database import get_firestore_client, get_storage_client
+from google.cloud import firestore
 import uuid
 import json
 import asyncio
@@ -73,9 +74,10 @@ async def generate_car_list(request: GenerationRequest):
         Only return the JSON array.
         """
         
+        model_name = "gemini-3-pro-preview"
         try:
             response = client.models.generate_content(
-                model="gemini-3-pro-preview",
+                model=model_name,
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -85,10 +87,10 @@ async def generate_car_list(request: GenerationRequest):
                 ),
             )
         except Exception:
-            # Fallback to 2.0 Flash silently if 3.0 fails (1.5 Pro also failed, but 2.0 passed in RAG)
-            # print(f"Gemini 3.0 failed: {e}") # Removed to avoid UnicodeEncodeError
+            # Fallback to 2.0 Flash silently if 3.0 fails
+            model_name = "gemini-2.0-flash"
             response = client.models.generate_content(
-                model="gemini-2.0-flash",
+                model=model_name,
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",
@@ -108,7 +110,30 @@ async def generate_car_list(request: GenerationRequest):
                 text = text.split("```")[1].split("```")[0]
             
             car_list = json.loads(text)
-            return car_list
+            
+            # Handle case where AI wraps response in a dict (e.g. {"cars": [...]})
+            if isinstance(car_list, dict):
+                if "cars" in car_list:
+                    car_list = car_list["cars"]
+                elif "data" in car_list:
+                    car_list = car_list["data"]
+                else:
+                    # Try to find the first list value
+                    found_list = False
+                    for key, value in car_list.items():
+                        if isinstance(value, list):
+                            car_list = value
+                            found_list = True
+                            break
+                    if not found_list:
+                        print(f"Warning: AI returned a dict without obvious list: {car_list.keys()}")
+            
+            if not isinstance(car_list, list):
+                # Fallback or error
+                 print(f"Warning: AI response is not a list: {type(car_list)}")
+                 car_list = []
+
+            return {"cars": car_list, "model_name": model_name}
         except Exception as parse_error:
             # print(f"Failed to parse JSON: {parse_error}")
             raise HTTPException(status_code=500, detail="Failed to parse AI response.")
