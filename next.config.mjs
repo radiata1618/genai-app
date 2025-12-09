@@ -1,6 +1,13 @@
 /** @type {import('next').NextConfig} */
 const isMobile = process.env.IS_MOBILE === 'true';
 
+console.log("----------------------------------------------------------------");
+console.log("  NEXT.CONFIG.MJS LOADED");
+console.log("  NODE_ENV:", process.env.NODE_ENV);
+console.log("  IS_CLOUD_RUN:", process.env.IS_CLOUD_RUN);
+console.log("  BACKEND_URL:", process.env.BACKEND_URL);
+console.log("----------------------------------------------------------------");
+
 const nextConfig = {
     output: isMobile ? 'export' : 'standalone',
     images: {
