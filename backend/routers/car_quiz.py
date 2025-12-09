@@ -12,6 +12,7 @@ from google.cloud import firestore
 import uuid
 import json
 import asyncio
+import concurrent.futures
 
 router = APIRouter()
 
@@ -147,13 +148,12 @@ async def generate_car_list(request: GenerationRequest):
 async def collect_images(request: ImageCollectionRequest):
     """Collects images for the given list of cars using Google Custom Search."""
     service, cx = get_custom_search_service()
-    updated_cars = []
-
-    # Note: Sequential processing for now to avoid hitting rate limits too hard
-    # In production, might want a task queue or controlled concurrency
-    for car in request.cars:
+    
+    # Helper function for a single search
+    def search_for_car(car):
         query = f"{car.manufacturer} {car.name} {car.model_code} 外観"
         try:
+            # print(f"Searching for: {query}")
             res = service.cse().list(
                 q=query,
                 cx=cx,
@@ -168,13 +168,30 @@ async def collect_images(request: ImageCollectionRequest):
                 for item in res["items"]:
                     found_images.append(item["link"])
             
-            # Update car with found images (temporary URLs for review)
             car.image_urls = found_images
-            updated_cars.append(car)
-            
+            return car
         except Exception as e:
             print(f"Search failed for {car.name}: {e}")
-            updated_cars.append(car) # Return without images if failed
+            return car # Return without images if failed
+
+    # Use ThreadPoolExecutor to run searches in parallel
+    loop = asyncio.get_running_loop()
+    
+    # Run all searches concurrently
+    # Note: Google Custom Search API has QPS limits. 
+    # If hitting limits, we might need to batch e.g. 5 at a time.
+    # For ~20 cars, all at once might be okay if QPS limit is high enough, 
+    # otherwise we should semaphore it.
+    # Free tier is 100 queries/day, but paid is higher. 
+    # Assuming standard project limits.
+    
+    tasks = []
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [
+            loop.run_in_executor(executor, search_for_car, car)
+            for car in request.cars
+        ]
+        updated_cars = await asyncio.gather(*futures)
 
     return updated_cars
 
