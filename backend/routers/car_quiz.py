@@ -85,10 +85,10 @@ async def generate_car_list(request: GenerationRequest):
                 ),
             )
         except Exception:
-            # Fallback to 1.5 Pro silently if 3.0 fails
+            # Fallback to 2.0 Flash silently if 3.0 fails (1.5 Pro also failed, but 2.0 passed in RAG)
             # print(f"Gemini 3.0 failed: {e}") # Removed to avoid UnicodeEncodeError
             response = client.models.generate_content(
-                model="gemini-1.5-pro",
+                model="gemini-2.0-flash",
                 contents=full_prompt,
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json",

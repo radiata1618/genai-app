@@ -14,7 +14,9 @@ const nextConfig = {
                 source: '/api/:path((?!auth).*)',
                 destination: process.env.BACKEND_URL
                     ? `${process.env.BACKEND_URL}/api/:path*`
-                    : 'http://localhost:8000/api/:path*',
+                    : (process.env.K_SERVICE
+                        ? 'https://genai-app-backend-yg7yzstuza-uc.a.run.app/api/:path*'
+                        : 'http://localhost:8000/api/:path*'),
             },
         ];
     },
