@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import { formatDate } from '../utils/date';
 
 const CATEGORIES = {
     'Research': { label: '情報収集', icon: '🔍' },
@@ -58,7 +59,7 @@ export default function DashboardPage() {
     };
 
     useEffect(() => {
-        setTodayStr(new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'long', day: 'numeric' }));
+        setTodayStr(formatDate(new Date()));
         init();
     }, []);
 
@@ -158,14 +159,13 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 p-2 font-sans no-scrollbar">
-            <div className="max-w-4xl mx-auto flex gap-6 items-start h-[calc(100vh-1rem)]">
-
+        <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
+            <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
-                <div className="flex-1 flex flex-col h-full space-y-2">
+                <div className="flex-1 flex flex-col h-full p-4 gap-2">
 
                     {/* Header */}
-                    <div className="flex-shrink-0 flex justify-between items-end">
+                    <div className="flex-none flex justify-between items-end">
                         <div onClick={() => setOpenMenuId(null)} className="flex-1">
                             <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
                             <p className="text-xs text-slate-500 font-medium">{todayStr}</p>
@@ -213,8 +213,8 @@ export default function DashboardPage() {
                                         onDragStart={(e) => onDragStart(e, t)}
                                         onDragOver={(e) => onDragOver(e, t)}
                                         onDragEnd={onDragEnd}
-                                        onClick={() => handleToggle(t.id, t.status)}
-                                        className={`group cursor-pointer p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
+
+                                        className={`group cursor-default p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
                                              ${t.status === 'DONE' || t.status === 'SKIPPED'
                                                 ? 'bg-slate-50 border-slate-50 opacity-50'
                                                 : 'bg-white border-transparent hover:border-indigo-100 hover:bg-slate-50 hover:shadow-sm'
@@ -240,10 +240,15 @@ export default function DashboardPage() {
                                             </div>
                                         </div>
 
-                                        <div className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center transition-colors
+                                        <div
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                handleToggle(t.id, t.status);
+                                            }}
+                                            className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center transition-colors cursor-pointer hover:ring-2 hover:ring-indigo-100
                                            ${t.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' :
-                                                t.status === 'SKIPPED' ? 'bg-slate-200 border-slate-200' :
-                                                    'border-slate-300 bg-white group-hover:border-indigo-400'}
+                                                    t.status === 'SKIPPED' ? 'bg-slate-200 border-slate-200' :
+                                                        'border-slate-300 bg-white group-hover:border-indigo-400'}
                                        `}>
                                             {t.status === 'DONE' && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
                                             {t.status === 'SKIPPED' && <span className="text-[8px]">⏭️</span>}
@@ -291,7 +296,7 @@ export default function DashboardPage() {
 
                 {/* Sidebar - Mindset */}
                 {routines.length > 0 && (
-                    <div className="w-64 flex-shrink-0 space-y-2 hidden md:block">
+                    <div className="w-64 flex-none space-y-2 hidden md:block border-l border-slate-100 bg-white/50 p-4 overflow-y-auto">
                         <h2 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest pl-1">Mindset</h2>
                         <div className="space-y-2">
                             {routines.map(r => (

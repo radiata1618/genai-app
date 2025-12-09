@@ -36,6 +36,7 @@ class BacklogItemCreate(BaseModel):
     priority: str = "Medium" # High, Medium, Low
     deadline: Optional[date] = None
     scheduled_date: Optional[date] = None
+    status: str = "STOCK" # STOCK, PENDING
     order: int = 0
 
 class BacklogItemResponse(BacklogItemCreate):
@@ -143,6 +144,7 @@ def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
         if 'priority' not in d: d['priority'] = 'Medium'
         if 'order' not in d: d['order'] = 0
         if 'category' not in d: d['category'] = 'Research'
+        if 'status' not in d: d['status'] = 'STOCK'
         
         items.append(d)
     return items
@@ -294,6 +296,52 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             batch.set(doc_ref, new_task)
             created_count += 1
             
+    
+    # --- CARRY OVER LOGIC ---
+    # Find past incomplete backlog tasks
+    past_backlog_docs = db.collection("daily_tasks")\
+        .where("source_type", "==", SourceType.BACKLOG.value)\
+        .where("status", "==", TaskStatus.TODO.value)\
+        .stream()
+
+    # Determine max order to append
+    # Note: We already generated routines, let's just append after 1000 or find actual max
+    # Ideally simpler: default routines = 1000, new items = max+1.
+    # We will just use 2000+ for carried over items to be safe or just find current Max
+    
+    current_today_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
+    max_order = 0
+    for d in current_today_docs:
+         max_order = max(max_order, d.to_dict().get('order', 0))
+
+    for doc in past_backlog_docs:
+        t = doc.to_dict()
+        old_date_str = t['target_date']
+        
+        # Only carry over if from the past
+        if old_date_str < target_date_str:
+            # Mark old as CARRY_OVER
+            batch.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
+            
+            # Create new for today
+            new_id = f"{t['source_id']}_{target_date_str}"
+            new_ref = db.collection("daily_tasks").document(new_id)
+            
+            if not new_ref.get().exists:
+                max_order += 1
+                new_task = {
+                    "id": new_id,
+                    "source_id": t['source_id'],
+                    "source_type": SourceType.BACKLOG.value,
+                    "target_date": target_date_str,
+                    "status": TaskStatus.TODO.value,
+                    "created_at": datetime.now(JST),
+                    "title": t.get('title', 'Unknown'), # Copy title to avoid lookup
+                    "order": max_order
+                }
+                batch.set(new_ref, new_task)
+                created_count += 1
+
     batch.commit()
     return {"message": f"Generated {created_count} tasks", "date": target_date_str}
 

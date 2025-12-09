@@ -151,11 +151,11 @@ export default function ActionsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 p-2 font-sans text-slate-900">
-            <div className="max-w-5xl mx-auto">
+        <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden max-w-5xl mx-auto w-full p-4">
 
                 {/* Header */}
-                <div className="flex justify-between items-center mb-3">
+                <div className="flex-none flex justify-between items-center mb-3">
                     <div>
                         <h1 className="text-xl font-black text-slate-800 tracking-tight">Actions & Habits</h1>
                         <p className="text-xs text-slate-500">Manage your daily system</p>
@@ -171,81 +171,83 @@ export default function ActionsPage() {
                 </div>
 
                 {/* Compact List */}
-                <div className="bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden">
+                <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col">
                     {loading ? (
                         <div className="p-8 text-center text-slate-400 text-sm">Loading actions...</div>
                     ) : routines.length === 0 ? (
-                        <div className="p-12 text-center text-slate-400">
+                        <div className="p-12 text-center text-slate-400 flex-1 flex flex-col items-center justify-center">
                             <div className="text-4xl mb-2">🌱</div>
                             <p className="font-medium">No actions yet.</p>
                             <button onClick={openCreateModal} className="text-indigo-600 font-bold text-sm mt-2 hover:underline">Create your first one</button>
                         </div>
                     ) : (
-                        <div className="divide-y divide-slate-100">
-                            {routines.map((r, index) => (
-                                <div
-                                    key={r.id}
-                                    draggable
-                                    onDragStart={(e) => onDragStart(e, index)}
-                                    onDragOver={(e) => onDragOver(e, index)}
-                                    onDragEnd={onDragEnd}
-                                    className="group flex items-center justify-between p-1.5 hover:bg-slate-50 transition-colors cursor-move"
-                                    style={{ opacity: draggedItem === r ? 0.5 : 1 }}
-                                >
-                                    <div className="flex items-center gap-2">
-                                        {/* Drag Handle - Improved Visibility */}
-                                        <div className="text-slate-300 cursor-grab active:cursor-grabbing p-1 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-6 w-4" title="Drag to reorder">
-                                            {/* 6 dots icon for robust drag handle look */}
-                                            <div className="flex gap-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                        <div className="flex-1 overflow-y-auto">
+                            <div className="divide-y divide-slate-100">
+                                {routines.map((r, index) => (
+                                    <div
+                                        key={r.id}
+                                        draggable
+                                        onDragStart={(e) => onDragStart(e, index)}
+                                        onDragOver={(e) => onDragOver(e, index)}
+                                        onDragEnd={onDragEnd}
+                                        className="group flex items-center justify-between p-1.5 hover:bg-slate-50 transition-colors cursor-move"
+                                        style={{ opacity: draggedItem === r ? 0.5 : 1 }}
+                                    >
+                                        <div className="flex items-center gap-2">
+                                            {/* Drag Handle - Improved Visibility */}
+                                            <div className="text-slate-300 cursor-grab active:cursor-grabbing p-1 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-6 w-4" title="Drag to reorder">
+                                                {/* 6 dots icon for robust drag handle look */}
+                                                <div className="flex gap-0.5">
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                </div>
+                                                <div className="flex gap-0.5 mt-0.5">
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                </div>
+                                                <div className="flex gap-0.5 mt-0.5">
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                    <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                </div>
                                             </div>
-                                            <div className="flex gap-0.5 mt-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+
+                                            <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-lg shadow-inner select-none">
+                                                {r.icon}
                                             </div>
-                                            <div className="flex gap-0.5 mt-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                            <div>
+                                                <h3 className="font-bold text-slate-700 text-sm select-none leading-none">{r.title}</h3>
+                                                <div className="flex items-center gap-2 text-[9px] text-slate-400 font-mono mt-0.5 select-none">
+                                                    <span className={`px-1 py-px rounded ${r.frequency?.type === 'DAILY' ? 'bg-green-100 text-green-700' : 'bg-indigo-50 text-indigo-600'}`}>
+                                                        {r.frequency?.type || 'DAILY'}
+                                                    </span>
+                                                    {r.frequency?.type === 'WEEKLY' && <span>{r.frequency.weekdays.map(d => WEEKDAYS[d]).join(', ')}</span>}
+
+                                                    {r.frequency?.type === 'MONTHLY' && <span>Days: {r.frequency.month_days.join(', ')}</span>}
+                                                    <span className="text-slate-300">|</span>
+                                                    <span>{r.scheduled_time || '05:00'}</span>
+                                                </div>
                                             </div>
                                         </div>
 
-                                        <div className="w-8 h-8 rounded-md bg-slate-100 flex items-center justify-center text-lg shadow-inner select-none">
-                                            {r.icon}
-                                        </div>
-                                        <div>
-                                            <h3 className="font-bold text-slate-700 text-sm select-none leading-none">{r.title}</h3>
-                                            <div className="flex items-center gap-2 text-[9px] text-slate-400 font-mono mt-0.5 select-none">
-                                                <span className={`px-1 py-px rounded ${r.frequency?.type === 'DAILY' ? 'bg-green-100 text-green-700' : 'bg-indigo-50 text-indigo-600'}`}>
-                                                    {r.frequency?.type || 'DAILY'}
-                                                </span>
-                                                {r.frequency?.type === 'WEEKLY' && <span>{r.frequency.weekdays.map(d => WEEKDAYS[d]).join(', ')}</span>}
-
-                                                {r.frequency?.type === 'MONTHLY' && <span>Days: {r.frequency.month_days.join(', ')}</span>}
-                                                <span className="text-slate-300">|</span>
-                                                <span>{r.scheduled_time || '05:00'}</span>
-                                            </div>
+                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={() => openEditModal(r)}
+                                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                                title="Edit"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                            </button>
+                                            <button
+                                                onClick={() => handleDelete(r.id)}
+                                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                title="Delete"
+                                            >
+                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                            </button>
                                         </div>
                                     </div>
-
-                                    <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
-                                        <button
-                                            onClick={() => openEditModal(r)}
-                                            className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                                            title="Edit"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                        </button>
-                                        <button
-                                            onClick={() => handleDelete(r.id)}
-                                            className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                            title="Delete"
-                                        >
-                                            <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                        </button>
-                                    </div>
-                                </div>
-                            ))}
+                                ))}
+                            </div>
                         </div>
                     )}
                 </div>

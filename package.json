@@ -6,6 +6,7 @@
     "dev": "next dev --webpack",
     "build": "next build --webpack",
     "start": "next start",
+    "build:mobile": "cross-env IS_MOBILE=true next build --webpack",
     "lint": "eslint"
   },
   "dependencies": {
@@ -17,7 +18,9 @@
     "next": "16.0.7",
     "next-auth": "^4.24.5",
     "react": "19.2.0",
-    "react-dom": "19.2.0"
+    "react-dom": "19.2.0",
+    "react-datepicker": "^7.5.0",
+    "date-fns": "^4.1.0"
   },
   "devDependencies": {
     "@tailwindcss/postcss": "^4",

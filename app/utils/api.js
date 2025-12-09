@@ -1,4 +1,5 @@
-const API_BASE = '/api/tasks';
+const BASE_URL = process.env.NEXT_PUBLIC_API_URL || '';
+const API_BASE = `${BASE_URL}/api/tasks`;
 
 export const api = {
     // Backlog
@@ -15,7 +16,14 @@ export const api = {
             headers: { 'Content-Type': 'application/json' },
             body: JSON.stringify(taskData),
         });
-        if (!res.ok) throw new Error('Failed to add item');
+        if (!res.ok) {
+            let msg = `Error ${res.status}: ${res.statusText}`;
+            try {
+                const err = await res.json();
+                if (err.detail) msg += ` - ${err.detail}`;
+            } catch (e) { /* ignore */ }
+            throw new Error(msg);
+        }
         return res.json();
     },
 

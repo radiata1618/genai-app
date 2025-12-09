@@ -105,10 +105,10 @@ export default function MindsetsPage() {
     };
 
     return (
-        <div className="min-h-screen bg-slate-50 p-4 font-sans text-slate-900">
-            <div className="max-w-4xl mx-auto space-y-4">
+        <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full p-4 space-y-4">
 
-                <div className="flex justify-between items-center">
+                <div className="flex justify-between items-center bg-white/50 backdrop-blur p-2 rounded-lg border border-slate-100/50">
                     <div>
                         <h1 className="text-xl font-black text-slate-800">Mindsets & Rules</h1>
                         <p className="text-xs text-slate-500">Principles to keep in mind every day.</p>
@@ -119,7 +119,7 @@ export default function MindsetsPage() {
                 </div>
 
                 {/* List */}
-                <div className="space-y-1.5">
+                <div className="flex-1 overflow-y-auto space-y-1.5 pb-20">
                     {loading ? (
                         <div className="text-center text-slate-400 py-8 text-sm">Loading mindsets...</div>
                     ) : mindsets.length === 0 ? (

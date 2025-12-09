@@ -1,7 +1,13 @@
 /** @type {import('next').NextConfig} */
+const isMobile = process.env.IS_MOBILE === 'true';
+
 const nextConfig = {
-    output: 'standalone',
+    output: isMobile ? 'export' : 'standalone',
+    images: {
+        unoptimized: isMobile,
+    },
     async rewrites() {
+        if (isMobile) return [];
         return [
             {
                 // Exclude /api/auth/* from being rewritten to the backend (handled by Next.js)
