@@ -166,6 +166,14 @@ export const api = {
         return res.json();
     },
 
+    highlightTask: async (id, isHighlighted) => {
+        const res = await fetch(`${API_BASE}/daily/${id}/highlight?highlighted=${isHighlighted}`, {
+            method: 'PATCH',
+        });
+        if (!res.ok) throw new Error('Failed to highlight task');
+        return res.json();
+    },
+
     // File Management
     getFiles: async () => {
         const res = await fetch(`${API_BASE.replace('/tasks', '')}/management/files`);
@@ -189,6 +197,14 @@ export const api = {
             method: 'DELETE',
         });
         if (!res.ok) throw new Error('Failed to delete file');
+        return res.json();
+    },
+
+    postponeTask: async (id, newDate) => {
+        const res = await fetch(`${API_BASE}/daily/${id}/postpone?new_date=${newDate}`, {
+            method: 'PATCH',
+        });
+        if (!res.ok) throw new Error('Failed to postpone task');
         return res.json();
     }
 };

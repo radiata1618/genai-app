@@ -3,6 +3,8 @@
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
 import { formatDate } from '../utils/date';
+import DatePicker from "react-datepicker";
+import "react-datepicker/dist/react-datepicker.css";
 
 const CATEGORIES = {
     'Research': { label: '情報収集', icon: '🔍' },
@@ -43,6 +45,11 @@ export default function DashboardPage() {
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
     const [todayStr, setTodayStr] = useState('');
+
+    // Postpone Modal State
+    const [postponeModalOpen, setPostponeModalOpen] = useState(false);
+    const [taskToPostpone, setTaskToPostpone] = useState(null);
+    const [postponeDate, setPostponeDate] = useState(new Date());
 
     const init = async () => {
         setLoading(true);
@@ -143,6 +150,48 @@ export default function DashboardPage() {
         } catch (e) {
             console.error("Failed to skip", e);
             // Revert on error? For now simple log
+        }
+    };
+
+    const openPostponeModal = (task, e) => {
+        e.stopPropagation();
+        setOpenMenuId(null);
+        setTaskToPostpone(task);
+        const tomorrow = new Date();
+        tomorrow.setDate(tomorrow.getDate() + 1);
+        setPostponeDate(tomorrow);
+        setPostponeModalOpen(true);
+    };
+
+    const handlePostpone = async () => {
+        if (!taskToPostpone) return;
+
+        const dateStr = postponeDate.toISOString().split('T')[0];
+
+        // Optimistic update: Remove from today
+        setTasks(tasks.filter(t => t.id !== taskToPostpone.id));
+        setPostponeModalOpen(false);
+
+        try {
+            await api.postponeTask(taskToPostpone.id, dateStr);
+        } catch (e) {
+            console.error("Failed to postpone", e);
+            alert("Failed to postpone task");
+            init();
+        }
+    };
+
+    const handleHighlight = async (id, currentStatus, e) => {
+        e.stopPropagation();
+        setOpenMenuId(null);
+        const newStatus = !currentStatus;
+        // Optimistic update
+        setTasks(tasks.map(t => t.id === id ? { ...t, is_highlighted: newStatus } : t));
+
+        try {
+            await api.highlightTask(id, newStatus);
+        } catch (e) {
+            console.error("Failed to highlight", e);
         }
     };
 
@@ -254,7 +303,9 @@ export default function DashboardPage() {
                                         className={`group cursor-default p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
                                              ${t.status === 'DONE' || t.status === 'SKIPPED'
                                                 ? 'bg-slate-50 border-slate-50 opacity-50'
-                                                : 'bg-white border-transparent hover:border-indigo-100 hover:bg-slate-50 hover:shadow-sm'
+                                                : t.is_highlighted
+                                                    ? 'bg-pink-50 border-pink-100 hover:border-pink-200 shadow-sm'
+                                                    : 'bg-white border-transparent hover:border-indigo-100 hover:bg-slate-50 hover:shadow-sm'
                                             }`}
                                         style={{ opacity: draggedItem?.id === t.id ? 0.3 : (t.status === 'DONE' || t.status === 'SKIPPED' ? 0.5 : 1) }}
                                     >
@@ -313,13 +364,27 @@ export default function DashboardPage() {
 
                                                 {/* Menu Dropdown */}
                                                 {openMenuId === t.id && (
-                                                    <div className="absolute right-0 top-6 w-24 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in duration-100">
+                                                    <div className="absolute right-0 top-6 w-32 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in duration-100">
                                                         <button
                                                             onClick={(e) => handleSkip(t.id, e)}
                                                             className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
                                                         >
                                                             <span>⏭️</span> Skip
                                                         </button>
+                                                        <button
+                                                            onClick={(e) => handleHighlight(t.id, t.is_highlighted, e)}
+                                                            className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                        >
+                                                            <span>{t.is_highlighted ? '⭐' : '🌟'}</span> {t.is_highlighted ? 'Unhighlight' : 'Highlight'}
+                                                        </button>
+                                                        {t.source_type === 'BACKLOG' && (
+                                                            <button
+                                                                onClick={(e) => openPostponeModal(t, e)}
+                                                                className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                            >
+                                                                <span>📅</span> Reschedule
+                                                            </button>
+                                                        )}
                                                     </div>
                                                 )}
                                             </div>
@@ -424,6 +489,44 @@ export default function DashboardPage() {
                                 </button>
                             </div>
                         </form>
+                    </div>
+                </div>
+            )}
+            {/* Postpone Modal */}
+            {postponeModalOpen && (
+                <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in duration-200">
+                    <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
+                        <h3 className="text-lg font-bold text-slate-800 mb-4">Postpone Task</h3>
+                        <p className="text-sm text-slate-600 mb-4">
+                            Select a new date for <strong>{taskToPostpone?.title}</strong>. It will be moved to Stock with this scheduled date.
+                        </p>
+
+                        <div className="mb-6">
+                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">New Date</label>
+                            <DatePicker
+                                selected={postponeDate}
+                                onChange={(date) => setPostponeDate(date)}
+                                dateFormat="yyyy/MM/dd"
+                                calendarStartDay={1}
+                                className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none text-slate-700 font-medium"
+                                inline
+                            />
+                        </div>
+
+                        <div className="flex justify-end gap-3">
+                            <button
+                                onClick={() => setPostponeModalOpen(false)}
+                                className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold text-sm"
+                            >
+                                Cancel
+                            </button>
+                            <button
+                                onClick={handlePostpone}
+                                className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-all"
+                            >
+                                Confirm
+                            </button>
+                        </div>
                     </div>
                 </div>
             )}

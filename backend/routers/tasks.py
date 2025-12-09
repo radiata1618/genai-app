@@ -80,7 +80,9 @@ class DailyTaskResponse(BaseModel):
     title: Optional[str] = None
     completed_at: Optional[datetime] = None
     order: int = 0
+    order: int = 0
     scheduled_time: Optional[str] = "05:00"
+    is_highlighted: bool = False
 
 class ReorderRequest(BaseModel):
     ids: List[str]
@@ -296,7 +298,10 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "created_at": datetime.now(JST),
                 "title": r.get('title', 'Untitled'),
                 "scheduled_time": r.get('scheduled_time', "05:00"),
-                "order": r.get('order', 1000) # Use routine's order
+                "title": r.get('title', 'Untitled'),
+                "scheduled_time": r.get('scheduled_time', "05:00"),
+                "order": r.get('order', 1000), # Use routine's order
+                "is_highlighted": False
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -342,7 +347,10 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                     "status": TaskStatus.TODO.value,
                     "created_at": datetime.now(JST),
                     "title": t.get('title', 'Unknown'), # Copy title to avoid lookup
-                    "order": max_order
+                    "created_at": datetime.now(JST),
+                    "title": t.get('title', 'Unknown'), # Copy title to avoid lookup
+                    "order": max_order,
+                    "is_highlighted": False
                 }
                 batch.set(new_ref, new_task)
                 created_count += 1
@@ -431,7 +439,10 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
-        "order": max_order + 1
+        "status": TaskStatus.TODO.value,
+        "created_at": datetime.now(JST),
+        "order": max_order + 1,
+        "is_highlighted": False
     }
     doc_ref.set(new_task)
     return new_task
@@ -461,4 +472,55 @@ def skip_daily_task(task_id: str, db: firestore.Client = Depends(get_db)):
         "status": TaskStatus.SKIPPED.value
     }
     doc_ref.update(updates)
+    doc_ref.update(updates)
     return {**snap.to_dict(), **updates}
+
+@router.patch("/daily/{task_id}/highlight")
+def highlight_daily_task(task_id: str, highlighted: bool = True, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("daily_tasks").document(task_id)
+    snap = doc_ref.get()
+    if not snap.exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    updates = {
+        "is_highlighted": highlighted
+    }
+    doc_ref.update(updates)
+    return {**snap.to_dict(), **updates}
+
+@router.patch("/daily/{task_id}/postpone")
+def postpone_daily_task(task_id: str, new_date: str, db: firestore.Client = Depends(get_db)):
+    # new_date format: "YYYY-MM-DD"
+    doc_ref = db.collection("daily_tasks").document(task_id)
+    daily_snap = doc_ref.get()
+    
+    if not daily_snap.exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    
+    daily_data = daily_snap.to_dict()
+    source_type = daily_data.get('source_type')
+    source_id = daily_data.get('source_id')
+
+    if source_type != SourceType.BACKLOG.value:
+        raise HTTPException(status_code=400, detail="Only Backlog items can be postponed")
+
+    # Update Backlog Item
+    backlog_ref = db.collection("backlog_items").document(source_id)
+    if not backlog_ref.get().exists:
+        # If backlog item is missing, we just delete the daily task? 
+        # Or error? Let's error for safety.
+        raise HTTPException(status_code=404, detail="Original Backlog Item not found")
+
+    try:
+        new_date_obj = datetime.strptime(new_date, "%Y-%m-%d").date()
+        new_date_dt = datetime.combine(new_date_obj, datetime.min.time())
+    except ValueError:
+        raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
+
+    # Update backlog scheduled_date
+    backlog_ref.update({"scheduled_date": new_date_dt})
+
+    # Delete from Daily Tasks
+    doc_ref.delete()
+
+    return {"status": "postponed", "new_date": new_date}
