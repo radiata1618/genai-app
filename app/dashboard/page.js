@@ -248,7 +248,7 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden">
+        <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden min-h-0">
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
                 <div className="flex-1 flex flex-col h-full p-4 gap-2">

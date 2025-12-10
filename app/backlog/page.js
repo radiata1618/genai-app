@@ -269,7 +269,7 @@ export default function BacklogPage() {
             </div>
 
             {/* Main Content Area */}
-            <div className="flex-1 flex flex-col min-w-0">
+            <div className="flex-1 flex flex-col min-w-0 min-h-0">
                 {/* Top Section */}
                 <div className="flex-none p-4 pb-2 z-10 space-y-2">
                     {/* Header */}
@@ -416,7 +416,7 @@ export default function BacklogPage() {
                 </div>
 
                 {/* Task List */}
-                <div className="flex-1 px-4 pb-2 z-0 overflow-hidden flex flex-col">
+                <div className="flex-1 px-4 pb-2 z-0 overflow-hidden flex flex-col min-h-0">
                     {loading ? (
                         <div className="text-center py-20 text-slate-400 animate-pulse text-sm">Loading stocks...</div>
                     ) : filteredTasks.length === 0 ? (
