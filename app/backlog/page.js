@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 
 import { formatDate } from '../utils/date';
 import CustomDatePicker from '../../components/CustomDatePicker';
+import MobileMenuButton from '../../components/MobileMenuButton';
 
 const CATEGORIES = {
     'Research': { label: '情報収集', icon: '🔍' },
@@ -275,9 +276,12 @@ export default function BacklogPage() {
                     {/* Header */}
                     <div className="flex flex-col md:flex-row md:items-end justify-between gap-2">
                         <div className="flex items-center gap-4">
-                            <div>
-                                <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Stock</h1>
-                                <p className="text-slate-500 text-xs">いつかやりたいことをストック</p>
+                            <div className="flex items-center gap-2">
+                                <MobileMenuButton />
+                                <div>
+                                    <h1 className="text-2xl font-extrabold text-slate-800 tracking-tight">Stock</h1>
+                                    <p className="text-slate-500 text-xs">いつかやりたいことをストック</p>
+                                </div>
                             </div>
                             <button
                                 onClick={() => setShowForm(!showForm)}

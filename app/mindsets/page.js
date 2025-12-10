@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import MobileMenuButton from '../../components/MobileMenuButton';
 
 export default function MindsetsPage() {
     const [mindsets, setMindsets] = useState([]);
@@ -109,9 +110,12 @@ export default function MindsetsPage() {
             <div className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full p-4 space-y-4">
 
                 <div className="flex justify-between items-center bg-white/50 backdrop-blur p-2 rounded-lg border border-slate-100/50">
-                    <div>
-                        <h1 className="text-xl font-black text-slate-800">Mindsets & Rules</h1>
-                        <p className="text-xs text-slate-500">Principles to keep in mind every day.</p>
+                    <div className="flex items-center gap-2">
+                        <MobileMenuButton />
+                        <div>
+                            <h1 className="text-xl font-black text-slate-800">Mindsets & Rules</h1>
+                            <p className="text-xs text-slate-500">Principles to keep in mind every day.</p>
+                        </div>
                     </div>
                     <button onClick={openCreateModal} className="bg-slate-900 text-white px-3 py-1.5 rounded-lg font-bold hover:bg-slate-800 transition-colors flex items-center gap-1.5 shadow-sm text-sm">
                         <span className="text-base leading-none">+</span> New Rule

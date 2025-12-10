@@ -178,9 +178,12 @@ export default function ActionsPage() {
 
                 {/* Header */}
                 <div className="flex-none flex justify-between items-center mb-3">
-                    <div>
-                        <h1 className="text-xl font-black text-slate-800 tracking-tight">Actions & Habits</h1>
-                        <p className="text-xs text-slate-500">Manage your daily system</p>
+                    <div className="flex items-center gap-2">
+                        <MobileMenuButton />
+                        <div>
+                            <h1 className="text-xl font-black text-slate-800 tracking-tight">Actions & Habits</h1>
+                            <p className="text-xs text-slate-500">Manage your daily system</p>
+                        </div>
                     </div>
                     <div className="flex gap-2">
                         <button onClick={handleRunFactory} className="bg-white border border-slate-200 text-slate-600 px-2 py-1 rounded-md text-[10px] font-bold hover:bg-slate-50 transition-colors">

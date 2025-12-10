@@ -5,6 +5,7 @@ import { api } from '../utils/api';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
+import MobileMenuButton from '../../components/MobileMenuButton';
 
 const CATEGORIES = {
     'Research': { label: '情報収集', icon: '🔍' },
@@ -255,9 +256,12 @@ export default function DashboardPage() {
 
                     {/* Header */}
                     <div className="flex-none flex flex-col md:flex-row md:items-end justify-between gap-2">
-                        <div onClick={() => setOpenMenuId(null)} className="flex-1">
-                            <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
-                            <p className="text-xs text-slate-500 font-medium">{todayStr}</p>
+                        <div onClick={() => setOpenMenuId(null)} className="flex-1 flex items-center gap-2">
+                            <MobileMenuButton />
+                            <div>
+                                <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
+                                <p className="text-xs text-slate-500 font-medium">{todayStr}</p>
+                            </div>
                         </div>
                         <div className="flex items-center gap-2 self-end md:self-auto">
                             <button

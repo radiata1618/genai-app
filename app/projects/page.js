@@ -5,6 +5,7 @@ import {
     getProjects, createProject, deleteProject, reorderProjects, updateProject,
     getProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, reorderProjectTasks, toggleProjectTask
 } from '../utils/projectsApi';
+import MobileMenuButton from '../../components/MobileMenuButton';
 
 
 
@@ -244,9 +245,12 @@ export default function ProjectsPage() {
                 {/* Header & Tabs */}
                 <div className="flex-none space-y-4">
                     <div className="flex justify-between items-center">
-                        <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
-                            <span>🚀</span> Projects
-                        </h1>
+                        <div className="flex items-center gap-2">
+                            <MobileMenuButton />
+                            <h1 className="text-2xl font-black text-slate-800 tracking-tight flex items-center gap-2">
+                                <span>🚀</span> Projects
+                            </h1>
+                        </div>
                         <div className="flex items-center gap-2">
                             <button
                                 onClick={() => setIsProjectModalOpen(true)}
