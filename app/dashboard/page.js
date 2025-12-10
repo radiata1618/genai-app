@@ -251,42 +251,42 @@ export default function DashboardPage() {
         <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden min-h-0">
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
-                <div className="flex-1 flex flex-col h-full p-4 gap-2">
+                <div className="flex-1 flex flex-col h-full p-2 md:p-4 gap-2 min-h-0">
 
                     {/* Header */}
-                    <div className="flex-none flex justify-between items-end">
+                    <div className="flex-none flex flex-col md:flex-row md:items-end justify-between gap-2">
                         <div onClick={() => setOpenMenuId(null)} className="flex-1">
                             <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
                             <p className="text-xs text-slate-500 font-medium">{todayStr}</p>
                         </div>
-                        <div className="flex items-center gap-2">
+                        <div className="flex items-center gap-2 self-end md:self-auto">
                             <button
                                 onClick={() => setIsModalOpen(true)}
-                                className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1 rounded-full shadow-md hover:bg-slate-800 transition-all flex items-center gap-1"
+                                className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md hover:bg-slate-800 transition-all flex items-center gap-1"
                             >
                                 <span>+</span> Add Task
                             </button>
                             <button
                                 onClick={handleUndo}
                                 disabled={undoHistory.length === 0}
-                                className={`text-[10px] font-bold px-3 py-1 rounded-full shadow-sm transition-all flex items-center gap-1
+                                className={`text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm transition-all flex items-center gap-1
                                     ${undoHistory.length > 0
                                         ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
                                         : 'bg-slate-100 text-slate-300 cursor-not-allowed'
                                     }`}
                             >
-                                <span>↩️</span> Undo
+                                <span>↩️</span> <span className="hidden sm:inline">Undo</span>
                             </button>
                             <button
                                 onClick={() => setShowCompleted(!showCompleted)}
-                                className={`text-[10px] font-bold px-2 py-1 rounded-full border transition-all flex items-center gap-1.5
+                                className={`text-[10px] font-bold px-2 py-1.5 rounded-full border transition-all flex items-center gap-1.5
                                     ${showCompleted
                                         ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
                                         : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
                                     }`}
                             >
                                 <span className={`w-1.5 h-1.5 rounded-full ${showCompleted ? 'bg-indigo-500' : 'bg-slate-300'}`} />
-                                {showCompleted ? 'Showing All' : 'Hiding Done'}
+                                {showCompleted ? 'All' : 'Active'}
                             </button>
                         </div>
                     </div>
