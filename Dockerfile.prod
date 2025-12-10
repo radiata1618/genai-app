@@ -22,6 +22,10 @@ COPY . .
 # Next.js build needs to know it's production.
 ENV NEXT_TELEMETRY_DISABLED 1
 
+# Accept build argument for Cloud Run detection
+ARG IS_CLOUD_RUN
+ENV IS_CLOUD_RUN=$IS_CLOUD_RUN
+
 RUN npm run build
 
 # Production image, copy all the files and run next
