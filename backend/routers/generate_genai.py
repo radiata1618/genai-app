@@ -21,12 +21,13 @@ class GenerateRequest(BaseModel):
 
 
 # ---- google-genai クライアント ----
-# 環境変数:
-#   GOOGLE_GENAI_USE_VERTEXAI=true
-#   GOOGLE_CLOUD_PROJECT=...
-#   GOOGLE_CLOUD_LOCATION=...
-# が設定されていれば、これだけで Vertex AI 経由のクライアントになります。:contentReference[oaicite:2]{index=2}
-client = genai.Client()
+# Explicitly initialize with Vertex AI settings
+# Ensure PROJECT_ID is set in Cloud Run environment variables
+client = genai.Client(
+    vertexai=True,
+    project=os.getenv("PROJECT_ID"),
+    location=os.getenv("LOCATION", "us-central1")
+)
 
 
 def build_contents(req: GenerateRequest) -> List[types.Part | str]:
