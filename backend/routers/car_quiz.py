@@ -46,10 +46,12 @@ def get_custom_search_service():
 async def generate_car_list(request: GenerationRequest):
     """Generates a list of cars using Google GenAI SDK (Gemini 1.5 Pro) based on the prompt."""
     try:
-        # Use the specific project identified for Gemini access
-        project_id = "gen-lang-client-0601865996" 
+        project_id = os.getenv("PROJECT_ID")
         location = os.getenv("LOCATION_FOR_CAR_QUIZZ") or os.getenv("LOCATION") or "us-central1"
         
+        if not project_id:
+            print("Warning: PROJECT_ID not found in env, using default or implicit.")
+
         client = genai.Client(vertexai=True, project=project_id, location=location) 
 
         full_prompt = f"""
