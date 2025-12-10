@@ -6,10 +6,7 @@ import {
     getProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, reorderProjectTasks, toggleProjectTask
 } from '../utils/projectsApi';
 
-import {
-    getProjects, createProject, deleteProject, reorderProjects, updateProject,
-    getProjectTasks, createProjectTask, updateProjectTask, deleteProjectTask, reorderProjectTasks, toggleProjectTask
-} from '../utils/projectsApi';
+
 
 export default function ProjectsPage() {
     const [projects, setProjects] = useState([]);

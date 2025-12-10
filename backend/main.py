@@ -38,16 +38,13 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
 
         # Retrieve API Key from header
         api_key = request.headers.get("X-INTERNAL-API-KEY")
-        internal_key = os.getenv("INTERNAL_API_KEY")
-
-        # If INTERNAL_API_KEY is set in env, enforce it
-        if internal_key:
-            if not api_key or api_key != internal_key:
-                # Reject request
-                return  JSONResponse(
-                    status_code=403,
-                    content={"detail": "Forbidden: Invalid API Key"}
-                )
+        # Verify API Key (Trim whitespace to prevent Secret Manager newline issues)
+        expected_key = os.getenv("INTERNAL_API_KEY", "").strip()
+        request_key = request.headers.get("X-INTERNAL-API-KEY", "").strip()
+        
+        if not expected_key or request_key != expected_key:
+            print(f"Auth Failed: Header={request_key}, Expected={expected_key[:4]}***") # Log masked key for debug
+            return JSONResponse(status_code=403, content={"detail": "Forbidden: Invalid API Key"})
         
         response = await call_next(request)
         return response

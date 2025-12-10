@@ -37,6 +37,7 @@ export default function BacklogPage() {
 
     const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(false);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
+    const [filterExcludeCompleted, setFilterExcludeCompleted] = useState(true);
     const [filterKeyword, setFilterKeyword] = useState('');
 
     // Form State
@@ -186,6 +187,21 @@ export default function BacklogPage() {
         }
     };
 
+    const handleToggleDone = async (task, e) => {
+        e.stopPropagation();
+        const newStatus = task.status === 'DONE' ? 'STOCK' : 'DONE';
+
+        // Optimistic update
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+
+        try {
+            await api.updateBacklogItem(task.id, { ...task, status: newStatus });
+        } catch (e) {
+            console.error('Failed to toggle done', e);
+            fetchTasks();
+        }
+    };
+
     // Drag & Drop
     const onDragStart = (e, index) => {
         setDraggedItem(tasks[index]);
@@ -225,6 +241,7 @@ export default function BacklogPage() {
 
     // Filter Logic
     const filteredTasks = tasks.filter(task => {
+        if (filterExcludeCompleted && task.status === 'DONE') return false;
         if (filterExcludeScheduled && task.scheduled_date) return false;
         if (filterExcludePending && task.status === 'PENDING') return false;
         if (filterPriority === 'High' && task.priority !== 'High') return false;
@@ -400,26 +417,28 @@ export default function BacklogPage() {
                         </div>
                     ) : (
                         <div className="flex-1 bg-white/60 backdrop-blur rounded-xl shadow-sm border border-white/50 flex flex-col overflow-hidden">
-                            {/* Table Header */}
-                            <div className="flex-none grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_1fr_100px_60px_90px_90px_150px] gap-2 p-2 bg-slate-50/80 border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-10">
-                                <div></div>
-                                <div>Task</div>
-                                <div className="hidden md:block">Category</div>
-                                <div className="hidden md:block text-center">Priority</div>
-                                <div className="hidden md:block">Deadline</div>
-                                <div className="hidden md:block">Scheduled</div>
-                                <div className="hidden md:block text-right">Actions</div>
-                            </div>
-
-                            {/* Rows */}
+                            {/* List Container - Header moved inside for alignment */}
                             <div className="flex-1 overflow-y-auto">
-                                <ul className="divide-y divide-slate-100">
+                                {/* Sticky Header */}
+                                <div className="sticky top-0 grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 py-2 pl-1 pr-2 bg-slate-50/95 backdrop-blur border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-20">
+                                    <div></div>
+                                    <div></div> {/* Checkbox col */}
+                                    <div>Task</div>
+                                    <div className="hidden md:block">Category</div>
+                                    <div className="hidden md:block text-center">Priority</div>
+                                    <div className="hidden md:block">Deadline</div>
+                                    <div className="hidden md:block">Scheduled</div>
+                                    <div className="hidden md:block text-right">Actions</div>
+                                </div>
+
+                                <ul className="divide-y divide-slate-100 p-2">
                                     {filteredTasks.map((task, index) => (
                                         <li
                                             key={task.id}
                                             onDragOver={(e) => onDragOver(e, index)}
-                                            className={`group grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_1fr_100px_60px_90px_90px_150px] gap-2 p-1.5 transition-colors items-center
+                                            className={`group grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 p-2 transition-colors items-center
                                                 ${task.is_highlighted ? 'bg-pink-50 border-pink-100 hover:bg-pink-100' : 'hover:bg-white'}
+                                                ${task.status === 'DONE' ? 'opacity-60 bg-slate-50' : ''}
                                             `}
                                         >
                                             <div
@@ -429,6 +448,16 @@ export default function BacklogPage() {
                                                 className="text-slate-300 cursor-grab active:cursor-grabbing text-xs p-1 hover:text-slate-500"
                                             >⋮⋮</div>
 
+                                            {/* DONE Checkbox */}
+                                            <div
+                                                onClick={(e) => handleToggleDone(task, e)}
+                                                className={`w-4 h-4 rounded border flex items-center justify-center transition-colors cursor-pointer hover:ring-2 hover:ring-indigo-100
+                                                    ${task.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300 bg-white group-hover:border-indigo-400'}
+                                                `}
+                                            >
+                                                {task.status === 'DONE' && <svg className="w-2.5 h-2.5 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                            </div>
+
                                             <div className="min-w-0 flex flex-col justify-center">
                                                 {/* Inline Title Edit */}
                                                 <input
@@ -436,7 +465,10 @@ export default function BacklogPage() {
                                                     value={task.title}
                                                     onChange={(e) => setTasks(prev => prev.map(t => t.id === task.id ? { ...t, title: e.target.value } : t))}
                                                     onBlur={(e) => updateTaskField(task.id, 'title', e.target.value)}
-                                                    className={`font-semibold text-slate-800 text-sm truncate leading-tight bg-transparent border-none p-0 focus:ring-0 w-full ${task.status === 'PENDING' ? 'text-slate-400 italic line-through decoration-slate-300' : ''}`}
+                                                    className={`font-semibold text-slate-800 text-sm truncate leading-tight bg-transparent border-none p-0 focus:ring-0 w-full 
+                                                        ${task.status === 'PENDING' ? 'text-slate-400 italic line-through decoration-slate-300' : ''}
+                                                        ${task.status === 'DONE' ? 'line-through text-slate-400' : ''}
+                                                    `}
                                                 />
                                                 {task.category === 'Food' && task.place && (
                                                     <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
@@ -450,6 +482,7 @@ export default function BacklogPage() {
                                                     <span className="bg-slate-100 px-1 py-0 rounded">{CATEGORIES[task.category]?.label}</span>
                                                     {task.scheduled_date && <span className="text-indigo-600">Plan: {formatDate(task.scheduled_date)}</span>}
                                                     {task.status === 'PENDING' && <span className="text-slate-400 border border-slate-200 px-1 rounded">Pending</span>}
+                                                    {task.status === 'DONE' && <span className="text-green-600 border border-green-200 bg-green-50 px-1 rounded">Done</span>}
                                                 </div>
                                             </div>
 
@@ -496,7 +529,7 @@ export default function BacklogPage() {
                                             </div>
 
                                             <div className="hidden md:block text-[11px] text-slate-500">
-                                                {task.scheduled_date ? <span className="text-indigo-600 font-medium">{formatDate(task.scheduled_date)}</span> : '-'}
+                                                {task.scheduled_date ? <span className="text-indigo-600 font-medium truncate block">{formatDate(task.scheduled_date)}</span> : '-'}
                                             </div>
 
                                             <div className="flex items-center justify-end gap-1">
@@ -545,7 +578,7 @@ export default function BacklogPage() {
             </div>
 
             {/* Right Sidebar Filters */}
-            <div className="w-40 bg-white/90 backdrop-blur border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-6 shadow-xl z-20">
+            <div className="w-64 bg-white/90 backdrop-blur border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-6 shadow-xl z-20">
                 <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Search</h3>
                     <div className="relative">
@@ -575,7 +608,16 @@ export default function BacklogPage() {
                 <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">States</h3>
                     <div className="space-y-2">
-                        <label className="flex items-center gap-2 cursor-pointer group">
+                        <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
+                            <input
+                                type="checkbox"
+                                checked={filterExcludeCompleted}
+                                onChange={(e) => setFilterExcludeCompleted(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                            />
+                            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">Doneを除く</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
                             <input
                                 type="checkbox"
                                 checked={filterExcludeScheduled}
@@ -584,7 +626,7 @@ export default function BacklogPage() {
                             />
                             <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">予定済を除く</span>
                         </label>
-                        <label className="flex items-center gap-2 cursor-pointer group">
+                        <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
                             <input
                                 type="checkbox"
                                 checked={filterExcludePending}

@@ -407,6 +407,11 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
 
         if source_exists and show_task:
             t['title'] = title
+            # Sync Highlight from source (if Backlog)
+            # This ensures Stock changes are reflected in Dashboard on reload
+            if t['source_type'] == SourceType.BACKLOG.value and src.exists:
+                 t['is_highlighted'] = src.to_dict().get('is_highlighted', t.get('is_highlighted', False))
+            
             tasks.append(t)
     
     # Sort in memory
@@ -463,6 +468,19 @@ def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Clie
         "completed_at": datetime.now(JST) if completed else None
     }
     doc_ref.update(updates)
+
+    # Sync to Backlog (if source is Backlog)
+    daily_data = snap.to_dict()
+    if daily_data.get('source_type') == SourceType.BACKLOG.value:
+        backlog_id = daily_data.get('source_id')
+        # If completing, set to DONE. If un-completing, set to STOCK (or keep as is? User only asked for Done->Stock sync)
+        # Let's map TODO -> STOCK for reversibility
+        new_backlog_status = "DONE" if completed else "STOCK" 
+        try:
+             db.collection("backlog_items").document(backlog_id).update({"status": new_backlog_status})
+        except Exception as e:
+             print(f"Failed to sync backlog status: {e}")
+
     return {**snap.to_dict(), **updates}
 
 @router.patch("/daily/{task_id}/skip")
@@ -490,6 +508,15 @@ def highlight_daily_task(task_id: str, highlighted: bool = True, db: firestore.C
         "is_highlighted": highlighted
     }
     doc_ref.update(updates)
+    
+    # Sync to Backlog
+    daily_data = snap.to_dict()
+    if daily_data.get('source_type') == SourceType.BACKLOG.value:
+         try:
+             db.collection("backlog_items").document(daily_data['source_id']).update({"is_highlighted": highlighted})
+         except Exception as e:
+             print(f"Failed to sync backlog highlight: {e}")
+
     return {**snap.to_dict(), **updates}
 
 @router.patch("/daily/{task_id}/postpone")

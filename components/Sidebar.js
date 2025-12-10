@@ -25,7 +25,7 @@ const navItems = [
     {
         category: "AI PoC",
         items: [
-            { name: "Multimodalテスト", icon: "📝", href: "/" },
+            { name: "Multimodalテスト", icon: "📝", href: "/multimodal" },
             { name: "ファイル管理", icon: "📂", href: "/files" },
         ],
     },

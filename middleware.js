@@ -11,7 +11,8 @@ export default withAuth(
 
         // 2. Inject the Internal API Key for Backend communication
         // This header will be present when the request is forwarded by `rewrites` or `fetch` calls from Server Components.
-        const internalKey = process.env.INTERNAL_API_KEY;
+        // Trim to handle potential newlines from Secret Manager
+        const internalKey = process.env.INTERNAL_API_KEY ? process.env.INTERNAL_API_KEY.trim() : null;
         if (internalKey) {
             requestHeaders.set("X-INTERNAL-API-KEY", internalKey);
         }
