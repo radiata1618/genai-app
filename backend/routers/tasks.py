@@ -38,6 +38,8 @@ class BacklogItemCreate(BaseModel):
     scheduled_date: Optional[date] = None
     status: str = "STOCK" # STOCK, PENDING
     order: int = 0
+    place: Optional[str] = None
+    is_highlighted: bool = False
 
 class BacklogItemResponse(BacklogItemCreate):
     id: str
@@ -65,6 +67,7 @@ class RoutineCreate(BaseModel):
     icon: Optional[str] = None
     scheduled_time: str = "05:00"
     order: int = 0
+    is_highlighted: bool = False
 
 class RoutineResponse(RoutineCreate):
     id: str
@@ -79,7 +82,6 @@ class DailyTaskResponse(BaseModel):
     target_date: str 
     title: Optional[str] = None
     completed_at: Optional[datetime] = None
-    order: int = 0
     order: int = 0
     scheduled_time: Optional[str] = "05:00"
     is_highlighted: bool = False
@@ -152,6 +154,8 @@ def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
         if 'order' not in d: d['order'] = 0
         if 'category' not in d: d['category'] = 'Research'
         if 'status' not in d: d['status'] = 'STOCK'
+        if 'place' not in d: d['place'] = None
+        if 'is_highlighted' not in d: d['is_highlighted'] = False
         
         items.append(d)
     return items
@@ -301,7 +305,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "title": r.get('title', 'Untitled'),
                 "scheduled_time": r.get('scheduled_time', "05:00"),
                 "order": r.get('order', 1000), # Use routine's order
-                "is_highlighted": False
+                "is_highlighted": r.get('is_highlighted', False)
             }
             batch.set(doc_ref, new_task)
             created_count += 1
@@ -442,7 +446,7 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "status": TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
         "order": max_order + 1,
-        "is_highlighted": False
+        "is_highlighted": item_ref.get().to_dict().get('is_highlighted', False)
     }
     doc_ref.set(new_task)
     return new_task

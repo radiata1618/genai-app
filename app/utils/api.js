@@ -66,7 +66,7 @@ export const api = {
         return res.json();
     },
 
-    addRoutine: async (title, type, frequency = null, icon = null, scheduled_time = "05:00") => {
+    addRoutine: async (title, type, frequency = null, icon = null, scheduled_time = "05:00", is_highlighted = false) => {
         const res = await fetch(`${API_BASE}/routines`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -75,14 +75,15 @@ export const api = {
                 routine_type: type,
                 frequency: frequency,
                 icon,
-                scheduled_time
+                scheduled_time,
+                is_highlighted
             }),
         });
         if (!res.ok) throw new Error('Failed to add routine');
         return res.json();
     },
 
-    updateRoutine: async (id, title, type, frequency = null, icon = null, scheduled_time = "05:00") => {
+    updateRoutine: async (id, title, type, frequency = null, icon = null, scheduled_time = "05:00", is_highlighted = false) => {
         const res = await fetch(`${API_BASE}/routines/${id}`, {
             method: 'PUT',
             headers: { 'Content-Type': 'application/json' },
@@ -91,7 +92,8 @@ export const api = {
                 routine_type: type,
                 frequency: frequency,
                 icon,
-                scheduled_time
+                scheduled_time,
+                is_highlighted
             }),
         });
         if (!res.ok) throw new Error('Failed to update routine');

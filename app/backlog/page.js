@@ -37,6 +37,7 @@ export default function BacklogPage() {
 
     const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(false);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
+    const [filterKeyword, setFilterKeyword] = useState('');
 
     // Form State
     const [form, setForm] = useState({
@@ -44,9 +45,8 @@ export default function BacklogPage() {
         category: 'Research',
         priority: 'Medium',
         deadline: '',
-        priority: 'Medium',
-        deadline: '',
         scheduled_date: '',
+        place: '',
         is_pending: false
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
@@ -101,6 +101,7 @@ export default function BacklogPage() {
                 priority: 'Medium',
                 deadline: '',
                 scheduled_date: '',
+                place: '',
                 is_pending: false
             });
             await fetchTasks();
@@ -171,6 +172,20 @@ export default function BacklogPage() {
         }
     };
 
+    const handleHighlight = async (task, e) => {
+        e.stopPropagation();
+        const newStatus = !task.is_highlighted;
+        // Optimistic update
+        setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_highlighted: newStatus } : t));
+
+        try {
+            await api.updateBacklogItem(task.id, { ...task, is_highlighted: newStatus });
+        } catch (e) {
+            console.error('Failed to highlight task', e);
+            fetchTasks();
+        }
+    };
+
     // Drag & Drop
     const onDragStart = (e, index) => {
         setDraggedItem(tasks[index]);
@@ -215,6 +230,14 @@ export default function BacklogPage() {
         if (filterPriority === 'High' && task.priority !== 'High') return false;
         if (filterPriority === 'Medium' && task.priority === 'Low') return false; // Show Medium & High
         if (filterCategory !== 'All' && task.category !== filterCategory) return false;
+
+        if (filterKeyword.trim()) {
+            const lowerKeyword = filterKeyword.toLowerCase();
+            const matchesTitle = task.title.toLowerCase().includes(lowerKeyword);
+            const matchesPlace = task.place ? task.place.toLowerCase().includes(lowerKeyword) : false;
+            if (!matchesTitle && !matchesPlace) return false;
+        }
+
         return true;
     });
 
@@ -274,6 +297,8 @@ export default function BacklogPage() {
                             </div>
 
                             <div className="flex flex-wrap gap-3 items-center">
+                                {/* Place Input - Only for Food */}
+
                                 {/* Category */}
                                 <div className="flex items-center gap-2">
                                     <span className="text-[10px] font-bold text-slate-400 uppercase">Category</span>
@@ -338,6 +363,21 @@ export default function BacklogPage() {
                                     <span className="text-xs font-bold text-slate-500 uppercase">Pending</span>
                                 </label>
 
+                                {/* Place Input - Only for Food */}
+                                {form.category === 'Food' && (
+                                    <div className="flex items-center gap-2 animate-in fade-in zoom-in duration-200">
+                                        <span className="text-[10px] font-bold text-slate-400 uppercase">Place</span>
+                                        <input
+                                            type="text"
+                                            name="place"
+                                            placeholder="Where?"
+                                            value={form.place}
+                                            onChange={handleChange}
+                                            className="bg-slate-50 border-slate-200 rounded-lg text-xs py-1.5 px-3 focus:ring-indigo-500 w-32 md:w-40"
+                                        />
+                                    </div>
+                                )}
+
                                 <button
                                     type="submit"
                                     disabled={isSubmitting || !form.title.trim()}
@@ -378,7 +418,9 @@ export default function BacklogPage() {
                                         <li
                                             key={task.id}
                                             onDragOver={(e) => onDragOver(e, index)}
-                                            className="group grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_1fr_100px_60px_90px_90px_150px] gap-2 p-1.5 hover:bg-white transition-colors items-center"
+                                            className={`group grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_1fr_100px_60px_90px_90px_150px] gap-2 p-1.5 transition-colors items-center
+                                                ${task.is_highlighted ? 'bg-pink-50 border-pink-100 hover:bg-pink-100' : 'hover:bg-white'}
+                                            `}
                                         >
                                             <div
                                                 draggable
@@ -396,6 +438,12 @@ export default function BacklogPage() {
                                                     onBlur={(e) => updateTaskField(task.id, 'title', e.target.value)}
                                                     className={`font-semibold text-slate-800 text-sm truncate leading-tight bg-transparent border-none p-0 focus:ring-0 w-full ${task.status === 'PENDING' ? 'text-slate-400 italic line-through decoration-slate-300' : ''}`}
                                                 />
+                                                {task.category === 'Food' && task.place && (
+                                                    <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
+                                                        <span>📍</span>
+                                                        <span>{task.place}</span>
+                                                    </div>
+                                                )}
 
                                                 <div className="md:hidden flex flex-wrap gap-2 mt-0.5 text-[10px] text-slate-500">
                                                     <span className={`px-1 py-0 rounded border ${PRIORITIES[task.priority]?.color}`}>{PRIORITIES[task.priority]?.label}</span>
@@ -453,6 +501,13 @@ export default function BacklogPage() {
 
                                             <div className="flex items-center justify-end gap-1">
                                                 <button
+                                                    onClick={(e) => handleHighlight(task, e)}
+                                                    className={`p-1 rounded-md transition-colors ${task.is_highlighted ? 'text-pink-500 bg-pink-100' : 'text-slate-300 hover:text-pink-400 hover:bg-pink-50'}`}
+                                                    title={task.is_highlighted ? "Remove Highlight" : "Highlight"}
+                                                >
+                                                    {task.is_highlighted ? '⭐' : '☆'}
+                                                </button>
+                                                <button
                                                     onClick={() => handleMoveToToday(task.id)}
                                                     className="px-2 py-0.5 bg-green-50 text-green-600 hover:bg-green-100 rounded text-xs font-bold border border-green-200 transition-colors whitespace-nowrap"
                                                 >
@@ -491,6 +546,32 @@ export default function BacklogPage() {
 
             {/* Right Sidebar Filters */}
             <div className="w-40 bg-white/90 backdrop-blur border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-6 shadow-xl z-20">
+                <div>
+                    <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Search</h3>
+                    <div className="relative">
+                        <input
+                            type="text"
+                            placeholder="Search..."
+                            value={filterKeyword}
+                            onChange={(e) => setFilterKeyword(e.target.value)}
+                            className="w-full bg-slate-50 border border-slate-200 rounded-lg py-2 pl-9 pr-3 text-sm focus:ring-2 focus:ring-indigo-500 focus:border-transparent outline-none transition-all placeholder-slate-400"
+                        />
+                        <svg className="absolute left-3 top-1/2 -translate-y-1/2 w-4 h-4 text-slate-400" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M21 21l-6-6m2-5a7 7 0 11-14 0 7 7 0 0114 0z" />
+                        </svg>
+                        {filterKeyword && (
+                            <button
+                                onClick={() => setFilterKeyword('')}
+                                className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                                </svg>
+                            </button>
+                        )}
+                    </div>
+                </div>
+
                 <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">States</h3>
                     <div className="space-y-2">
@@ -573,14 +654,28 @@ export default function BacklogPage() {
                             </button>
                         </div>
                         <form onSubmit={saveEdit} className="p-6 space-y-5">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Title</label>
-                                <input
-                                    type="text"
-                                    value={editingTask.title}
-                                    onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
-                                    className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
-                                />
+                            <div className="grid grid-cols-[1fr_auto] gap-3">
+                                <div>
+                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Title</label>
+                                    <input
+                                        type="text"
+                                        value={editingTask.title}
+                                        onChange={(e) => setEditingTask({ ...editingTask, title: e.target.value })}
+                                        className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
+                                    />
+                                </div>
+                                {editingTask.category === 'Food' && (
+                                    <div className="w-40 animate-in fade-in zoom-in duration-200">
+                                        <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Place</label>
+                                        <input
+                                            type="text"
+                                            value={editingTask.place || ''}
+                                            onChange={(e) => setEditingTask({ ...editingTask, place: e.target.value })}
+                                            placeholder="Where?"
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
+                                        />
+                                    </div>
+                                )}
                             </div>
 
                             <div className="grid grid-cols-2 gap-5">

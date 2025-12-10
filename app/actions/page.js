@@ -150,6 +150,28 @@ export default function ActionsPage() {
         }
     };
 
+    const handleHighlight = async (routine, e) => {
+        e.stopPropagation();
+        const newStatus = !routine.is_highlighted;
+        // Optimistic update
+        setRoutines(prev => prev.map(r => r.id === routine.id ? { ...r, is_highlighted: newStatus } : r));
+
+        try {
+            await api.updateRoutine(
+                routine.id,
+                routine.title,
+                routine.routine_type,
+                routine.frequency,
+                routine.icon,
+                routine.scheduled_time,
+                newStatus
+            );
+        } catch (e) {
+            console.error('Failed to highlight action', e);
+            fetchRoutines();
+        }
+    };
+
     return (
         <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
             <div className="flex-1 flex flex-col overflow-hidden max-w-5xl mx-auto w-full p-4">
@@ -190,7 +212,9 @@ export default function ActionsPage() {
                                         onDragStart={(e) => onDragStart(e, index)}
                                         onDragOver={(e) => onDragOver(e, index)}
                                         onDragEnd={onDragEnd}
-                                        className="group flex items-center justify-between p-1.5 hover:bg-slate-50 transition-colors cursor-move"
+                                        className={`group flex items-center justify-between p-1.5 transition-colors cursor-move
+                                            ${r.is_highlighted ? 'bg-pink-50 hover:bg-pink-100' : 'hover:bg-slate-50'}
+                                        `}
                                         style={{ opacity: draggedItem === r ? 0.5 : 1 }}
                                     >
                                         <div className="flex items-center gap-2">
@@ -230,6 +254,13 @@ export default function ActionsPage() {
                                         </div>
 
                                         <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                            <button
+                                                onClick={(e) => handleHighlight(r, e)}
+                                                className={`p-1 rounded-md transition-colors ${r.is_highlighted ? 'text-pink-500 bg-pink-100' : 'text-slate-300 hover:text-pink-400 hover:bg-pink-50'}`}
+                                                title={r.is_highlighted ? "Remove Highlight" : "Highlight"}
+                                            >
+                                                {r.is_highlighted ? '⭐' : '☆'}
+                                            </button>
                                             <button
                                                 onClick={() => openEditModal(r)}
                                                 className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"

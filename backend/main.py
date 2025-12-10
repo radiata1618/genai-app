@@ -10,6 +10,7 @@ from routers import rag
 from routers import management
 from routers import tasks
 from routers import car_quiz
+from routers import projects
 
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
@@ -75,6 +76,7 @@ app.include_router(rag.router, prefix="/api", tags=["rag"])
 app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
+app.include_router(projects.router, prefix="/api", tags=["projects"])
 
 @app.get("/health")
 async def health_check():

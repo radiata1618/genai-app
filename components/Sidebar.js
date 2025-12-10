@@ -12,6 +12,7 @@ const navItems = [
             { name: "Stock (Backlog)", icon: "📦", href: "/backlog" },
             { name: "Actions (Habits)", icon: "🔥", href: "/actions" },
             { name: "Mindsets (Rules)", icon: "🧠", href: "/mindsets" },
+            { name: "Projects", icon: "🚀", href: "/projects" },
         ],
     },
     {
