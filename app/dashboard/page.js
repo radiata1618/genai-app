@@ -54,10 +54,24 @@ export default function DashboardPage() {
     const init = async () => {
         setLoading(true);
         try {
-            await api.generateDailyTasks();
-            const r = await api.getRoutines();
+            // Plan B: Run generation in parallel (background)
+            // We don't await this for the initial render to speed up TTI.
+            api.generateDailyTasks().then(async (res) => {
+                // If generation created new tasks (res.message says "Generated X tasks"),
+                // we should refresh the list to show them.
+                if (res && res.message && !res.message.includes("Generated 0 tasks")) {
+                    const t = await api.getDaily();
+                    setTasks(t);
+                }
+            }).catch(err => console.error("Background generation failed", err));
+
+            // Fetch data in parallel for Main View
+            const [r, t] = await Promise.all([
+                api.getRoutines(),
+                api.getDaily()
+            ]);
+
             setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
-            const t = await api.getDaily();
             setTasks(t);
         } catch (e) {
             console.error(e);
@@ -234,7 +248,7 @@ export default function DashboardPage() {
     };
 
     return (
-        <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
+        <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden">
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
                 <div className="flex-1 flex flex-col h-full p-4 gap-2">

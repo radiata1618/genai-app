@@ -60,6 +60,7 @@ export default function BacklogPage() {
 
     // Form Visibility
     const [showForm, setShowForm] = useState(true);
+    const [mobileFiltersOpen, setMobileFiltersOpen] = useState(false);
 
     const fetchTasks = async () => {
         try {
@@ -259,7 +260,7 @@ export default function BacklogPage() {
     });
 
     return (
-        <div className="fixed inset-0 left-52 bg-slate-50 font-sans text-slate-900 flex flex-row overflow-hidden z-0">
+        <div className="relative w-full h-full flex flex-col md:flex-row overflow-hidden">
             {/* Background Decor - Adjusted z-index to be behind content */}
             <div className="absolute inset-0 pointer-events-none overflow-hidden -z-10">
                 <div className="absolute top-[-10%] left-[-10%] w-[500px] h-[500px] bg-purple-200 rounded-full mix-blend-multiply filter blur-3xl opacity-30 animate-blob"></div>
@@ -288,6 +289,13 @@ export default function BacklogPage() {
                                 ) : (
                                     <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 4v16m8-8H4" /></svg>
                                 )}
+                            </button>
+                            <button
+                                onClick={() => setMobileFiltersOpen(true)}
+                                className="md:hidden bg-white/80 hover:bg-white text-slate-500 hover:text-indigo-600 p-1.5 rounded-lg border border-slate-200 shadow-sm transition-colors"
+                                title="Filters"
+                            >
+                                <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M3 4a1 1 0 011-1h16a1 1 0 011 1v2.586a1 1 0 01-.293.707l-6.414 6.414a1 1 0 00-.293.707V17l-4 4v-6.586a1 1 0 00-.293-.707L3.293 7.293A1 1 0 013 6.586V4z" /></svg>
                             </button>
                         </div>
                     </div>
@@ -420,15 +428,52 @@ export default function BacklogPage() {
                             {/* List Container - Header moved inside for alignment */}
                             <div className="flex-1 overflow-y-auto">
                                 {/* Sticky Header */}
-                                <div className="sticky top-0 grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 py-2 pl-1 pr-2 bg-slate-50/95 backdrop-blur border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-20">
+                                <div className="hidden md:grid sticky top-0 grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 py-2 pl-1 pr-2 bg-slate-50/95 backdrop-blur border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-20">
                                     <div></div>
                                     <div></div> {/* Checkbox col */}
                                     <div>Task</div>
-                                    <div className="hidden md:block">Category</div>
-                                    <div className="hidden md:block text-center">Priority</div>
-                                    <div className="hidden md:block">Deadline</div>
-                                    <div className="hidden md:block">Scheduled</div>
-                                    <div className="hidden md:block text-right">Actions</div>
+                                    <div>Category</div>
+                                    <div className="text-center">Priority</div>
+                                    <div>Deadline</div>
+                                    <div>Scheduled</div>
+                                    <div className="text-right">Actions</div>
+                                </div>
+
+                                {/* Mobile List View */}
+                                <div className="md:hidden space-y-2 p-2">
+                                    {filteredTasks.map((task) => (
+                                        <div
+                                            key={task.id}
+                                            onClick={() => startEdit(task)}
+                                            className={`bg-white rounded-lg p-3 shadow-sm border border-slate-100 flex gap-3 ${task.status === 'DONE' ? 'opacity-60' : ''}`}
+                                        >
+                                            <div
+                                                onClick={(e) => handleToggleDone(task, e)}
+                                                className={`w-5 h-5 rounded-full border flex items-center justify-center flex-shrink-0 mt-0.5 ${task.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' : 'border-slate-300'}`}
+                                            >
+                                                {task.status === 'DONE' && <svg className="w-3 h-3 text-white" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                            </div>
+                                            <div className="flex-1 min-w-0">
+                                                <div className={`font-bold text-slate-800 text-sm mb-1 ${task.status === 'DONE' ? 'line-through text-slate-400' : ''}`}>
+                                                    {task.title}
+                                                </div>
+                                                <div className="flex flex-wrap gap-2 text-[10px] text-slate-500">
+                                                    <span className={`px-1.5 py-0.5 rounded border ${PRIORITIES[task.priority]?.color}`}>
+                                                        {PRIORITIES[task.priority]?.label}
+                                                    </span>
+                                                    <span className="flex items-center gap-1 bg-slate-50 px-1.5 py-0.5 rounded border border-slate-100">
+                                                        <span>{CATEGORIES[task.category]?.icon}</span>
+                                                        <span>{CATEGORIES[task.category]?.label}</span>
+                                                    </span>
+                                                    {task.scheduled_date && (
+                                                        <span className="text-indigo-600 bg-indigo-50 px-1.5 py-0.5 rounded border border-indigo-100">
+                                                            {formatDate(task.scheduled_date)}
+                                                        </span>
+                                                    )}
+                                                </div>
+                                            </div>
+                                        </div>
+                                    ))}
                                 </div>
 
                                 <ul className="divide-y divide-slate-100 p-2">
@@ -436,7 +481,7 @@ export default function BacklogPage() {
                                         <li
                                             key={task.id}
                                             onDragOver={(e) => onDragOver(e, index)}
-                                            className={`group grid grid-cols-[30px_1fr_auto] md:grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 p-2 transition-colors items-center
+                                            className={`hidden md:grid group grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 p-2 transition-colors items-center
                                                 ${task.is_highlighted ? 'bg-pink-50 border-pink-100 hover:bg-pink-100' : 'hover:bg-white'}
                                                 ${task.status === 'DONE' ? 'opacity-60 bg-slate-50' : ''}
                                             `}
@@ -578,7 +623,22 @@ export default function BacklogPage() {
             </div>
 
             {/* Right Sidebar Filters */}
-            <div className="w-64 bg-white/90 backdrop-blur border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-6 shadow-xl z-20">
+            {mobileFiltersOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-40 md:hidden"
+                    onClick={() => setMobileFiltersOpen(false)}
+                />
+            )}
+            <div className={`
+                fixed inset-y-0 right-0 z-50 w-64 bg-white/95 backdrop-blur border-l border-slate-200 p-4 overflow-y-auto flex flex-col gap-6 shadow-xl transform transition-transform duration-300
+                md:relative md:translate-x-0 md:h-full
+                ${mobileFiltersOpen ? 'translate-x-0' : 'translate-x-full'}
+            `}>
+                <div className="md:hidden flex justify-end mb-2">
+                    <button onClick={() => setMobileFiltersOpen(false)} className="text-slate-400">
+                        <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                    </button>
+                </div>
                 <div>
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Search</h3>
                     <div className="relative">

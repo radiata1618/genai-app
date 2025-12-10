@@ -105,7 +105,7 @@ export default function MindsetsPage() {
     };
 
     return (
-        <div className="fixed inset-0 left-64 bg-slate-50 font-sans text-slate-900 flex flex-col z-0 overflow-hidden">
+        <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col overflow-hidden max-w-4xl mx-auto w-full p-4 space-y-4">
 
                 <div className="flex justify-between items-center bg-white/50 backdrop-blur p-2 rounded-lg border border-slate-100/50">

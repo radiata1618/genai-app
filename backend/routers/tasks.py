@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, Depends
+
+from fastapi import APIRouter, HTTPException, Depends, BackgroundTasks
 from typing import List, Optional
 from pydantic import BaseModel
 from datetime import date, datetime, timezone, timedelta
@@ -32,11 +33,11 @@ class TaskStatus(str, enum.Enum):
 # Backlog
 class BacklogItemCreate(BaseModel):
     title: str
-    category: str = "Research" # Changed default to one of the new keys
-    priority: str = "Medium" # High, Medium, Low
+    category: str = "Research" 
+    priority: str = "Medium" 
     deadline: Optional[date] = None
     scheduled_date: Optional[date] = None
-    status: str = "STOCK" # STOCK, PENDING
+    status: str = "STOCK" 
     order: int = 0
     place: Optional[str] = None
     is_highlighted: bool = False
@@ -57,8 +58,8 @@ class FrequencyType(str, enum.Enum):
 
 class FrequencyConfig(BaseModel):
     type: FrequencyType = FrequencyType.DAILY
-    weekdays: List[int] = [] # 0=Mon, 6=Sun
-    month_days: List[int] = [] # 1-31
+    weekdays: List[int] = [] 
+    month_days: List[int] = [] 
 
 class RoutineCreate(BaseModel):
     title: str
@@ -88,6 +89,88 @@ class DailyTaskResponse(BaseModel):
 
 class ReorderRequest(BaseModel):
     ids: List[str]
+
+# --- Helper Functions (Async Sync) ---
+
+def sync_backlog_update_to_daily(source_id: str, title: str, is_highlighted: bool, db: firestore.Client):
+    """
+    Update title and highlight status of all FUTURE or TODAY daily tasks 
+    that are sourced from this backlog item.
+    """
+    try:
+        # Find tasks sourced from this backlog item that are not completed (optional optimization)
+        # or just find all for simplicity/correctness even if done?
+        # Let's find all for today and future.
+        today_str = datetime.now(JST).date().isoformat()
+        
+        docs = db.collection("daily_tasks")\
+            .where("source_id", "==", source_id)\
+            .where("source_type", "==", SourceType.BACKLOG.value)\
+            .where("target_date", ">=", today_str)\
+            .stream()
+            
+        batch = db.batch()
+        count = 0
+        for doc in docs:
+            batch.update(doc.reference, {
+                "title": title,
+                "is_highlighted": is_highlighted
+            })
+            count += 1
+            if count >= 400: # Batch limit safe guard
+                batch.commit()
+                batch = db.batch()
+                count = 0
+        
+        if count > 0:
+            batch.commit()
+            
+    except Exception as e:
+        print(f"Async Sync Error (Backlog->Daily): {e}")
+
+def sync_routine_to_daily(source_id: str, title: str, db: firestore.Client):
+    """
+    Update title of all FUTURE or TODAY daily tasks sourced from this routine.
+    """
+    try:
+        today_str = datetime.now(JST).date().isoformat()
+        
+        docs = db.collection("daily_tasks")\
+            .where("source_id", "==", source_id)\
+            .where("source_type", "==", SourceType.ROUTINE.value)\
+            .where("target_date", ">=", today_str)\
+            .stream()
+            
+        batch = db.batch()
+        count = 0
+        for doc in docs:
+            batch.update(doc.reference, {"title": title})
+            count += 1
+            if count >= 400:
+                batch.commit()
+                batch = db.batch()
+                count = 0
+        if count > 0:
+            batch.commit()
+    except Exception as e:
+        print(f"Async Sync Error (Routine->Daily): {e}")
+
+def sync_daily_completion_to_backlog(backlog_id: str, completed: bool, db: firestore.Client):
+    """
+    Sync completion status back to backlog item.
+    """
+    try:
+        new_status = "DONE" if completed else "STOCK"
+        db.collection("backlog_items").document(backlog_id).update({"status": new_status})
+    except Exception as e:
+        print(f"Async Sync Error (Daily->Backlog Status): {e}")
+
+def sync_daily_highlight_to_backlog(backlog_id: str, highlighted: bool, db: firestore.Client):
+    try:
+        db.collection("backlog_items").document(backlog_id).update({"is_highlighted": highlighted})
+    except Exception as e:
+        print(f"Async Sync Error (Daily->Backlog Highlight): {e}")
+
 
 # --- API Endpoints ---
 
@@ -124,7 +207,6 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
         doc_ref = db.collection("backlog_items").document()
         data = item.dict()
         
-        # Fix: Convert date objects to datetime for Firestore
         if data.get('deadline'):
             data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
         if data.get('scheduled_date'):
@@ -144,37 +226,32 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
 
 @router.get("/backlog", response_model=List[BacklogItemResponse])
 def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
-    # Order by 'order' field ascending
     docs = db.collection("backlog_items").where("is_archived", "==", False).order_by("order").limit(limit).stream()
     items = []
     for doc in docs:
         d = doc.to_dict()
-        # Migration for existing items
         if 'priority' not in d: d['priority'] = 'Medium'
         if 'order' not in d: d['order'] = 0
         if 'category' not in d: d['category'] = 'Research'
         if 'status' not in d: d['status'] = 'STOCK'
         if 'place' not in d: d['place'] = None
         if 'is_highlighted' not in d: d['is_highlighted'] = False
-        
         items.append(d)
     return items
 
 @router.put("/backlog/{item_id}", response_model=BacklogItemResponse)
-def update_backlog_item(item_id: str, item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
+def update_backlog_item(item_id: str, item: BacklogItemCreate, background_tasks: BackgroundTasks, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("backlog_items").document(item_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Item not found")
     
     data = item.dict()
     
-    # Fix: Convert date objects to datetime for Firestore
     if data.get('deadline'):
         data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
     if data.get('scheduled_date'):
         data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
 
-    # Preserve system fields
     current_data = doc_ref.get().to_dict()
     data.update({
         "id": item_id,
@@ -183,6 +260,10 @@ def update_backlog_item(item_id: str, item: BacklogItemCreate, db: firestore.Cli
     })
     
     doc_ref.set(data)
+    
+    # Async Sync
+    background_tasks.add_task(sync_backlog_update_to_daily, item_id, item.title, item.is_highlighted, db)
+
     return data
 
 @router.delete("/backlog/{item_id}")
@@ -235,7 +316,7 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
     return routines
 
 @router.put("/routines/{routine_id}", response_model=RoutineResponse)
-def update_routine(routine_id: str, routine: RoutineCreate, db: firestore.Client = Depends(get_db)):
+def update_routine(routine_id: str, routine: RoutineCreate, background_tasks: BackgroundTasks, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("routines").document(routine_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Routine not found")
@@ -246,12 +327,15 @@ def update_routine(routine_id: str, routine: RoutineCreate, db: firestore.Client
         data['frequency'] = routine.frequency.dict()
         data['frequency']['type'] = routine.frequency.type.value
     
-    # Preserve creation time and ID
     data['id'] = routine_id
     current_data = doc_ref.get().to_dict()
-    data['created_at'] = current_data.get('created_at', datetime.now(JST)) # Keep original or valid default
+    data['created_at'] = current_data.get('created_at', datetime.now(JST)) 
     
-    doc_ref.set(data) # Overwrite with new data
+    doc_ref.set(data)
+    
+    # Async Sync
+    background_tasks.add_task(sync_routine_to_daily, routine_id, routine.title, db)
+    
     return data
 
 @router.delete("/routines/{routine_id}")
@@ -302,9 +386,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "created_at": datetime.now(JST),
                 "title": r.get('title', 'Untitled'),
                 "scheduled_time": r.get('scheduled_time', "05:00"),
-                "title": r.get('title', 'Untitled'),
-                "scheduled_time": r.get('scheduled_time', "05:00"),
-                "order": r.get('order', 1000), # Use routine's order
+                "order": r.get('order', 1000), 
                 "is_highlighted": r.get('is_highlighted', False)
             }
             batch.set(doc_ref, new_task)
@@ -312,17 +394,11 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             
     
     # --- CARRY OVER LOGIC ---
-    # Find past incomplete backlog tasks
     past_backlog_docs = db.collection("daily_tasks")\
         .where("source_type", "==", SourceType.BACKLOG.value)\
         .where("status", "==", TaskStatus.TODO.value)\
         .stream()
 
-    # Determine max order to append
-    # Note: We already generated routines, let's just append after 1000 or find actual max
-    # Ideally simpler: default routines = 1000, new items = max+1.
-    # We will just use 2000+ for carried over items to be safe or just find current Max
-    
     current_today_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
     max_order = 0
     for d in current_today_docs:
@@ -334,10 +410,8 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         
         # Only carry over if from the past
         if old_date_str < target_date_str:
-            # Mark old as CARRY_OVER
             batch.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
             
-            # Create new for today
             new_id = f"{t['source_id']}_{target_date_str}"
             new_ref = db.collection("daily_tasks").document(new_id)
             
@@ -350,11 +424,9 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                     "target_date": target_date_str,
                     "status": TaskStatus.TODO.value,
                     "created_at": datetime.now(JST),
-                    "title": t.get('title', 'Unknown'), # Copy title to avoid lookup
-                    "created_at": datetime.now(JST),
-                    "title": t.get('title', 'Unknown'), # Copy title to avoid lookup
+                    "title": t.get('title', 'Unknown'), # Important: Copy existing title
                     "order": max_order,
-                    "is_highlighted": False
+                    "is_highlighted": t.get('is_highlighted', False) # Important: Copy highlight
                 }
                 batch.set(new_ref, new_task)
                 created_count += 1
@@ -367,54 +439,41 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
     if target_date is None:
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
-    # Remove .order_by("order") to include docs without the field
+    
+    # ---------------------------------------------------------
+    # OPTIMIZATION: Removed N+1 queries.
+    # ---------------------------------------------------------
     docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
     
     tasks = []
+    
+    # Pre-calculate filtering details using now() if strictly needed, 
+    # but frontend can allow all and filter? 
+    # Original logic filtered Routines by time if it's "Today".
+    
+    now = datetime.now(JST)
+    current_time_str = now.strftime("%H:%M")
+    is_today = target_date_str == now.date().isoformat()
+    
     for doc in docs:
         t = doc.to_dict()
-        title = t.get('title', "Unknown")
-        source_exists = True
-
-        if t['source_type'] == SourceType.BACKLOG.value:
-            src = db.collection("backlog_items").document(t['source_id']).get()
-            if src.exists: 
-                title = src.to_dict().get('title', 'Unknown')
-            else:
-                source_exists = False
-        elif t['source_type'] == SourceType.ROUTINE.value:
-            src = db.collection("routines").document(t['source_id']).get()
-            if src.exists: 
-                title = src.to_dict().get('title', 'Unknown')
-            else:
-                source_exists = False
         
-        # TIME FILTERING logic
-        now = datetime.now(JST)
-        current_time_str = now.strftime("%H:%M")
-        is_today = target_date_str == now.date().isoformat()
+        # Default fillers for Denormalization safety
+        if 'title' not in t: t['title'] = "Unknown Task"
+        if 'is_highlighted' not in t: t['is_highlighted'] = False
+        if 'order' not in t: t['order'] = 0
         
+        # TIME FILTERING logic (Keep relevant logic)
         show_task = True
-        
         task_scheduled_time = t.get('scheduled_time', "05:00")
         
         if is_today and t['source_type'] == SourceType.ROUTINE.value:
             if current_time_str < task_scheduled_time:
                 show_task = False
         
-        if 'order' not in t:
-             t['order'] = 0
-
-        if source_exists and show_task:
-            t['title'] = title
-            # Sync Highlight from source (if Backlog)
-            # This ensures Stock changes are reflected in Dashboard on reload
-            if t['source_type'] == SourceType.BACKLOG.value and src.exists:
-                 t['is_highlighted'] = src.to_dict().get('is_highlighted', t.get('is_highlighted', False))
-            
+        if show_task:
             tasks.append(t)
     
-    # Sort in memory
     tasks.sort(key=lambda x: x.get('order', 0))
     return tasks
 
@@ -424,16 +483,19 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
     item_ref = db.collection("backlog_items").document(backlog_id)
-    if not item_ref.get().exists:
+    item_snap = item_ref.get()
+    
+    if not item_snap.exists:
         raise HTTPException(status_code=404, detail="Backlog item not found")
-        
+    
+    item_data = item_snap.to_dict()
+    
     doc_id = f"{backlog_id}_{target_date_str}"
     doc_ref = db.collection("daily_tasks").document(doc_id)
     
     if doc_ref.get().exists:
          return {"message": "Already picked"}
 
-    # Calculate order: max(existing_orders) + 1
     existing_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
     max_order = -1
     for d in existing_docs:
@@ -448,16 +510,15 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
-        "status": TaskStatus.TODO.value,
-        "created_at": datetime.now(JST),
         "order": max_order + 1,
-        "is_highlighted": item_ref.get().to_dict().get('is_highlighted', False)
+        "title": item_data.get('title', 'Untitled'), # Copied Title
+        "is_highlighted": item_data.get('is_highlighted', False) # Copied Highlight
     }
     doc_ref.set(new_task)
     return new_task
 
 @router.patch("/daily/{task_id}/complete")
-def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Client = Depends(get_db)):
+def complete_daily_task(task_id: str, completed: bool = True, background_tasks: BackgroundTasks = None, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("daily_tasks").document(task_id)
     snap = doc_ref.get()
     if not snap.exists:
@@ -469,17 +530,10 @@ def complete_daily_task(task_id: str, completed: bool = True, db: firestore.Clie
     }
     doc_ref.update(updates)
 
-    # Sync to Backlog (if source is Backlog)
     daily_data = snap.to_dict()
-    if daily_data.get('source_type') == SourceType.BACKLOG.value:
+    if daily_data.get('source_type') == SourceType.BACKLOG.value and background_tasks:
         backlog_id = daily_data.get('source_id')
-        # If completing, set to DONE. If un-completing, set to STOCK (or keep as is? User only asked for Done->Stock sync)
-        # Let's map TODO -> STOCK for reversibility
-        new_backlog_status = "DONE" if completed else "STOCK" 
-        try:
-             db.collection("backlog_items").document(backlog_id).update({"status": new_backlog_status})
-        except Exception as e:
-             print(f"Failed to sync backlog status: {e}")
+        background_tasks.add_task(sync_daily_completion_to_backlog, backlog_id, completed, db)
 
     return {**snap.to_dict(), **updates}
 
@@ -494,11 +548,10 @@ def skip_daily_task(task_id: str, db: firestore.Client = Depends(get_db)):
         "status": TaskStatus.SKIPPED.value
     }
     doc_ref.update(updates)
-    doc_ref.update(updates)
     return {**snap.to_dict(), **updates}
 
 @router.patch("/daily/{task_id}/highlight")
-def highlight_daily_task(task_id: str, highlighted: bool = True, db: firestore.Client = Depends(get_db)):
+def highlight_daily_task(task_id: str, highlighted: bool = True, background_tasks: BackgroundTasks = None, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("daily_tasks").document(task_id)
     snap = doc_ref.get()
     if not snap.exists:
@@ -509,19 +562,14 @@ def highlight_daily_task(task_id: str, highlighted: bool = True, db: firestore.C
     }
     doc_ref.update(updates)
     
-    # Sync to Backlog
     daily_data = snap.to_dict()
-    if daily_data.get('source_type') == SourceType.BACKLOG.value:
-         try:
-             db.collection("backlog_items").document(daily_data['source_id']).update({"is_highlighted": highlighted})
-         except Exception as e:
-             print(f"Failed to sync backlog highlight: {e}")
+    if daily_data.get('source_type') == SourceType.BACKLOG.value and background_tasks:
+         background_tasks.add_task(sync_daily_highlight_to_backlog, daily_data['source_id'], highlighted, db)
 
     return {**snap.to_dict(), **updates}
 
 @router.patch("/daily/{task_id}/postpone")
 def postpone_daily_task(task_id: str, new_date: str, db: firestore.Client = Depends(get_db)):
-    # new_date format: "YYYY-MM-DD"
     doc_ref = db.collection("daily_tasks").document(task_id)
     daily_snap = doc_ref.get()
     
@@ -535,11 +583,8 @@ def postpone_daily_task(task_id: str, new_date: str, db: firestore.Client = Depe
     if source_type != SourceType.BACKLOG.value:
         raise HTTPException(status_code=400, detail="Only Backlog items can be postponed")
 
-    # Update Backlog Item
     backlog_ref = db.collection("backlog_items").document(source_id)
     if not backlog_ref.get().exists:
-        # If backlog item is missing, we just delete the daily task? 
-        # Or error? Let's error for safety.
         raise HTTPException(status_code=404, detail="Original Backlog Item not found")
 
     try:
@@ -548,10 +593,7 @@ def postpone_daily_task(task_id: str, new_date: str, db: firestore.Client = Depe
     except ValueError:
         raise HTTPException(status_code=400, detail="Invalid date format, use YYYY-MM-DD")
 
-    # Update backlog scheduled_date
     backlog_ref.update({"scheduled_date": new_date_dt})
-
-    # Delete from Daily Tasks
     doc_ref.delete()
 
     return {"status": "postponed", "new_date": new_date}

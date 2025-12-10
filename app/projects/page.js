@@ -238,7 +238,7 @@ export default function ProjectsPage() {
     };
 
     return (
-        <div className="flex h-screen bg-slate-50 text-slate-800 font-sans overflow-hidden">
+        <div className="relative w-full h-full bg-slate-50 text-slate-800 font-sans flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col p-6 h-full gap-4">
 
                 {/* Header & Tabs */}

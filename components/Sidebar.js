@@ -31,13 +31,13 @@ const navItems = [
     },
 ];
 
-export default function Sidebar() {
+export default function Sidebar({ onCloseMobile }) {
     const pathname = usePathname();
 
     return (
-        <aside className="w-52 bg-[#0e7490] text-white flex flex-col h-screen fixed left-0 top-0 shadow-xl z-50 font-sans">
+        <aside className="w-52 bg-[#0e7490] text-white flex flex-col h-full font-sans">
             {/* Logo Area */}
-            <div className="h-16 flex items-center px-6 bg-[#0891b2] shadow-sm">
+            <div className="h-16 flex items-center px-6 bg-[#0891b2] shadow-sm flex-shrink-0">
                 <h1 className="text-xl font-bold tracking-widest uppercase">Genai-app</h1>
             </div>
 
@@ -55,6 +55,7 @@ export default function Sidebar() {
                                     <li key={itemIdx}>
                                         <Link
                                             href={item.href}
+                                            onClick={onCloseMobile}
                                             className={`flex items-center px-6 py-3 text-sm font-medium transition-colors duration-200
                         ${isActive
                                                     ? "bg-[#155e75] border-l-4 border-cyan-300 text-white"
