@@ -36,7 +36,7 @@ export default function BacklogPage() {
     const [filterPriority, setFilterPriority] = useState('All'); // All, High, Medium
     const [filterCategory, setFilterCategory] = useState('All');
 
-    const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(false);
+    const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(true);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
     const [filterExcludeCompleted, setFilterExcludeCompleted] = useState(true);
     const [filterKeyword, setFilterKeyword] = useState('');
@@ -49,7 +49,8 @@ export default function BacklogPage() {
         deadline: '',
         scheduled_date: '',
         place: '',
-        is_pending: false
+        is_pending: false,
+        is_pet_allowed: false
     });
     const [isSubmitting, setIsSubmitting] = useState(false);
 
@@ -105,7 +106,8 @@ export default function BacklogPage() {
                 deadline: '',
                 scheduled_date: '',
                 place: '',
-                is_pending: false
+                is_pending: false,
+                is_pet_allowed: false
             });
             await fetchTasks();
         } catch (e) {
@@ -402,8 +404,18 @@ export default function BacklogPage() {
                                             placeholder="Where?"
                                             value={form.place}
                                             onChange={handleChange}
-                                            className="bg-slate-50 border-slate-200 rounded-lg text-xs py-1.5 px-3 focus:ring-indigo-500 w-32 md:w-40"
+                                            className="bg-slate-50 border-slate-200 rounded-lg text-xs py-1.5 px-3 focus:ring-indigo-500 w-32 md:w-36"
                                         />
+                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                name="is_pet_allowed"
+                                                checked={form.is_pet_allowed}
+                                                onChange={handleChange}
+                                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                            />
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap">ペット可</span>
+                                        </label>
                                     </div>
                                 )}
 
@@ -474,6 +486,11 @@ export default function BacklogPage() {
                                                             {formatDate(task.scheduled_date)}
                                                         </span>
                                                     )}
+                                                    {task.category === 'Food' && task.is_pet_allowed && (
+                                                        <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 flex items-center gap-1">
+                                                            🐾 Pet OK
+                                                        </span>
+                                                    )}
                                                 </div>
                                             </div>
                                         </div>
@@ -519,12 +536,19 @@ export default function BacklogPage() {
                                                         ${task.status === 'DONE' ? 'line-through text-slate-400' : ''}
                                                     `}
                                                 />
-                                                {task.category === 'Food' && task.place && (
-                                                    <div className="flex items-center gap-1 text-[11px] text-slate-500 mt-0.5">
-                                                        <span>📍</span>
-                                                        <span>{task.place}</span>
-                                                    </div>
-                                                )}
+                                                <div className="flex flex-wrap gap-2 items-center text-[11px] text-slate-500 mt-0.5">
+                                                    {task.category === 'Food' && task.place && (
+                                                        <div className="flex items-center gap-1">
+                                                            <span>📍</span>
+                                                            <span>{task.place}</span>
+                                                        </div>
+                                                    )}
+                                                    {task.category === 'Food' && task.is_pet_allowed && (
+                                                        <span className="text-green-600 bg-green-50 px-1 rounded flex items-center gap-0.5 text-[10px]">
+                                                            🐾 Pet OK
+                                                        </span>
+                                                    )}
+                                                </div>
 
                                                 <div className="md:hidden flex flex-wrap gap-2 mt-0.5 text-[10px] text-slate-500">
                                                     <span className={`px-1 py-0 rounded border ${PRIORITIES[task.priority]?.color}`}>{PRIORITIES[task.priority]?.label}</span>
@@ -534,6 +558,7 @@ export default function BacklogPage() {
                                                     {task.status === 'DONE' && <span className="text-green-600 border border-green-200 bg-green-50 px-1 rounded">Done</span>}
                                                 </div>
                                             </div>
+
 
                                             <div className="hidden md:flex items-center gap-1">
                                                 {/* Inline Category Edit - simplified as click cycle or select? Let's use select customized */}
@@ -778,8 +803,17 @@ export default function BacklogPage() {
                                             value={editingTask.place || ''}
                                             onChange={(e) => setEditingTask({ ...editingTask, place: e.target.value })}
                                             placeholder="Where?"
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700 mb-2"
                                         />
+                                        <label className="flex items-center gap-1.5 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={editingTask.is_pet_allowed || false}
+                                                onChange={(e) => setEditingTask({ ...editingTask, is_pet_allowed: e.target.checked })}
+                                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-3.5 h-3.5"
+                                            />
+                                            <span className="text-[10px] font-bold text-slate-500 uppercase whitespace-nowrap">ペット可</span>
+                                        </label>
                                     </div>
                                 )}
                             </div>

@@ -41,6 +41,7 @@ class BacklogItemCreate(BaseModel):
     order: int = 0
     place: Optional[str] = None
     is_highlighted: bool = False
+    is_pet_allowed: bool = False
 
 class BacklogItemResponse(BacklogItemCreate):
     id: str
@@ -236,6 +237,7 @@ def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
         if 'status' not in d: d['status'] = 'STOCK'
         if 'place' not in d: d['place'] = None
         if 'is_highlighted' not in d: d['is_highlighted'] = False
+        if 'is_pet_allowed' not in d: d['is_pet_allowed'] = False
         items.append(d)
     return items
 

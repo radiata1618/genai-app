@@ -52,7 +52,15 @@ async def generate_car_list(request: GenerationRequest):
         if not project_id:
             print("Warning: PROJECT_ID not found in env, using default or implicit.")
 
-        client = genai.Client(vertexai=True, project=project_id, location=location) 
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+        if api_key:
+            api_key = api_key.strip()
+
+        client = genai.Client(
+            vertexai=True,
+            api_key=api_key,
+            http_options={'api_version': 'v1beta1'}
+        ) 
 
         full_prompt = f"""
         Rank the following request and generate a list of cars in JSON format.
@@ -88,8 +96,8 @@ async def generate_car_list(request: GenerationRequest):
                 ),
             )
         except Exception:
-            # Fallback to 2.0 Flash silently if 3.0 fails
-            model_name = "gemini-2.0-flash"
+            # Fallback to 2.5 Pro if 3.0 fails
+            model_name = "gemini-2.5-pro"
             response = client.models.generate_content(
                 model=model_name,
                 contents=full_prompt,

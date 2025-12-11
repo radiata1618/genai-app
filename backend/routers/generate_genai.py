@@ -23,10 +23,14 @@ class GenerateRequest(BaseModel):
 # ---- google-genai クライアント ----
 # Explicitly initialize with Vertex AI settings
 # Ensure PROJECT_ID is set in Cloud Run environment variables
+api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+if api_key:
+    api_key = api_key.strip()
+
 client = genai.Client(
     vertexai=True,
-    project=os.getenv("PROJECT_ID"),
-    location=os.getenv("LOCATION", "us-central1")
+    api_key=api_key,
+    http_options={'api_version': 'v1beta1'}
 )
 
 
@@ -82,7 +86,7 @@ async def generate_with_google_genai(request: GenerateRequest):
         # モデル名はお好みで変更可能（2.0 / 2.5 など）
         # 例: "gemini-2.5-flash" / "gemini-2.5-pro" :contentReference[oaicite:5]{index=5}
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3-pro-preview",
             contents=contents,
             config=config,
         )

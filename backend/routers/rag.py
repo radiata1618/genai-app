@@ -136,7 +136,15 @@ async def generate_rag(request: RagRequest):
         print(f"Retrieved items: {retrieved_contexts}")
 
         # 3. Generate with Gemini
-        client = genai.Client(vertexai=True, project=PROJECT_ID, location=LOCATION)
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+        if api_key:
+            api_key = api_key.strip()
+            
+        client = genai.Client(
+            vertexai=True,
+            api_key=api_key,
+            http_options={'api_version': 'v1beta1'}
+        )
         
         contents = []
         
@@ -163,7 +171,7 @@ async def generate_rag(request: RagRequest):
         contents.append("Based on the provided manual pages (if any), please answer the user's question. If the manual pages don't contain the answer, state that.")
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash",
+            model="gemini-3-pro-preview",
             contents=contents
         )
         
