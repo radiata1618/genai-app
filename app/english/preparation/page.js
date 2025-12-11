@@ -135,7 +135,7 @@ export default function PreparationPage() {
                                 </button>
                             </div>
                             <div className="flex justify-between items-center mt-2 text-xs text-gray-500">
-                                <span>{new Date(task.created_at).toLocaleDateString()}</span>
+                                <span>{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</span>
                                 <button
                                     onClick={(e) => handleToggleStatus(task, e)}
                                     className={`px-2 py-0.5 rounded border ${task.status === "DONE" ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}
@@ -184,7 +184,7 @@ export default function PreparationPage() {
                         <div className="max-w-4xl mx-auto">
                             <h1 className="text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.topic}</h1>
                             <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
-                                <span>Generated on {new Date(selectedTask.created_at).toLocaleString()}</span>
+                                <span>Generated on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                 <span className={`px-2 py-0.5 rounded font-medium ${selectedTask.status === "DONE" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>
                                     {selectedTask.status}
                                 </span>

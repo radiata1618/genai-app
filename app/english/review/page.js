@@ -152,7 +152,7 @@ export default function ReviewPage() {
                                     ×
                                 </button>
                             </div>
-                            <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleDateString()}</p>
+                            <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</p>
                         </div>
                     ))}
                 </div>
@@ -197,7 +197,7 @@ export default function ReviewPage() {
                         <div className="max-w-4xl mx-auto">
                             <h1 className="text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.video_filename}</h1>
                             <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
-                                <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString()}</span>
+                                <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                             </div>
                             <article className="prose prose-slate lg:prose-lg max-w-none">
                                 <ReactMarkdown>{selectedTask.content}</ReactMarkdown>
