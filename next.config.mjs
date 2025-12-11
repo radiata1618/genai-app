@@ -9,6 +9,9 @@ console.log("  BACKEND_URL:", process.env.BACKEND_URL);
 console.log("----------------------------------------------------------------");
 
 const nextConfig = {
+    experimental: {
+        proxyTimeout: 300000,
+    },
     output: isMobile ? 'export' : 'standalone',
     images: {
         unoptimized: isMobile,

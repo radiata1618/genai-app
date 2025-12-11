@@ -77,6 +77,8 @@ app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
+from routers import english
+app.include_router(english.router, prefix="/api", tags=["english"])
 
 @app.get("/health")
 async def health_check():

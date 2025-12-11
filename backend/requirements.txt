@@ -7,3 +7,4 @@ google-cloud-storage
 python-multipart
 google-cloud-firestore
 google-api-python-client
+moviepy

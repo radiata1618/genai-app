@@ -29,6 +29,13 @@ const navItems = [
             { name: "ファイル管理", icon: "📂", href: "/files" },
         ],
     },
+    {
+        category: "English",
+        items: [
+            { name: "Preparation", icon: "📚", href: "/english/preparation" },
+            { name: "Review", icon: "📹", href: "/english/review" },
+        ],
+    },
 ];
 
 export default function Sidebar({ onCloseMobile }) {
