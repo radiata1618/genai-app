@@ -39,6 +39,7 @@ export default function BacklogPage() {
     const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(true);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
     const [filterExcludeCompleted, setFilterExcludeCompleted] = useState(true);
+    const [filterPetAllowedOnly, setFilterPetAllowedOnly] = useState(false);
     const [filterKeyword, setFilterKeyword] = useState('');
 
     // Form State
@@ -99,16 +100,10 @@ export default function BacklogPage() {
                 scheduled_date: form.scheduled_date || null,
                 status: form.is_pending ? 'PENDING' : 'STOCK'
             });
-            setForm({
-                title: '',
-                category: 'Research',
-                priority: 'Medium',
-                deadline: '',
-                scheduled_date: '',
-                place: '',
-                is_pending: false,
-                is_pet_allowed: false
-            });
+            setForm(prev => ({
+                ...prev,
+                title: ''
+            }));
             await fetchTasks();
         } catch (e) {
             alert('Failed to create task: ' + e.message);
@@ -251,6 +246,7 @@ export default function BacklogPage() {
         if (filterPriority === 'High' && task.priority !== 'High') return false;
         if (filterPriority === 'Medium' && task.priority === 'Low') return false; // Show Medium & High
         if (filterCategory !== 'All' && task.category !== filterCategory) return false;
+        if (filterPetAllowedOnly && !task.is_pet_allowed) return false;
 
         if (filterKeyword.trim()) {
             const lowerKeyword = filterKeyword.toLowerCase();
@@ -723,6 +719,15 @@ export default function BacklogPage() {
                                 className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
                             />
                             <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">Pendingを除く</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
+                            <input
+                                type="checkbox"
+                                checked={filterPetAllowedOnly}
+                                onChange={(e) => setFilterPetAllowedOnly(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                            />
+                            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">ペット可のみ</span>
                         </label>
                     </div>
                 </div>

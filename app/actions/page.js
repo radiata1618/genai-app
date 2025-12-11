@@ -23,6 +23,11 @@ export default function ActionsPage() {
     const [selectedMonthDays, setSelectedMonthDays] = useState([]); // 1-31
     const [scheduledTime, setScheduledTime] = useState('05:00');
 
+    // Goal State
+    const [isGoalEnabled, setIsGoalEnabled] = useState(false);
+    const [goalPeriod, setGoalPeriod] = useState('WEEKLY');
+    const [goalTarget, setGoalTarget] = useState(3);
+
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
 
@@ -51,6 +56,11 @@ export default function ActionsPage() {
         setSelectedWeekdays([]);
         setSelectedMonthDays([]);
         setScheduledTime('05:00');
+
+        setIsGoalEnabled(false);
+        setGoalPeriod('WEEKLY');
+        setGoalTarget(3);
+
         setIsModalOpen(true);
     };
 
@@ -62,6 +72,17 @@ export default function ActionsPage() {
         setSelectedWeekdays(r.frequency?.weekdays || []);
         setSelectedMonthDays(r.frequency?.month_days || []);
         setScheduledTime(r.scheduled_time || '05:00');
+
+        if (r.goal_config) {
+            setIsGoalEnabled(true);
+            setGoalPeriod(r.goal_config.period);
+            setGoalTarget(r.goal_config.target_count);
+        } else {
+            setIsGoalEnabled(false);
+            setGoalPeriod('WEEKLY');
+            setGoalTarget(3);
+        }
+
         setIsModalOpen(true);
     };
 
@@ -90,10 +111,15 @@ export default function ActionsPage() {
                 month_days: freqType === 'MONTHLY' ? selectedMonthDays : []
             };
 
+            const goal_config = isGoalEnabled ? {
+                period: goalPeriod,
+                target_count: parseInt(goalTarget)
+            } : null;
+
             if (editingId) {
-                await api.updateRoutine(editingId, title, 'ACTION', frequency, icon, scheduledTime);
+                await api.updateRoutine(editingId, title, 'ACTION', frequency, icon, scheduledTime, false, goal_config);
             } else {
-                await api.addRoutine(title, 'ACTION', frequency, icon, scheduledTime);
+                await api.addRoutine(title, 'ACTION', frequency, icon, scheduledTime, false, goal_config);
             }
 
             setIsModalOpen(false);
@@ -251,6 +277,14 @@ export default function ActionsPage() {
                                                     {r.frequency?.type === 'WEEKLY' && <span>{r.frequency.weekdays.map(d => WEEKDAYS[d]).join(', ')}</span>}
 
                                                     {r.frequency?.type === 'MONTHLY' && <span>Days: {r.frequency.month_days.join(', ')}</span>}
+                                                    {r.goal_config && (
+                                                        <>
+                                                            <span className="text-slate-300">|</span>
+                                                            <span className="text-indigo-600 font-bold">
+                                                                Goal: {r.goal_config.target_count} / {r.goal_config.period === 'WEEKLY' ? 'wk' : 'mo'}
+                                                            </span>
+                                                        </>
+                                                    )}
                                                     <span className="text-slate-300">|</span>
                                                     <span>{r.scheduled_time || '05:00'}</span>
                                                 </div>
@@ -375,6 +409,49 @@ export default function ActionsPage() {
                                                     {day}
                                                 </button>
                                             ))}
+                                        </div>
+                                    )}
+                                </div>
+
+                                <div className="space-y-3 pt-2 border-t border-slate-100">
+                                    <div className="flex items-center justify-between">
+                                        <label className="flex items-center gap-2 cursor-pointer">
+                                            <input
+                                                type="checkbox"
+                                                checked={isGoalEnabled}
+                                                onChange={(e) => setIsGoalEnabled(e.target.checked)}
+                                                className="w-4 h-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                                            />
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider">Set Goal</span>
+                                        </label>
+                                    </div>
+
+                                    {isGoalEnabled && (
+                                        <div className="bg-slate-50 p-3 rounded-xl border border-slate-200 space-y-3 animate-in fade-in slide-in-from-top-2 duration-200">
+                                            <div className="flex gap-4 items-center">
+                                                <div className="flex bg-white p-1 rounded-lg border border-slate-200">
+                                                    {['WEEKLY', 'MONTHLY'].map(t => (
+                                                        <button
+                                                            key={t}
+                                                            onClick={() => setGoalPeriod(t)}
+                                                            className={`px-3 py-1.5 rounded-md text-[10px] font-bold transition-all ${goalPeriod === t ? 'bg-indigo-50 text-indigo-700' : 'text-slate-400 hover:text-slate-600'}`}
+                                                        >
+                                                            {t}
+                                                        </button>
+                                                    ))}
+                                                </div>
+                                                <div className="flex items-center gap-2">
+                                                    <input
+                                                        type="number"
+                                                        min="1"
+                                                        max="31"
+                                                        value={goalTarget}
+                                                        onChange={(e) => setGoalTarget(e.target.value)}
+                                                        className="w-16 p-2 border border-slate-200 rounded-lg text-sm font-bold text-center outline-none focus:border-indigo-500"
+                                                    />
+                                                    <span className="text-xs text-slate-500 font-bold">times / {goalPeriod.toLowerCase()}</span>
+                                                </div>
+                                            </div>
                                         </div>
                                     )}
                                 </div>

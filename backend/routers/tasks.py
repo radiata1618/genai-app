@@ -62,10 +62,20 @@ class FrequencyConfig(BaseModel):
     weekdays: List[int] = [] 
     month_days: List[int] = [] 
 
+class GoalConfig(BaseModel):
+    target_count: int
+    period: str # "WEEKLY" or "MONTHLY"
+
+class RoutineStats(BaseModel):
+    weekly_count: int = 0
+    monthly_count: int = 0
+    last_updated: Optional[datetime] = None
+
 class RoutineCreate(BaseModel):
     title: str
     routine_type: RoutineType
     frequency: Optional[FrequencyConfig] = None
+    goal_config: Optional[GoalConfig] = None
     icon: Optional[str] = None
     scheduled_time: str = "05:00"
     order: int = 0
@@ -74,6 +84,7 @@ class RoutineCreate(BaseModel):
 class RoutineResponse(RoutineCreate):
     id: str
     created_at: datetime
+    stats: Optional[RoutineStats] = None
 
 # Daily Task
 class DailyTaskResponse(BaseModel):
@@ -87,6 +98,7 @@ class DailyTaskResponse(BaseModel):
     order: int = 0
     scheduled_time: Optional[str] = "05:00"
     is_highlighted: bool = False
+    current_goal_progress: Optional[str] = None # e.g. "1/3"
 
 class ReorderRequest(BaseModel):
     ids: List[str]
@@ -292,6 +304,13 @@ def create_routine(routine: RoutineCreate, db: firestore.Client = Depends(get_db
     if routine.frequency:
         data['frequency'] = routine.frequency.dict()
         data['frequency']['type'] = routine.frequency.type.value
+    if routine.goal_config:
+        data['goal_config'] = routine.goal_config.dict()
+        data['stats'] = {
+            "weekly_count": 0,
+            "monthly_count": 0,
+            "last_updated": datetime.now(JST)
+        }
     
     data.update({
         "id": doc_ref.id,
@@ -328,6 +347,18 @@ def update_routine(routine_id: str, routine: RoutineCreate, background_tasks: Ba
     if routine.frequency:
         data['frequency'] = routine.frequency.dict()
         data['frequency']['type'] = routine.frequency.type.value
+    if routine.goal_config:
+        data['goal_config'] = routine.goal_config.dict()
+        # Preserve existing stats if present, else init
+        current_data = doc_ref.get().to_dict()
+        if 'stats' in current_data:
+            data['stats'] = current_data['stats']
+        else:
+             data['stats'] = {
+                "weekly_count": 0,
+                "monthly_count": 0,
+                "last_updated": datetime.now(JST)
+            }
     
     data['id'] = routine_id
     current_data = doc_ref.get().to_dict()
@@ -395,9 +426,16 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             created_count += 1
             
     
+    
     # --- CARRY OVER LOGIC ---
     past_backlog_docs = db.collection("daily_tasks")\
         .where("source_type", "==", SourceType.BACKLOG.value)\
+        .where("status", "==", TaskStatus.TODO.value)\
+        .stream()
+    
+    # --- AUTO-SKIP LOGIC (NEW) ---
+    past_routine_docs = db.collection("daily_tasks")\
+        .where("source_type", "==", SourceType.ROUTINE.value)\
         .where("status", "==", TaskStatus.TODO.value)\
         .stream()
 
@@ -406,6 +444,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     for d in current_today_docs:
          max_order = max(max_order, d.to_dict().get('order', 0))
 
+    # Process Backlog Carry Over
     for doc in past_backlog_docs:
         t = doc.to_dict()
         old_date_str = t['target_date']
@@ -432,6 +471,13 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 }
                 batch.set(new_ref, new_task)
                 created_count += 1
+    
+    # Process Routine Auto-Skip
+    for doc in past_routine_docs:
+        t = doc.to_dict()
+        old_date_str = t['target_date']
+        if old_date_str < target_date_str:
+             batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
 
     batch.commit()
     return {"message": f"Generated {created_count} tasks", "date": target_date_str}
@@ -449,10 +495,15 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
     
     tasks = []
     
-    # Pre-calculate filtering details using now() if strictly needed, 
-    # but frontend can allow all and filter? 
-    # Original logic filtered Routines by time if it's "Today".
+    # ---------------------------------------------------------
+    # ROUTINE STATS INJECTION
+    # ---------------------------------------------------------
+    # We need to inject "1/3" etc. into the daily tasks if they are routines.
+    # To do this efficiently, we first gather all tasks, then batch fetch relevant routines.
     
+    raw_tasks = []
+    routine_ids = set()
+
     now = datetime.now(JST)
     current_time_str = now.strftime("%H:%M")
     is_today = target_date_str == now.date().isoformat()
@@ -460,21 +511,53 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
     for doc in docs:
         t = doc.to_dict()
         
-        # Default fillers for Denormalization safety
+        # Default fillers
         if 'title' not in t: t['title'] = "Unknown Task"
         if 'is_highlighted' not in t: t['is_highlighted'] = False
         if 'order' not in t: t['order'] = 0
         
-        # TIME FILTERING logic (Keep relevant logic)
+        # TIME FILTERING logic
         show_task = True
         task_scheduled_time = t.get('scheduled_time', "05:00")
         
-        if is_today and t['source_type'] == SourceType.ROUTINE.value:
+        if is_today and t.get('source_type') == SourceType.ROUTINE.value:
             if current_time_str < task_scheduled_time:
                 show_task = False
         
         if show_task:
-            tasks.append(t)
+            raw_tasks.append(t)
+            if t.get('source_type') == SourceType.ROUTINE.value:
+                routine_ids.add(t['source_id'])
+
+    # Batch fetch routines
+    routine_map = {}
+    if routine_ids:
+        # Firestore 'in' query supports up to 10/30 items. If we have many, might need chunks.
+        # For a personal app, < 30 usually. Let's chunk safely at 10.
+        r_ids_list = list(routine_ids)
+        chunk_size = 10
+        for i in range(0, len(r_ids_list), chunk_size):
+            chunk = r_ids_list[i:i + chunk_size]
+            r_docs = db.collection("routines").where("id", "in", chunk).stream()
+            for rd in r_docs:
+                routine_map[rd.id] = rd.to_dict()
+
+    # Inject Progress
+    for t in raw_tasks:
+        if t.get('source_type') == SourceType.ROUTINE.value:
+            r_data = routine_map.get(t['source_id'])
+            if r_data:
+                goal = r_data.get('goal_config')
+                stats = r_data.get('stats')
+                if goal and stats:
+                    current = 0
+                    if goal['period'] == 'WEEKLY': current = stats.get('weekly_count', 0)
+                    elif goal['period'] == 'MONTHLY': current = stats.get('monthly_count', 0)
+                    
+                    target = goal['target_count']
+                    t['current_goal_progress'] = f"{current}/{target}"
+        
+        tasks.append(t)
     
     tasks.sort(key=lambda x: x.get('order', 0))
     return tasks
@@ -519,6 +602,79 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
     doc_ref.set(new_task)
     return new_task
 
+
+def update_routine_stats(routine_id: str, completed: bool, db: firestore.Client):
+    """
+    Update routine stats (weekly/monthly count) when a task is completed/uncompleted.
+    """
+    try:
+        doc_ref = db.collection("routines").document(routine_id)
+        snap = doc_ref.get()
+        if not snap.exists: return
+        
+        data = snap.to_dict()
+        goal = data.get('goal_config')
+        stats = data.get('stats')
+        
+        if not goal or not stats: return
+        
+        now = datetime.now(JST)
+        last_updated = stats.get('last_updated')
+        # If last_updated is naive, make it aware (firestore timestamps usually okay)
+        if last_updated and last_updated.tzinfo is None:
+             last_updated = last_updated.replace(tzinfo=JST)
+
+        # Reset Logic
+        # Simpson's method: Just check if we are in a new period relative to last_updated?
+        # Actually easier: Check if "this week" vs "last_updated week" is different.
+        
+        # Simple Logic:
+        # If period is WEEKLY, check isocalendar week.
+        # If period is MONTHLY, check month.
+        
+        needs_reset = False
+        if last_updated:
+            if goal['period'] == 'WEEKLY':
+                if now.isocalendar()[1] != last_updated.isocalendar()[1] or now.year != last_updated.year:
+                    needs_reset = True
+            elif goal['period'] == 'MONTHLY':
+                if now.month != last_updated.month or now.year != last_updated.year:
+                    needs_reset = True
+        else:
+            needs_reset = True # First time
+            
+        if needs_reset:
+            stats = {
+                "weekly_count": 0,
+                "monthly_count": 0,
+                "last_updated": now
+            }
+            # If we are completing, we start at 0 then add 1.
+            # If we are uncompleting logic is tricky if we just reset... 
+            # But usually we uncomplete a task from *today*. 
+            # If we uncomplete a task from last week, we shouldn't affect this week's stats?
+            # Complexity: "Unchecking a task from a previous period".
+            # For now, assume we operate on current relevant stats. 
+            # If I uncheck yesterday's task (same week), it decrements current week count.
+            # If I uncheck last month's task, it technically shouldn't affect this month.
+            # Let's just update "current stats" regardless for simplicity, 
+            # but ideally we reset if the *last update* was old. 
+            # If I uncheck a task, I am updating it NOW. So I am affecting NOW stats.
+            pass
+
+        if completed:
+            if goal['period'] == 'WEEKLY': stats['weekly_count'] = stats.get('weekly_count', 0) + 1
+            if goal['period'] == 'MONTHLY': stats['monthly_count'] = stats.get('monthly_count', 0) + 1
+        else:
+            if goal['period'] == 'WEEKLY': stats['weekly_count'] = max(0, stats.get('weekly_count', 0) - 1)
+            if goal['period'] == 'MONTHLY': stats['monthly_count'] = max(0, stats.get('monthly_count', 0) - 1)
+            
+        stats['last_updated'] = now
+        doc_ref.update({"stats": stats})
+        
+    except Exception as e:
+        print(f"Stats Update Error: {e}")
+
 @router.patch("/daily/{task_id}/complete")
 def complete_daily_task(task_id: str, completed: bool = True, background_tasks: BackgroundTasks = None, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("daily_tasks").document(task_id)
@@ -533,9 +689,13 @@ def complete_daily_task(task_id: str, completed: bool = True, background_tasks: 
     doc_ref.update(updates)
 
     daily_data = snap.to_dict()
-    if daily_data.get('source_type') == SourceType.BACKLOG.value and background_tasks:
-        backlog_id = daily_data.get('source_id')
-        background_tasks.add_task(sync_daily_completion_to_backlog, backlog_id, completed, db)
+    if background_tasks:
+        if daily_data.get('source_type') == SourceType.BACKLOG.value:
+            backlog_id = daily_data.get('source_id')
+            background_tasks.add_task(sync_daily_completion_to_backlog, backlog_id, completed, db)
+        elif daily_data.get('source_type') == SourceType.ROUTINE.value:
+            routine_id = daily_data.get('source_id')
+            background_tasks.add_task(update_routine_stats, routine_id, completed, db)
 
     return {**snap.to_dict(), **updates}
 

@@ -142,7 +142,7 @@ export default function DashboardPage() {
             await init();
 
             setIsModalOpen(false);
-            setNewTask({ title: '', category: 'Research', priority: 'Medium' });
+            setNewTask(prev => ({ ...prev, title: '' }));
         } catch (e) {
             console.error(e);
             alert('Failed to add task');
@@ -364,6 +364,11 @@ export default function DashboardPage() {
                                                 {t.title || 'Unknown Task'}
                                             </div>
                                             <div className="flex gap-2 text-[9px] items-center">
+                                                {t.current_goal_progress && (
+                                                    <span className={`px-1.5 py-0.5 rounded font-mono font-bold ${t.status === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
+                                                        {t.current_goal_progress}
+                                                    </span>
+                                                )}
                                                 <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
                                                     {t.source_type}
                                                 </span>

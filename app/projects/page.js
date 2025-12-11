@@ -15,6 +15,8 @@ export default function ProjectsPage() {
     const [tasks, setTasks] = useState([]);
     const [loadingProjects, setLoadingProjects] = useState(true);
     const [loadingTasks, setLoadingTasks] = useState(false);
+    const [showCompleted, setShowCompleted] = useState(false);
+    const [undoHistory, setUndoHistory] = useState([]);
 
     // Project Creation State
     const [isProjectModalOpen, setIsProjectModalOpen] = useState(false);
@@ -188,12 +190,41 @@ export default function ProjectsPage() {
     };
 
     const handleToggleTask = async (taskId) => {
+        const task = tasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        // Add to history
+        setUndoHistory(prev => {
+            const newHistory = [...prev, { id: taskId, is_completed: task.is_completed }];
+            if (newHistory.length > 3) newHistory.shift();
+            return newHistory;
+        });
+
         setTasks(prev => prev.map(t => t.id === taskId ? { ...t, is_completed: !t.is_completed } : t));
         try {
             await toggleProjectTask(selectedProject.id, taskId);
         } catch (e) {
             console.error(e);
             fetchTasks(selectedProject.id);
+        }
+    };
+
+    const handleUndo = async () => {
+        if (undoHistory.length === 0) return;
+
+        const lastAction = undoHistory[undoHistory.length - 1];
+        setUndoHistory(prev => prev.slice(0, -1));
+
+        // Optimistic update to previous status
+        setTasks(prev => prev.map(t => t.id === lastAction.id ? { ...t, is_completed: lastAction.is_completed } : t));
+
+        try {
+            // Toggle back effectively reverts it if we just toggle again? 
+            // The API is a toggle so calling it again should revert state.
+            await toggleProjectTask(selectedProject.id, lastAction.id);
+        } catch (e) {
+            console.error("Failed to undo", e);
+            if (selectedProject) fetchTasks(selectedProject.id);
         }
     };
 
@@ -238,6 +269,8 @@ export default function ProjectsPage() {
         }
     };
 
+    const visibleTasks = showCompleted ? tasks : tasks.filter(t => !t.is_completed);
+
     return (
         <div className="relative w-full h-full bg-slate-50 text-slate-800 font-sans flex flex-col overflow-hidden">
             <div className="flex-1 flex flex-col p-6 h-full gap-4">
@@ -252,6 +285,28 @@ export default function ProjectsPage() {
                             </h1>
                         </div>
                         <div className="flex items-center gap-2">
+                            <button
+                                onClick={handleUndo}
+                                disabled={undoHistory.length === 0}
+                                className={`text-[10px] font-bold px-3 py-1.5 rounded-full shadow-sm transition-all flex items-center gap-1
+                                    ${undoHistory.length > 0
+                                        ? 'bg-amber-100 text-amber-800 hover:bg-amber-200'
+                                        : 'bg-slate-100 text-slate-300 cursor-not-allowed'
+                                    }`}
+                            >
+                                <span>↩️</span> <span className="hidden sm:inline">Undo</span>
+                            </button>
+                            <button
+                                onClick={() => setShowCompleted(!showCompleted)}
+                                className={`text-[10px] font-bold px-2 py-1.5 rounded-full border transition-all flex items-center gap-1.5
+                                    ${showCompleted
+                                        ? 'bg-indigo-50 text-indigo-600 border-indigo-100 hover:bg-indigo-100'
+                                        : 'bg-white text-slate-500 border-slate-200 hover:bg-slate-50'
+                                    }`}
+                            >
+                                <span className={`w-1.5 h-1.5 rounded-full ${showCompleted ? 'bg-indigo-500' : 'bg-slate-300'}`} />
+                                {showCompleted ? 'All' : 'Active'}
+                            </button>
                             <button
                                 onClick={() => setIsProjectModalOpen(true)}
                                 className="bg-slate-900 text-white text-xs font-bold px-3 py-2 rounded-lg shadow hover:bg-slate-800 transition-all flex items-center gap-2"
@@ -351,7 +406,7 @@ export default function ProjectsPage() {
 
                             {/* Task List */}
                             <div className="flex-1 overflow-y-auto p-4 space-y-2 custom-scrollbar">
-                                {tasks.map(t => (
+                                {visibleTasks.map(t => (
                                     <div
                                         key={t.id}
                                         draggable
@@ -388,9 +443,9 @@ export default function ProjectsPage() {
                                         </button>
                                     </div>
                                 ))}
-                                {tasks.length === 0 && !loadingTasks && (
+                                {visibleTasks.length === 0 && !loadingTasks && (
                                     <div className="text-center py-20 text-slate-400 text-sm">
-                                        No tasks in this project.
+                                        {tasks.length > 0 ? "All tasks completed! Toggle 'All' to see them." : "No tasks in this project."}
                                     </div>
                                 )}
                             </div>
