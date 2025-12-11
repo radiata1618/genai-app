@@ -9,6 +9,7 @@ export default function ReviewPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [progress, setProgress] = useState("");
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [isDragging, setIsDragging] = useState(false);
 
     const fetchTasks = async () => {
         try {
@@ -25,6 +26,27 @@ export default function ReviewPage() {
     useEffect(() => {
         fetchTasks();
     }, []);
+
+    const handleDragOver = (e) => {
+        e.preventDefault();
+        setIsDragging(true);
+    };
+
+    const handleDragLeave = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+    };
+
+    const handleDrop = (e) => {
+        e.preventDefault();
+        setIsDragging(false);
+        const file = e.dataTransfer.files?.[0];
+        if (file && file.type.startsWith("video/")) {
+            handleFileUpload({ target: { files: [file] } });
+        } else {
+            alert("Please drop a valid video file.");
+        }
+    };
 
     const handleFileUpload = async (e) => {
         const file = e.target.files?.[0];
@@ -143,11 +165,20 @@ export default function ReviewPage() {
                         <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
                             <h3 className="text-2xl font-bold mb-6 text-slate-800">Upload Lesson Video</h3>
                             <div className="mb-8">
-                                <label className="flex flex-col items-center px-4 py-10 bg-white text-blue rounded-lg shadow-lg tracking-wide uppercase border border-blue cursor-pointer hover:bg-blue-50 transition-colors">
+                                <label
+                                    onDragOver={handleDragOver}
+                                    onDragLeave={handleDragLeave}
+                                    onDrop={handleDrop}
+                                    className={`flex flex-col items-center px-4 py-10 bg-white text-blue rounded-lg shadow-lg tracking-wide uppercase border border-blue cursor-pointer transition-colors
+                                        ${isDragging ? "bg-cyan-100 border-cyan-500 scale-105" : "hover:bg-blue-50"}
+                                    `}
+                                >
                                     <svg className="w-8 h-8 text-blue-500" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
                                         <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4-4-4 4h3v3h2v-3z" />
                                     </svg>
-                                    <span className="mt-2 text-base leading-normal text-slate-600">Select a video file</span>
+                                    <span className="mt-2 text-base leading-normal text-slate-600">
+                                        {isDragging ? "Drop video here" : "Select or Drop a video file"}
+                                    </span>
                                     <input type='file' accept="video/*" className="hidden" onChange={handleFileUpload} />
                                 </label>
                             </div>
