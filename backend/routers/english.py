@@ -65,14 +65,7 @@ class ReviewTask(BaseModel):
 
 # --- Helpers ---
 
-def extract_audio(video_path: str, audio_path: str):
-    if VideoFileClip is None:
-        raise ImportError("moviepy not installed")
-    
-    with VideoFileClip(video_path) as video:
-        if video.audio is None:
-            raise ValueError("Video has no audio")
-        video.audio.write_audiofile(audio_path, logger=None)
+
 
 # --- Endpoints ---
 
@@ -201,61 +194,61 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
     if bucket_name != GCS_BUCKET_NAME:
          raise HTTPException(status_code=400, detail="Bucket mismatch")
 
-    local_video_path = UPLOAD_DIR / f"{uuid.uuid4()}_{req.video_filename}"
-    local_audio_path = UPLOAD_DIR / f"{local_video_path.stem}.mp3"
+    # Direct GCS URI usage
+    print(f"DEBUG: Using GCS URI for Gemini: {req.gcs_path}")
     
     try:
-        bucket = storage_client.bucket(bucket_name)
-        blob = bucket.blob(blob_name)
-        blob.download_to_filename(str(local_video_path))
+        # Construct Part object directly from GCS URI
+        # Assuming video/mp4 as default, but ideally we should pass mime_type if possible or detect it.
+        # req.video_filename might help, or we can just assume video/mp4 or video/*
+        mime_type = "video/mp4"
+        if req.video_filename.lower().endswith(".mov"):
+             mime_type = "video/quicktime"
+        elif req.video_filename.lower().endswith(".webm"):
+             mime_type = "video/webm"
         
-        # 2. Extract Audio
-        extract_audio(str(local_video_path), str(local_audio_path))
-        
-        # 3. Gemini Analysis
-        with open(local_audio_path, "rb") as f:
-            audio_bytes = f.read()
+        part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
 
 
         prompt = """
-        この音声は英語レッスンを受けた際の動画（の音声）です。
-        生徒はTOEIC900点程度の中上級者（英語圏在住経験あり）です。
-        復習のために以下の情報を整理してMarkdown形式（日本語）で出力してください。
-        **冒頭の挨拶や前置きは一切不要です。**
-        **可読性を高めるため、各セクションや項目の間には必ず空行を入れてください。**
+        この音声は、ある英語学習者（TOEIC900点程度、海外在住経験あり）がオンライン英会話レッスンを受けている際の録音データです。
+        あなたは熟練した英語教師として、この生徒の英語力をさらに向上させるための詳細なフィードバックレポートを作成してください。
 
-        ## 出力フォーマット
-        1. **誤っている表現 (Corrections)**
-           - 文法ミス、発音ミス、または不自然な言い回し。
-           
-        2. **推奨表現・ボキャブラリー (Better Expressions)**
-           - より洗練された、あるいはネイティブらしい言い換え案。
+        **制約事項:**
+        1. 出力は**日本語のMarkdown形式**で行ってください。
+        2. **冒頭の挨拶や前置き（例：「分析結果は以下の通りです」等）は一切含めないでください。**
+        3. 各セクションの区切りには必ず空行を入れ、可読性を高くしてください。
 
-        3. **理想的なロールプレイの会話案 (Roleplay Improvements)**
-           - このやり取りをより良くするための改善案や、理想的な会話の流れ。
+        ## レポート構成
 
-        解説は日本語で行い、比較的複雑で実践的な内容を含めてください。
+        1. **要改善点と修正案 (Corrections & Refinements)**
+           - 生徒の発言の中で、文法ミス、不自然なコロケーション、または発音の不明瞭な箇所を具体的に指摘してください。
+           - それぞれに対して、より自然で洗練された言い換え（Better Version）を提示してください。
+
+        2. **推奨ボキャブラリー・表現 (Recommended Vocabulary & Expressions)**
+           - この会話の文脈で使える、より高度な語彙やネイティブらしい表現（イディオム等）を3〜5つ紹介してください。
+
+        3. **ロールプレイ最適化案 (Roleplay Optimization)**
+           - 会話の特定の部分を取り上げ、「こう返せばもっと話が弾んだ」「より論理的に意見を主張できた」という理想的な会話スクリプト（数往復）を提示してください。
+
+        4. **総評 (Overall Feedback)**
+           - 文法、流暢さ、発音、対話力の観点から簡潔なアドバイスをお願いします。
+
+        解説はすべて日本語で行い、学習者が納得感を持てるよう論理的かつ具体的な内容にしてください。
         """
         
-        part = types.Part.from_bytes(data=audio_bytes, mime_type="audio/mp3")
-        
+        print(f"DEBUG: STARTING GEMINI GENERATION")
         response = client.models.generate_content(
             model="gemini-3-pro-preview",
             contents=[prompt, part]
         )
+        print(f"DEBUG: GEMINI GENERATION COMPLETE")
         content = response.text
 
     except Exception as e:
         print(f"Review Processing Error: {e}")
         raise HTTPException(status_code=500, detail=f"Processing Failed: {str(e)}")
-    finally:
-        # Clean up local files
-        try:
-            if local_video_path.exists(): os.remove(local_video_path)
-            if local_audio_path.exists(): os.remove(local_audio_path)
-            # Optional: Delete from GCS? Let's keep it for now or delete if needed.
-        except:
-            pass
+    # No finally block needed as no local files are created
     
     # 4. Save to Firestore
     doc_ref = db.collection("english_review").document()
