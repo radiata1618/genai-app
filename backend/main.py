@@ -50,6 +50,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         return response
 
 from fastapi.responses import JSONResponse
+from middleware import PerformanceMiddleware
+
+app.add_middleware(PerformanceMiddleware)
 app.add_middleware(APIKeyMiddleware)
 # ---------------------------
 

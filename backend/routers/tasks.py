@@ -5,7 +5,10 @@ from pydantic import BaseModel
 from datetime import date, datetime, timezone, timedelta
 import enum
 from google.cloud import firestore
+from google.cloud import firestore
 from database import get_db
+import time
+import json
 
 JST = timezone(timedelta(hours=9))
 
@@ -381,6 +384,8 @@ def delete_routine(routine_id: str, db: firestore.Client = Depends(get_db)):
 
 @router.post("/generate-daily")
 def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    start_time_total = time.time()
+    
     if target_date is None:
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
@@ -480,10 +485,21 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
              batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
 
     batch.commit()
+    
+    end_time_total = time.time()
+    print(json.dumps({
+        "type": "perf_metric",
+        "operation": "generate_daily_tasks",
+        "duration_ms": (end_time_total - start_time_total) * 1000,
+        "detail": f"created={created_count}"
+    }))
+    
     return {"message": f"Generated {created_count} tasks", "date": target_date_str}
 
 @router.get("/daily", response_model=List[DailyTaskResponse])
 def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    start_time_total = time.time()
+    
     if target_date is None:
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
@@ -560,6 +576,15 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
         tasks.append(t)
     
     tasks.sort(key=lambda x: x.get('order', 0))
+    
+    end_time_total = time.time()
+    print(json.dumps({
+        "type": "perf_metric",
+        "operation": "get_daily_tasks",
+        "duration_ms": (end_time_total - start_time_total) * 1000,
+        "detail": f"count={len(tasks)}"
+    }))
+    
     return tasks
 
 @router.post("/daily/pick")
