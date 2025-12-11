@@ -484,6 +484,39 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         if old_date_str < target_date_str:
              batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
 
+    # --- AUTO-PICK SCHEDULED STOCK (NEW) ---
+    # Pick up Stock items that were scheduled for today or in the past (and are still STOCK).
+    # This ensures items scheduled for yesterday but not opened/generated yesterday appear today.
+    scheduled_stock_docs = db.collection("backlog_items")\
+        .where("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time()))\
+        .where("status", "==", "STOCK")\
+        .where("is_archived", "==", False)\
+        .stream()
+
+    for doc in scheduled_stock_docs:
+        item = doc.to_dict()
+        new_id = f"{item['id']}_{target_date_str}"
+        new_ref = db.collection("daily_tasks").document(new_id)
+
+        # Check existence to avoid overwriting or duplicating if already picked today
+        # Note: In a batch, we can't check 'if it will be written'. 
+        # But we rely on 'new_ref.get()' which checks DB state.
+        if not new_ref.get().exists:
+            max_order += 1
+            new_task = {
+                "id": new_id,
+                "source_id": item['id'],
+                "source_type": SourceType.BACKLOG.value,
+                "target_date": target_date_str,
+                "status": TaskStatus.TODO.value,
+                "created_at": datetime.now(JST),
+                "title": item.get('title', 'Unknown'),
+                "order": max_order,
+                "is_highlighted": item.get('is_highlighted', False)
+            }
+            batch.set(new_ref, new_task)
+            created_count += 1
+
     batch.commit()
     
     end_time_total = time.time()

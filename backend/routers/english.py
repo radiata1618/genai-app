@@ -92,6 +92,10 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
        - カタい表現からカジュアルなものまで、ネイティブらしい組み合わせ。
 
     3. **会話シナリオ (Conversation Scenario)**
+       > **重要:** 会話文全体を必ず引用記法（>）で囲ってください。
+       > 例:
+       > > A: Hello
+       > > B: Hi there
        - 議論のポイントや予期せぬ質問を含む現実的な対話。
 
     4. **ディスカッションポイント (Discussion Points)**
