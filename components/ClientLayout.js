@@ -1,11 +1,23 @@
 "use client";
 
-import React from 'react';
+import React, { useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { SidebarProvider, useSidebar } from './SidebarContext';
 
 function ClientLayoutContent({ children }) {
     const { isSidebarOpen, closeSidebar } = useSidebar();
+
+    useEffect(() => {
+        if ('serviceWorker' in navigator) {
+            navigator.serviceWorker.register('/sw.js')
+                .then(registration => {
+                    console.log('ServiceWorker registration successful with scope: ', registration.scope);
+                })
+                .catch(err => {
+                    console.log('ServiceWorker registration failed: ', err);
+                });
+        }
+    }, []);
 
     return (
         <div className="flex h-screen bg-gray-50 overflow-hidden">
