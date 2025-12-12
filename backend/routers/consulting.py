@@ -1,4 +1,5 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Body
+from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Body, BackgroundTasks
+from concurrent.futures import ThreadPoolExecutor, as_completed
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import base64
@@ -118,9 +119,46 @@ def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]
                     "distance": neighbor.distance
                 })
         return results
+        return results
     except Exception as e:
         print(f"Vector Search Error: {e}")
         return []
+
+def download_and_upload_worker(pdf_url: str):
+    """Helper for threading."""
+    try:
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        pdf_res = requests.get(pdf_url, headers=headers, timeout=30)
+        
+        if pdf_res.status_code == 200:
+            filename = pdf_url.split("/")[-1]
+            # basic sanitization
+            filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+            if not filename.lower().endswith(".pdf"): filename += ".pdf"
+            
+            client = get_storage_client()
+            bucket = client.bucket(GCS_BUCKET_NAME)
+            blob = bucket.blob(f"consulting_raw/{filename}")
+            blob.upload_from_string(pdf_res.content, content_type="application/pdf")
+            print(f"Collected: {filename}")
+            return filename
+    except Exception as e:
+        print(f"Failed to download {pdf_url}: {e}")
+    return None
+
+def process_downloads(pdf_links: List[str]):
+    """Background task to download files concurrently."""
+    print(f"Starting background download for {len(pdf_links)} files.")
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = {executor.submit(download_and_upload_worker, url): url for url in pdf_links}
+        for future in as_completed(futures):
+            try:
+                future.result()
+            except Exception as e:
+                print(f"Worker Error: {e}")
+    print("Background download complete.")
 
 # --- Models ---
 
@@ -140,12 +178,11 @@ class SlidePolisherRequest(BaseModel):
 # --- Endpoints ---
 
 @router.post("/consulting/collect")
-async def collect_data(req: CollectRequest):
+async def collect_data(req: CollectRequest, background_tasks: BackgroundTasks):
     """
     Downloads content from URL.
-    - If PDF: Downloads directly.
-    - If HTML: Scrapes for .pdf links and downloads all of them.
-    Saves to GCS.
+    - If PDF: Downloads directly (foreground, fast).
+    - If HTML: Scrapes for .pdf links (foreground), then downloads all of them (Background).
     """
     try:
         # 1. Fetch the URL
@@ -156,67 +193,53 @@ async def collect_data(req: CollectRequest):
         response.raise_for_status()
         
         content_type = response.headers.get('Content-Type', '').lower()
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
         
-        collected_files = []
+        pdf_links = []
 
         # 2. Case: Single PDF
         if 'application/pdf' in content_type or req.url.lower().endswith('.pdf'):
-            filename = req.url.split("/")[-1]
-            if not filename.endswith(".pdf"): filename += ".pdf"
-            
-            blob = bucket.blob(f"consulting_raw/{filename}")
-            blob.upload_from_string(response.content, content_type="application/pdf")
-            collected_files.append(filename)
+            download_and_upload_worker(req.url) # Do single file immediately
+            return {"status": "success", "message": f"Collected single PDF: {req.url.split('/')[-1]}"}
             
         # 3. Case: HTML Page (Scraping)
         elif 'text/html' in content_type:
             soup = BeautifulSoup(response.content, 'html.parser')
-            pdf_links = set()
             
             # Find all links ending in .pdf
             for a in soup.find_all('a', href=True):
                 href = a['href']
-                if href.lower().endswith('.pdf'):
-                    full_url = urljoin(req.url, href)
-                    pdf_links.add(full_url)
+                full_url = urljoin(req.url, href)
+                if full_url.lower().endswith('.pdf'):
+                    pdf_links.append(full_url)
             
-            print(f"Found {len(pdf_links)} PDFs on page.")
+            # Remove duplicates
+            pdf_links = list(set(pdf_links))
+            print(f"Found {len(pdf_links)} unique PDFs on page.")
 
-            # Download each PDF
-            for pdf_url in pdf_links:
-                try:
-                    pdf_res = requests.get(pdf_url, headers=headers)
-                    if pdf_res.status_code == 200:
-                        filename = pdf_url.split("/")[-1]
-                        blob = bucket.blob(f"consulting_raw/{filename}")
-                        blob.upload_from_string(pdf_res.content, content_type="application/pdf")
-                        collected_files.append(filename)
-                except Exception as e:
-                    print(f"Failed to download {pdf_url}: {e}")
+            if not pdf_links:
+                return {"status": "warning", "message": "No PDFs found on page."}
+
+            # Queue background task
+            background_tasks.add_task(process_downloads, pdf_links)
+
+            return {
+                "status": "success", 
+                "message": f"Found {len(pdf_links)} PDFs. Starting background download..."
+            }
 
         else:
             return {"status": "error", "message": f"Unsupported content type: {content_type}"}
-        
-        if not collected_files:
-             return {"status": "warning", "message": "No PDFs found to collect."}
-
-        return {
-            "status": "success", 
-            "message": f"Collected {len(collected_files)} files: {', '.join(collected_files[:5])}..."
-        }
 
     except Exception as e:
         print(f"Collection Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/consulting/collect-file")
-async def collect_file(file: UploadFile = File(...)):
+async def collect_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
     """
     Accepts a PDF file upload.
     - Parses attributes to find links (Annotations /URI).
-    - Downloads all found .pdf links to GCS.
+    - Downloads all found .pdf links to GCS (Background).
     """
     try:
         content = await file.read()
@@ -234,41 +257,19 @@ async def collect_file(file: UploadFile = File(...)):
                         uri = obj["/A"]["/URI"]
                         if uri.lower().endswith(".pdf"):
                             pdf_links.add(uri)
-                            
+        
+        pdf_links = list(pdf_links)
         print(f"Found {len(pdf_links)} PDF links in uploaded file.")
         
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
-        collected_files = []
-
-        # Download found PDFs
-        for pdf_url in pdf_links:
-            try:
-                # Add User-Agent to avoid 403
-                headers = {
-                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                }
-                pdf_res = requests.get(pdf_url, headers=headers)
-                
-                if pdf_res.status_code == 200:
-                    filename = pdf_url.split("/")[-1]
-                    # basic sanitization
-                    filename = "".join(c for c in filename if c.isalnum() or c in "._-")
-                    
-                    blob = bucket.blob(f"consulting_raw/{filename}")
-                    blob.upload_from_string(pdf_res.content, content_type="application/pdf")
-                    collected_files.append(filename)
-                else:
-                    print(f"Failed to download {pdf_url}: Status {pdf_res.status_code}")
-            except Exception as e:
-                print(f"Failed to download {pdf_url}: {e}")
-
-        if not collected_files:
+        if not pdf_links:
              return {"status": "warning", "message": "No accessible PDF links found in the uploaded file."}
+
+        # Queue background task
+        background_tasks.add_task(process_downloads, pdf_links)
 
         return {
             "status": "success", 
-            "message": f"Collected {len(collected_files)} files from upload: {', '.join(collected_files[:3])}..."
+            "message": f"Found {len(pdf_links)} linked files. Starting background download..."
         }
 
     except Exception as e:
