@@ -252,6 +252,32 @@ export default function PreparationPage() {
                                                 </div>
                                             </div>
                                         ),
+                                        em: ({ node, ...props }) => {
+                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                            return (
+                                                <span className="inline-flex items-center">
+                                                    <em className="italic text-slate-600" {...props} />
+                                                    {isEnglish && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const synth = window.speechSynthesis;
+                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                const u = new SpeechSynthesisUtterance(cleanText);
+                                                                u.lang = 'en-US';
+                                                                synth.speak(u);
+                                                            }}
+                                                            className="ml-1 text-cyan-400 hover:text-cyan-600 p-0.5 rounded-full transition-colors scale-75"
+                                                            title="Listen"
+                                                        >
+                                                            🔊
+                                                        </button>
+                                                    )}
+                                                </span>
+                                            );
+                                        },
                                         h2: ({ node, ...props }) => (
                                             <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
                                         ),

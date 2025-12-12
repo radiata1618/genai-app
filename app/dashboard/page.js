@@ -1,6 +1,6 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { api } from '../utils/api';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
@@ -28,7 +28,7 @@ const PRIORITIES = {
     'Low': { label: '低', color: 'text-slate-600 bg-slate-50 border-slate-200' },
 };
 
-export default function DashboardPage() {
+function DashboardContent() {
     const [routines, setRoutines] = useState([]);
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
@@ -620,5 +620,13 @@ export default function DashboardPage() {
                 </div>
             )}
         </div>
+    );
+}
+
+export default function DashboardPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center h-full w-full bg-slate-50 text-slate-400 text-sm font-medium">Loading Dashboard...</div>}>
+            <DashboardContent />
+        </Suspense>
     );
 }

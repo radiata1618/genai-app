@@ -13,7 +13,7 @@ export default function YouTubePrepPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [activeTab, setActiveTab] = useState("notes"); // "video", "notes"
+    const [activeTab, setActiveTab] = useState("notes"); // "video", "notes", "script"
 
     useEffect(() => {
         // Adjust sidebar based on screen width
@@ -254,6 +254,12 @@ export default function YouTubePrepPage() {
                             >
                                 Notes
                             </button>
+                            <button
+                                onClick={() => setActiveTab("script")}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === "script" ? "bg-white text-red-600 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-700"}`}
+                            >
+                                Script
+                            </button>
                         </div>
                         <div className="text-center text-xs text-gray-400 py-1 bg-gray-50 border-b border-gray-100 hidden sm:block">
                             Created: {new Date(selectedTask.created_at).toLocaleDateString()}
@@ -324,6 +330,28 @@ export default function YouTubePrepPage() {
                                         </ReactMarkdown>
                                     </article>
                                     <div className="h-20"></div> {/* Bottom spacer */}
+                                </div>
+                            </div>
+
+                            {/* Script View */}
+                            <div className={`absolute inset-0 bg-white overflow-y-auto p-4 md:p-8 transition-all duration-300
+                                 ${activeTab === "script" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
+                             `}>
+                                <div className="max-w-3xl mx-auto">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-4">Video Script</h2>
+                                    {selectedTask.script ? (
+                                        <article className="prose prose-slate max-w-none">
+                                            <ReactMarkdown>
+                                                {selectedTask.script}
+                                            </ReactMarkdown>
+                                            <div className="h-20"></div> {/* Bottom spacer */}
+                                        </article>
+                                    ) : (
+                                        <div className="text-center text-gray-500 mt-10">
+                                            <p>No script available for this video.</p>
+                                            <p className="text-sm mt-2">Scripts are only saved for newly added videos.</p>
+                                        </div>
+                                    )}
                                 </div>
                             </div>
                         </div>

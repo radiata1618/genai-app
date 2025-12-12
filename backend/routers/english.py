@@ -76,6 +76,7 @@ class YouTubePrepTask(BaseModel):
     video_url: str
     topic: str
     content: str
+    script: Optional[str] = None
     created_at: datetime
     status: str = "TODO"
 
@@ -107,7 +108,8 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
 
     2. **重要フレーズ・コロケーション (Key Phrases & Collocations)**
        - カタい表現からカジュアルなものまで、ネイティブらしい組み合わせ。
-       - **注意:** ここでは太字を使用せず、強調したい箇所は *斜体* や `コードブロック` を使用してください。
+       - カタい表現からカジュアルなものまで、ネイティブらしい組み合わせ。
+       - **注意:** 各フレーズ（コロケーション）は必ず太字（`**`）で囲ってください。解説や例文には太字を使わないでください。
 
     3. **会話シナリオ (Conversation Scenario)**
        > **重要:** 会話文全体を必ず引用記法（>）で囲ってください。
@@ -247,6 +249,7 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
         video_url=req.url,
         topic=topic,
         content=content,
+        script=full_text,
         created_at=datetime.now()
     )
     doc_ref.set(task.dict())
