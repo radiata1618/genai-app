@@ -29,7 +29,7 @@ router = APIRouter(
 # --- Configuration (Sharing some env vars with RAG) ---
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION = os.getenv("LOCATION")
-GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME")
+GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME_FOR_CONSUL_DOC")
 INDEX_ENDPOINT_ID = os.getenv("INDEX_ENDPOINT_ID")
 DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID")
 VECTOR_SEARCH_LOCATION = os.getenv("VECTOR_SEARCH_LOCATION")
