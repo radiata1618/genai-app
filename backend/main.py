@@ -11,6 +11,7 @@ from routers import management
 from routers import tasks
 from routers import car_quiz
 from routers import projects
+from routers import consulting
 
 env_path = Path(__file__).parent.parent / '.env.local'
 load_dotenv(dotenv_path=env_path)
@@ -65,6 +66,7 @@ app.include_router(management.router, prefix="/api", tags=["management"])
 app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
+app.include_router(consulting.router, prefix="/api", tags=["consulting"])
 from routers import english
 app.include_router(english.router, prefix="/api", tags=["english"])
 

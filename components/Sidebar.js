@@ -37,6 +37,15 @@ const navItems = [
             { name: "YouTube Prep", icon: "📺", href: "/english/youtube-prep" },
         ],
     },
+    {
+        category: "Consulting Support",
+        items: [
+            { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
+            { name: "Visual Search", icon: "👁️", href: "/consulting/visual-search" },
+            { name: "Slide Polisher", icon: "✨", href: "/consulting/slide-polisher" },
+            { name: "Admin (Data)", icon: "⚙️", href: "/consulting/admin" },
+        ],
+    },
 ];
 
 export default function Sidebar({ onCloseMobile }) {
