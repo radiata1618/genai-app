@@ -6,8 +6,12 @@ import base64
 import os
 import requests
 import datetime
+import asyncio
+import uuid
+import json
 from google.cloud import storage
 from google.cloud import aiplatform
+from fastapi.responses import StreamingResponse
 from google import genai
 from google.genai import types
 from google.api_core.client_options import ClientOptions
@@ -177,104 +181,195 @@ class SlidePolisherRequest(BaseModel):
 
 # --- Endpoints ---
 
-@router.post("/consulting/collect")
-async def collect_data(req: CollectRequest, background_tasks: BackgroundTasks):
+# --- Task Management ---
+
+# In-memory storage for tasks: task_id -> {"status": str, "queue": asyncio.Queue, "logs": list}
+tasks: Dict[str, Dict] = {}
+
+async def add_log(task_id: str, message: str):
+    """Adds a log to the queue and in-memory list."""
+    if task_id in tasks:
+        timestamp = datetime.datetime.now().strftime("%H:%M:%S")
+        log_entry = f"[{timestamp}] {message}"
+        tasks[task_id]["logs"].append(log_entry)
+        await tasks[task_id]["queue"].put(log_entry)
+
+async def run_background_collection(task_id: str, mode: str, input_data: Any):
     """
-    Downloads content from URL.
-    - If PDF: Downloads directly (foreground, fast).
-    - If HTML: Scrapes for .pdf links (foreground), then downloads all of them (Background).
+    Background worker that performs the logic and streams logs.
+    mode: 'url' or 'file_bytes'
     """
     try:
-        # 1. Fetch the URL
-        headers = {
-            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-        }
-        response = requests.get(req.url, headers=headers, stream=True)
-        response.raise_for_status()
-        
-        content_type = response.headers.get('Content-Type', '').lower()
-        
+        await add_log(task_id, "Task Started.")
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
         pdf_links = []
-
-        # 2. Case: Single PDF
-        if 'application/pdf' in content_type or req.url.lower().endswith('.pdf'):
-            download_and_upload_worker(req.url) # Do single file immediately
-            return {"status": "success", "message": f"Collected single PDF: {req.url.split('/')[-1]}"}
+        
+        # --- 1. Identify Links ---
+        if mode == 'url':
+            url = input_data
+            await add_log(task_id, f"Fetching URL: {url}...")
             
-        # 3. Case: HTML Page (Scraping)
-        elif 'text/html' in content_type:
-            soup = BeautifulSoup(response.content, 'html.parser')
-            
-            # Find all links ending in .pdf
-            for a in soup.find_all('a', href=True):
-                href = a['href']
-                full_url = urljoin(req.url, href)
-                if full_url.lower().endswith('.pdf'):
-                    pdf_links.append(full_url)
-            
-            # Remove duplicates
-            pdf_links = list(set(pdf_links))
-            print(f"Found {len(pdf_links)} unique PDFs on page.")
-
-            if not pdf_links:
-                return {"status": "warning", "message": "No PDFs found on page."}
-
-            # Queue background task
-            background_tasks.add_task(process_downloads, pdf_links)
-
-            return {
-                "status": "success", 
-                "message": f"Found {len(pdf_links)} PDFs. Starting background download..."
+            headers = {
+                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
             }
+            try:
+                response = requests.get(url, headers=headers, stream=True, timeout=30)
+                response.raise_for_status()
+                content_type = response.headers.get('Content-Type', '').lower()
 
-        else:
-            return {"status": "error", "message": f"Unsupported content type: {content_type}"}
+                if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
+                    # Direct PDF
+                    pdf_links.append(url)
+                    await add_log(task_id, "Identified direct PDF URL.")
+                elif 'text/html' in content_type:
+                    # HTML Scraping
+                    await add_log(task_id, "Parsing HTML page...")
+                    soup = BeautifulSoup(response.content, 'html.parser')
+                    count = 0
+                    for a in soup.find_all('a', href=True):
+                        href = a['href']
+                        full_url = urljoin(url, href)
+                        if full_url.lower().endswith('.pdf'):
+                            pdf_links.append(full_url)
+                            count += 1
+                    # Remove duplicates
+                    pdf_links = list(set(pdf_links))
+                    await add_log(task_id, f"Found {len(pdf_links)} unique PDFs on page.")
+                else:
+                    await add_log(task_id, f"Unsupported content type: {content_type}")
+            except Exception as e:
+                await add_log(task_id, f"Error fetching URL: {e}")
+                
+        elif mode == 'file_bytes':
+            # Create a bytes stream from the input data
+            await add_log(task_id, "Parsing uploaded PDF file...")
+            pdf_file = io.BytesIO(input_data)
+            try:
+                reader = PdfReader(pdf_file)
+                found = set()
+                for page in reader.pages:
+                    if "/Annots" in page:
+                        for annot in page["/Annots"]:
+                            obj = annot.get_object()
+                            if "/A" in obj and "/URI" in obj["/A"]:
+                                uri = obj["/A"]["/URI"]
+                                if uri.lower().endswith(".pdf"):
+                                    found.add(uri)
+                pdf_links = list(found)
+                await add_log(task_id, f"Found {len(pdf_links)} links in file.")
+            except Exception as e:
+                await add_log(task_id, f"Error parsing PDF: {e}")
+                
+        # --- 2. Download Phase ---
+        if not pdf_links:
+            await add_log(task_id, "No PDFs found to download.")
+            await add_log(task_id, "DONE")
+            return
 
+        await add_log(task_id, f"Starting download of {len(pdf_links)} files...")
+        
+        # Sequential or Parallel? Parallel is better but let's keep it simple-ish or use inner ThreadPool
+        # Since we are in an async function, we should use a ThreadPool for blocking IO (requests/upload)
+        
+        loop = asyncio.get_running_loop()
+        with ThreadPoolExecutor(max_workers=5) as executor:
+            # Helper to run inside thread
+            def _download_one(p_url):
+                 try:
+                    headers = {
+                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                    }
+                    res = requests.get(p_url, headers=headers, timeout=60)
+                    if res.status_code == 200:
+                        filename = p_url.split("/")[-1]
+                        filename = "".join(c for c in filename if c.isalnum() or c in "._-") # sanitize
+                        if not filename.lower().endswith(".pdf"): filename += ".pdf"
+                        
+                        blob = bucket.blob(f"consulting_raw/{filename}")
+                        blob.upload_from_string(res.content, content_type="application/pdf")
+                        return True, filename
+                    return False, f"Status {res.status_code}"
+                 except Exception as ex:
+                    return False, str(ex)
+
+            # Submit all
+            futures = [loop.run_in_executor(executor, _download_one, link) for link in pdf_links]
+            
+            completed_count = 0
+            for f in asyncio.as_completed(futures):
+                success, msg = await f
+                if success:
+                    completed_count += 1
+                    await add_log(task_id, f"Saved: {msg}")
+                else:
+                    await add_log(task_id, f"Failed: {msg}")
+                    
+        await add_log(task_id, f"Process Complete. Collected {completed_count}/{len(pdf_links)} files.")
+        
     except Exception as e:
-        print(f"Collection Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        await add_log(task_id, f"Critical Error: {e}")
+    finally:
+        await add_log(task_id, "DONE")
+
+# --- Endpoints ---
+
+@router.get("/consulting/tasks/{task_id}/stream")
+async def stream_task_logs(task_id: str):
+    """Streams logs for a given task using Server-Sent Events."""
+    if task_id not in tasks:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    async def event_generator():
+        q = tasks[task_id]["queue"]
+        
+        # Flush existing logs first? (Optional, but good if client re-connects)
+        # For simplicity, we assume one-time connection. 
+        # If we wanted re-connection support, we'd iterate tasks[task_id]['logs'] first.
+        
+        while True:
+            log_msg = await q.get()
+            # Send event
+            yield f"data: {json.dumps({'message': log_msg})}\n\n"
+            
+            if log_msg == "DONE" or "Critical Error" in log_msg:
+                break
+    
+    return StreamingResponse(event_generator(), media_type="text/event-stream")
+
+@router.post("/consulting/collect")
+async def collect_data(req: CollectRequest, background_tasks: BackgroundTasks):
+    """Starts async collection from URL."""
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {
+        "status": "running",
+        "queue": asyncio.Queue(),
+        "logs": []
+    }
+    
+    background_tasks.add_task(run_background_collection, task_id, 'url', req.url)
+    
+    return {"task_id": task_id, "message": "Task started"}
 
 @router.post("/consulting/collect-file")
 async def collect_file(background_tasks: BackgroundTasks, file: UploadFile = File(...)):
-    """
-    Accepts a PDF file upload.
-    - Parses attributes to find links (Annotations /URI).
-    - Downloads all found .pdf links to GCS (Background).
-    """
+    """Starts async collection from File."""
     try:
-        content = await file.read()
-        pdf_file = io.BytesIO(content)
-        reader = PdfReader(pdf_file)
-        
-        pdf_links = set()
-        
-        # Iterate pages
-        for page in reader.pages:
-            if "/Annots" in page:
-                for annot in page["/Annots"]:
-                    obj = annot.get_object()
-                    if "/A" in obj and "/URI" in obj["/A"]:
-                        uri = obj["/A"]["/URI"]
-                        if uri.lower().endswith(".pdf"):
-                            pdf_links.add(uri)
-        
-        pdf_links = list(pdf_links)
-        print(f"Found {len(pdf_links)} PDF links in uploaded file.")
-        
-        if not pdf_links:
-             return {"status": "warning", "message": "No accessible PDF links found in the uploaded file."}
-
-        # Queue background task
-        background_tasks.add_task(process_downloads, pdf_links)
-
-        return {
-            "status": "success", 
-            "message": f"Found {len(pdf_links)} linked files. Starting background download..."
-        }
-
+        content = await file.read() # Read into memory immediately
     except Exception as e:
-        print(f"File Collection Error: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail=f"Failed to read file: {e}")
+
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {
+        "status": "running",
+        "queue": asyncio.Queue(),
+        "logs": []
+    }
+    
+    # Pass content (bytes) to background task
+    background_tasks.add_task(run_background_collection, task_id, 'file_bytes', content)
+    
+    return {"task_id": task_id, "message": "Task started"}
 
 @router.post("/consulting/logic-mapper")
 async def logic_mapper(req: LogicMapperRequest):

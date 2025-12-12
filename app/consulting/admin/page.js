@@ -16,33 +16,66 @@ export default function AdminPage() {
         if (activeTab === 'file' && !file) return;
 
         setLoading(true);
+        setLogs([]); // Clear previous logs
+        let taskId = null;
+
         try {
+            // 1. Start Task
+            let res;
             if (activeTab === 'url') {
                 log(`Starting URL collection for: ${url}`);
-                const res = await fetch('/api/consulting/collect', {
+                res = await fetch('/api/consulting/collect', {
                     method: 'POST',
                     headers: { 'Content-Type': 'application/json' },
                     body: JSON.stringify({ url })
                 });
-                const data = await res.json();
-                if (res.ok) log(`Success: ${data.message}`);
-                else log(`Error: ${data.detail || data.message}`);
             } else {
                 log(`Starting File analysis for: ${file.name}`);
                 const formData = new FormData();
                 formData.append('file', file);
-
-                const res = await fetch('/api/consulting/collect-file', {
+                res = await fetch('/api/consulting/collect-file', {
                     method: 'POST',
                     body: formData
                 });
-                const data = await res.json();
-                if (res.ok) log(`Success: ${data.message}`);
-                else log(`Error: ${data.detail || data.message}`);
             }
+
+            const data = await res.json();
+            if (!res.ok) {
+                log(`Error starting task: ${data.detail || data.message}`);
+                setLoading(false);
+                return;
+            }
+
+            taskId = data.task_id;
+            log(`Task Started (ID: ${taskId}). Connect to stream...`);
+
+            // 2. Open Stream
+            const eventSource = new EventSource(`/api/consulting/tasks/${taskId}/stream`);
+
+            eventSource.onmessage = (event) => {
+                const payload = JSON.parse(event.data);
+                const message = payload.message;
+
+                // Direct append to logs to avoid "log" helper timestamp duplication if backend sends it? 
+                // Backend sends "[HH:MM:SS] Msg". Helper adds another timestamp. 
+                // Let's rely on backend timestamp or just print raw message.
+                // But "log" helper adds local time. Let's just use "setLogs" directly for stream or modify helper.
+                setLogs(prev => [...prev, message]);
+
+                if (message === "DONE" || message.includes("Critical Error")) {
+                    eventSource.close();
+                    setLoading(false);
+                }
+            };
+
+            eventSource.onerror = (e) => {
+                // EventSource error (often end of stream)
+                eventSource.close();
+                setLoading(false);
+            };
+
         } catch (e) {
             log(`Network Error: ${e.message}`);
-        } finally {
             setLoading(false);
         }
     };
