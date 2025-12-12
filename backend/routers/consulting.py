@@ -147,7 +147,10 @@ async def collect_data(req: CollectRequest):
     """
     try:
         # 1. Fetch the URL
-        response = requests.get(req.url, stream=True)
+        headers = {
+            'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+        }
+        response = requests.get(req.url, headers=headers, stream=True)
         response.raise_for_status()
         
         content_type = response.headers.get('Content-Type', '').lower()
@@ -182,7 +185,7 @@ async def collect_data(req: CollectRequest):
             # Download each PDF
             for pdf_url in pdf_links:
                 try:
-                    pdf_res = requests.get(pdf_url)
+                    pdf_res = requests.get(pdf_url, headers=headers)
                     if pdf_res.status_code == 200:
                         filename = pdf_url.split("/")[-1]
                         blob = bucket.blob(f"consulting_raw/{filename}")
