@@ -220,9 +220,33 @@ export default function PreparationPage() {
                                         p: ({ node, ...props }) => (
                                             <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
                                         ),
-                                        strong: ({ node, ...props }) => (
-                                            <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
-                                        ),
+                                        strong: ({ node, ...props }) => {
+                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                            return (
+                                                <span className="inline-flex items-center">
+                                                    <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
+                                                    {isEnglish && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const synth = window.speechSynthesis;
+                                                                // Strip leading numbers, dots, and spaces (e.g. "1. Sojourn" -> "Sojourn")
+                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                const u = new SpeechSynthesisUtterance(cleanText);
+                                                                u.lang = 'en-US';
+                                                                synth.speak(u);
+                                                            }}
+                                                            className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
+                                                            title="Listen"
+                                                        >
+                                                            🔊
+                                                        </button>
+                                                    )}
+                                                </span>
+                                            );
+                                        },
                                     }}
                                 >
                                     {selectedTask.content}

@@ -8,3 +8,4 @@ python-multipart
 google-cloud-firestore
 google-api-python-client
 moviepy
+youtube-transcript-api

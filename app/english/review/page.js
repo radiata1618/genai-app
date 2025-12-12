@@ -200,7 +200,67 @@ export default function ReviewPage() {
                                 <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                             </div>
                             <article className="prose prose-slate lg:prose-lg max-w-none">
-                                <ReactMarkdown>{selectedTask.content}</ReactMarkdown>
+                                <ReactMarkdown
+                                    components={{
+                                        blockquote: ({ node, ...props }) => (
+                                            <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 my-6 rounded-r-lg shadow-sm text-slate-700 relative font-medium not-italic" {...props}>
+                                                <div className="absolute -top-3 left-4 bg-cyan-100 text-cyan-700 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide">
+                                                    Snippet
+                                                </div>
+                                                <div className="pt-2">
+                                                    {props.children}
+                                                </div>
+                                            </div>
+                                        ),
+                                        h2: ({ node, ...props }) => (
+                                            <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
+                                        ),
+                                        h3: ({ node, ...props }) => (
+                                            <h3 className="text-xl font-semibold text-slate-700 mt-8 mb-4 border-l-4 border-cyan-200 pl-3" {...props} />
+                                        ),
+                                        ul: ({ node, ...props }) => (
+                                            <ul className="list-disc pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                        ),
+                                        ol: ({ node, ...props }) => (
+                                            <ol className="list-decimal pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                        ),
+                                        li: ({ node, ...props }) => (
+                                            <li className="pl-1" {...props} />
+                                        ),
+                                        p: ({ node, ...props }) => (
+                                            <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
+                                        ),
+                                        strong: ({ node, ...props }) => {
+                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                            return (
+                                                <span className="inline-flex items-center">
+                                                    <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
+                                                    {isEnglish && (
+                                                        <button
+                                                            onClick={(e) => {
+                                                                e.stopPropagation();
+                                                                const synth = window.speechSynthesis;
+                                                                // Strip leading numbers, dots, and spaces (e.g. "1. Sojourn" -> "Sojourn")
+                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                const u = new SpeechSynthesisUtterance(cleanText);
+                                                                u.lang = 'en-US';
+                                                                synth.speak(u);
+                                                            }}
+                                                            className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
+                                                            title="Listen"
+                                                        >
+                                                            🔊
+                                                        </button>
+                                                    )}
+                                                </span>
+                                            );
+                                        },
+                                    }}
+                                >
+                                    {selectedTask.content}
+                                </ReactMarkdown>
                             </article>
                         </div>
                     </div>

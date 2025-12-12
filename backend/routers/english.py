@@ -11,11 +11,15 @@ from pathlib import Path
 from google import genai
 from google.genai import types
 
-# Try importing moviepy, handle if missing (though it should be in docker)
 try:
     from moviepy import VideoFileClip
 except ImportError:
     VideoFileClip = None
+
+try:
+    from youtube_transcript_api import YouTubeTranscriptApi
+except ImportError:
+    YouTubeTranscriptApi = None
 
 router = APIRouter(
     prefix="/english",
@@ -63,6 +67,18 @@ class ReviewTask(BaseModel):
     created_at: datetime
     status: str = "TODO"
 
+class YouTubePrepRequest(BaseModel):
+    url: str
+
+class YouTubePrepTask(BaseModel):
+    id: str
+    video_id: str
+    video_url: str
+    topic: str
+    content: str
+    created_at: datetime
+    status: str = "TODO"
+
 # --- Helpers ---
 
 
@@ -78,18 +94,20 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     あなたはTOEIC900点以上を持ち、英語圏に2年在住経験のある上級英語学習者のためのプロの英語教師です。
     生徒は「{req.topic}」というトピックでのディスカッションやレッスンに向けて予習をしたいと考えています。
 
-    以下の情報を整理した予習ガイドをMarkdown形式（日本語）で作成してください。
-    **冒頭の挨拶や前置き（例：「～向けの記事を作成しました」等）は一切不要です。コンテンツのみを出力してください。**
+    以下は以下の情報を整理した予習ガイドをMarkdown形式（日本語）で作成してください。
+    **冒頭の挨拶や前置きは不要です。コンテンツのみを出力してください。**
     **可読性を高めるため、各セクションや項目の間には必ず空行を入れてください。**
 
     ## 構成案
     1. **高度な語彙・イディオム (Advanced Vocabulary & Idioms)**
-       - 単語: 発音記号 [IPA] 意味
+       - **Word**: 発音記号 [IPA] 意味
        - 例文: *斜体で記載*
        - 解説: ニュアンスや使い分け。
+       > **Note:** 太字（`**`）はこのセクションの単語（Word）部分のみに使用してください。
 
     2. **重要フレーズ・コロケーション (Key Phrases & Collocations)**
        - カタい表現からカジュアルなものまで、ネイティブらしい組み合わせ。
+       - **注意:** ここでは太字を使用せず、強調したい箇所は *斜体* や `コードブロック` を使用してください。
 
     3. **会話シナリオ (Conversation Scenario)**
        > **重要:** 会話文全体を必ず引用記法（>）で囲ってください。
@@ -139,10 +157,116 @@ def update_preparation_status(task_id: str, status: str, db: firestore.Client = 
     doc_ref.update({"status": status})
     return {"status": "updated"}
 
+
 @router.delete("/preparation/{task_id}")
 def delete_preparation(task_id: str, db: firestore.Client = Depends(get_db)):
     db.collection("english_preparation").document(task_id).delete()
     return {"status": "deleted"}
+
+
+@router.post("/youtube-prep", response_model=YouTubePrepTask)
+def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(get_db)):
+    if YouTubeTranscriptApi is None:
+        raise HTTPException(status_code=500, detail="youtube_transcript_api not installed")
+
+    # 1. Extract Video ID
+    # Support various formats: youtube.com/watch?v=ID, youtu.be/ID
+    import re
+    video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", req.url)
+    if not video_id_match:
+        raise HTTPException(status_code=400, detail="Invalid YouTube URL")
+    video_id = video_id_match.group(1)
+
+    # 2. Fetch Transcript
+    try:
+        # Prefer English, then Japanese, then auto properties
+        ytt = YouTubeTranscriptApi()
+        transcript_list = ytt.fetch(video_id, languages=['en', 'ja'])
+        full_text = " ".join([t.text for t in transcript_list])
+    except Exception as e:
+        print(f"Transcript Error: {e}")
+        raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
+
+    # 3. Generate Content with Gemini
+    prompt = f"""
+    あなたはTOEIC900点以上を目指す上級英語学習者のためのプロの英語教師です。
+    以下はYouTube動画の字幕テキストです。この動画を視聴して学習するための予習資料を作成してください。
+
+    **字幕テキスト:**
+    {full_text[:20000]} 
+    (テキストが長すぎる場合は切り詰められています)
+
+    **出力形式:**
+    Markdown形式（日本語）で出力してください。
+    **冒頭の挨拶や前置きは不要です。**
+    **最初の行に、この動画の内容を表す適切なタイトル（日本語）を `# タイトル` の形式で書いてください。**
+
+    ## 構成案
+    1. **概要 (Summary)**
+       - 動画の内容を3行程度で要約。
+
+    2. **重要語彙 (Advanced Vocabulary)**
+       - 動画内で使われている難解な単語や重要な単語（3〜5個）。
+       - 意味と、動画内での使われ方（文脈）の解説。
+
+    3. **キーフレーズ (Key Phrases)**
+       - 実践的なフレーズやイディオム。
+
+    4. **リスニング、理解のポイント (Listening Points)**
+       - 特に聞き取るべき箇所や、話の展開のポイント。
+
+    """
+
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-pro-preview",
+            contents=prompt,
+        )
+        content = response.text
+        
+        # Extract title from the first line if present
+        lines = content.strip().split('\n')
+        topic = "YouTube Video Study" # Default
+        if lines and lines[0].startswith('# '):
+            topic = lines[0].replace('# ', '').strip()
+            # Remove the title line from content to avoid duplication if desired, 
+            # but keeping it is fine too. Let's keep it for MD rendering.
+        
+    except Exception as e:
+        print(f"Gemini Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Gemini Generation Failed: {str(e)}")
+
+    # 4. Save to Firestore
+    doc_ref = db.collection("english_youtube_prep").document()
+    task = YouTubePrepTask(
+        id=doc_ref.id,
+        video_id=video_id,
+        video_url=req.url,
+        topic=topic,
+        content=content,
+        created_at=datetime.now()
+    )
+    doc_ref.set(task.dict())
+    
+    return task
+
+@router.get("/youtube-prep", response_model=List[YouTubePrepTask])
+def get_youtube_prep_list(db: firestore.Client = Depends(get_db)):
+    docs = db.collection("english_youtube_prep").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+    return [YouTubePrepTask(**d.to_dict()) for d in docs]
+
+@router.delete("/youtube-prep/{task_id}")
+def delete_youtube_prep(task_id: str, db: firestore.Client = Depends(get_db)):
+    db.collection("english_youtube_prep").document(task_id).delete()
+    return {"status": "deleted"}
+
+@router.patch("/youtube-prep/{task_id}/status")
+def update_youtube_prep_status(task_id: str, status: str, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("english_youtube_prep").document(task_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    doc_ref.update({"status": status})
+    return {"status": "updated"}
 
 
 @router.get("/upload-url")
@@ -220,20 +344,26 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
 
         **制約事項:**
         1. 出力は**日本語のMarkdown形式**で行ってください。
-        2. **冒頭の挨拶や前置き（例：「分析結果は以下の通りです」等）は一切含めないでください。**
+        2. **冒頭の挨拶や前置きは一切含めないでください。**
         3. 各セクションの区切りには必ず空行を入れ、可読性を高くしてください。
+        4. **重要:** 太字（`**`）の使用は、セクション2の「推奨ボキャブラリー」の単語名のみに厳密に制限してください。他の箇所で強調したい場合は、*斜体* または `コードブロック` を使用してください。
 
         ## レポート構成
 
         1. **要改善点と修正案 (Corrections & Refinements)**
            - 生徒の発言の中で、文法ミス、不自然なコロケーション、または発音の不明瞭な箇所を具体的に指摘してください。
+           - 「Student:」「Correction:」などのラベルには太字を使わないでください（例: `Student:` や `*Student:*`）。
+           - 修正箇所の強調には `コードブロック` を推奨します（例: I went `to` school）。
            - それぞれに対して、より自然で洗練された言い換え（Better Version）を提示してください。
 
         2. **推奨ボキャブラリー・表現 (Recommended Vocabulary & Expressions)**
            - この会話の文脈で使える、より高度な語彙やネイティブらしい表現（イディオム等）を3〜5つ紹介してください。
+           - **形式:** `- **Expression**: 意味 - 解説`
+           - ここでのみ、見出し語（Expression）を太字（`**`）にします。
 
         3. **ロールプレイ最適化案 (Roleplay Optimization)**
            - 会話の特定の部分を取り上げ、「こう返せばもっと話が弾んだ」「より論理的に意見を主張できた」という理想的な会話スクリプト（数往復）を提示してください。
+           - **重要:** 会話スクリプトは必ず引用記法（>）で囲ってください。
 
         4. **総評 (Overall Feedback)**
            - 文法、流暢さ、発音、対話力の観点から簡潔なアドバイスをお願いします。
