@@ -252,7 +252,7 @@ export default function DashboardPage() {
         <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden min-h-0">
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
-                <div className="flex-1 flex flex-col h-full p-2 md:p-4 gap-2 min-h-0">
+                <div className="flex-1 flex flex-col h-full p-2 md:p-4 gap-2 min-h-0 min-w-0">
 
                     {/* Header */}
                     <div className="flex-none flex flex-col md:flex-row md:items-end justify-between gap-2">

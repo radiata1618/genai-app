@@ -6,6 +6,7 @@ from datetime import date, datetime, timezone, timedelta
 import enum
 from google.cloud import firestore
 from google.cloud import firestore
+from google.cloud.firestore import FieldFilter
 from database import get_db
 import time
 import json
@@ -120,9 +121,9 @@ def sync_backlog_update_to_daily(source_id: str, title: str, is_highlighted: boo
         today_str = datetime.now(JST).date().isoformat()
         
         docs = db.collection("daily_tasks")\
-            .where("source_id", "==", source_id)\
-            .where("source_type", "==", SourceType.BACKLOG.value)\
-            .where("target_date", ">=", today_str)\
+            .where(filter=FieldFilter("source_id", "==", source_id))\
+            .where(filter=FieldFilter("source_type", "==", SourceType.BACKLOG.value))\
+            .where(filter=FieldFilter("target_date", ">=", today_str))\
             .stream()
             
         batch = db.batch()
@@ -152,9 +153,9 @@ def sync_routine_to_daily(source_id: str, title: str, db: firestore.Client):
         today_str = datetime.now(JST).date().isoformat()
         
         docs = db.collection("daily_tasks")\
-            .where("source_id", "==", source_id)\
-            .where("source_type", "==", SourceType.ROUTINE.value)\
-            .where("target_date", ">=", today_str)\
+            .where(filter=FieldFilter("source_id", "==", source_id))\
+            .where(filter=FieldFilter("source_type", "==", SourceType.ROUTINE.value))\
+            .where(filter=FieldFilter("target_date", ">=", today_str))\
             .stream()
             
         batch = db.batch()
@@ -242,7 +243,7 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
 
 @router.get("/backlog", response_model=List[BacklogItemResponse])
 def get_backlog_items(limit: int = 100, db: firestore.Client = Depends(get_db)):
-    docs = db.collection("backlog_items").where("is_archived", "==", False).order_by("order").limit(limit).stream()
+    docs = db.collection("backlog_items").where(filter=FieldFilter("is_archived", "==", False)).order_by("order").limit(limit).stream()
     items = []
     for doc in docs:
         d = doc.to_dict()
@@ -326,7 +327,7 @@ def create_routine(routine: RoutineCreate, db: firestore.Client = Depends(get_db
 def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depends(get_db)):
     query = db.collection("routines")
     if type:
-        query = query.where("routine_type", "==", type.value)
+        query = query.where(filter=FieldFilter("routine_type", "==", type.value))
     
     docs = query.stream()
     routines = []
@@ -392,7 +393,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     weekday = target_date.weekday()
     day_of_month = target_date.day
     
-    routines_stream = db.collection("routines").where("routine_type", "==", RoutineType.ACTION.value).stream()
+    routines_stream = db.collection("routines").where(filter=FieldFilter("routine_type", "==", RoutineType.ACTION.value)).stream()
     routines = [d.to_dict() for d in routines_stream]
     
     created_count = 0
@@ -433,18 +434,21 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     
     
     # --- CARRY OVER LOGIC ---
+    # Optimized: Filter by date < target_date to avoid fetching full history
     past_backlog_docs = db.collection("daily_tasks")\
-        .where("source_type", "==", SourceType.BACKLOG.value)\
-        .where("status", "==", TaskStatus.TODO.value)\
+        .where(filter=FieldFilter("source_type", "==", SourceType.BACKLOG.value))\
+        .where(filter=FieldFilter("status", "==", TaskStatus.TODO.value))\
+        .where(filter=FieldFilter("target_date", "<", target_date_str))\
         .stream()
     
     # --- AUTO-SKIP LOGIC (NEW) ---
     past_routine_docs = db.collection("daily_tasks")\
-        .where("source_type", "==", SourceType.ROUTINE.value)\
-        .where("status", "==", TaskStatus.TODO.value)\
+        .where(filter=FieldFilter("source_type", "==", SourceType.ROUTINE.value))\
+        .where(filter=FieldFilter("status", "==", TaskStatus.TODO.value))\
+        .where(filter=FieldFilter("target_date", "<", target_date_str))\
         .stream()
 
-    current_today_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
+    current_today_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     max_order = 0
     for d in current_today_docs:
          max_order = max(max_order, d.to_dict().get('order', 0))
@@ -454,7 +458,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         t = doc.to_dict()
         old_date_str = t['target_date']
         
-        # Only carry over if from the past
+        # Date check is now redundant but safe to keep
         if old_date_str < target_date_str:
             batch.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
             
@@ -477,20 +481,17 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 batch.set(new_ref, new_task)
                 created_count += 1
     
-    # Process Routine Auto-Skip
     for doc in past_routine_docs:
-        t = doc.to_dict()
-        old_date_str = t['target_date']
-        if old_date_str < target_date_str:
-             batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
+        # No need to check date again, filtered in query
+        batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
 
     # --- AUTO-PICK SCHEDULED STOCK (NEW) ---
     # Pick up Stock items that were scheduled for today or in the past (and are still STOCK).
     # This ensures items scheduled for yesterday but not opened/generated yesterday appear today.
     scheduled_stock_docs = db.collection("backlog_items")\
-        .where("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time()))\
-        .where("status", "==", "STOCK")\
-        .where("is_archived", "==", False)\
+        .where(filter=FieldFilter("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time())))\
+        .where(filter=FieldFilter("status", "==", "STOCK"))\
+        .where(filter=FieldFilter("is_archived", "==", False))\
         .stream()
 
     for doc in scheduled_stock_docs:
@@ -540,7 +541,7 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
     # ---------------------------------------------------------
     # OPTIMIZATION: Removed N+1 queries.
     # ---------------------------------------------------------
-    docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
+    docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     
     tasks = []
     
@@ -587,7 +588,7 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
         chunk_size = 10
         for i in range(0, len(r_ids_list), chunk_size):
             chunk = r_ids_list[i:i + chunk_size]
-            r_docs = db.collection("routines").where("id", "in", chunk).stream()
+            r_docs = db.collection("routines").where(filter=FieldFilter("id", "in", chunk)).stream()
             for rd in r_docs:
                 routine_map[rd.id] = rd.to_dict()
 
@@ -639,7 +640,7 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
     if doc_ref.get().exists:
          return {"message": "Already picked"}
 
-    existing_docs = db.collection("daily_tasks").where("target_date", "==", target_date_str).stream()
+    existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     max_order = -1
     for d in existing_docs:
         d_dict = d.to_dict()
