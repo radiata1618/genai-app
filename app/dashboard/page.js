@@ -1,11 +1,12 @@
 "use client";
 
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { api } from '../utils/api';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import MobileMenuButton from '../../components/MobileMenuButton';
+import { useSearchParams } from 'next/navigation';
 
 const CATEGORIES = {
     'Research': { label: '情報収集', icon: '🔍' },
@@ -34,14 +35,11 @@ export default function DashboardPage() {
     const [showCompleted, setShowCompleted] = useState(false);
     const [undoHistory, setUndoHistory] = useState([]);
 
-    // Add Task Modal State
-    const [isModalOpen, setIsModalOpen] = useState(false);
+    // Quick Input State
     const [isSubmitting, setIsSubmitting] = useState(false);
-    const [newTask, setNewTask] = useState({
-        title: '',
-        category: 'Research',
-        priority: 'Medium'
-    });
+    const [newTaskTitle, setNewTaskTitle] = useState('');
+    const inputRef = useRef(null);
+    const searchParams = useSearchParams();
 
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
@@ -52,17 +50,38 @@ export default function DashboardPage() {
     const [taskToPostpone, setTaskToPostpone] = useState(null);
     const [postponeDate, setPostponeDate] = useState(new Date());
 
+    // --- Caching Logic ---
+    const loadCache = () => {
+        try {
+            const cachedTasks = localStorage.getItem('dashboard_tasks');
+            if (cachedTasks) {
+                setTasks(JSON.parse(cachedTasks));
+                setLoading(false); // Show content immediately
+            }
+        } catch (e) {
+            console.error("Cache read error", e);
+        }
+    };
+
+    const saveCache = (newTasks) => {
+        try {
+            localStorage.setItem('dashboard_tasks', JSON.stringify(newTasks));
+        } catch (e) {
+            console.error("Cache write error", e);
+        }
+    };
+
     const init = async () => {
-        setLoading(true);
+        // Don't set loading=true here if we already have cache, to avoid flickering
+        // Instead, we just fetch and update.
+
         try {
             // Plan B: Run generation in parallel (background)
-            // We don't await this for the initial render to speed up TTI.
             api.generateDailyTasks().then(async (res) => {
-                // If generation created new tasks (res.message says "Generated X tasks"),
-                // we should refresh the list to show them.
                 if (res && res.message && !res.message.includes("Generated 0 tasks")) {
                     const t = await api.getDaily();
                     setTasks(t);
+                    saveCache(t); // Update cache with fresh data
                 }
             }).catch(err => console.error("Background generation failed", err));
 
@@ -74,6 +93,7 @@ export default function DashboardPage() {
 
             setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
             setTasks(t);
+            saveCache(t); // Update cache with fresh data
         } catch (e) {
             console.error(e);
         } finally {
@@ -83,7 +103,13 @@ export default function DashboardPage() {
 
     useEffect(() => {
         setTodayStr(formatDate(new Date()));
-        init();
+        loadCache(); // Load cache first
+        init(); // Then fetch fresh
+
+        // Check for focus param (from shortcut)
+        if (searchParams.get('focus') === 'input') {
+            setTimeout(() => inputRef.current?.focus(), 500);
+        }
     }, []);
 
     const handleToggle = async (id, currentStatus) => {
@@ -96,11 +122,16 @@ export default function DashboardPage() {
             return newHistory;
         });
 
-        setTasks(tasks.map(t => t.id === id ? { ...t, status: isDone ? 'DONE' : 'TODO' } : t));
+        // Optimistic update
+        const updatedTasks = tasks.map(t => t.id === id ? { ...t, status: isDone ? 'DONE' : 'TODO' } : t);
+        setTasks(updatedTasks);
+        saveCache(updatedTasks);
+
         try {
             await api.toggleComplete(id, isDone);
         } catch (e) {
             console.error("Failed to toggle", e);
+            // Revert included in optimistic update logic implicitly if needed, but for now we trust optimistic
         }
     };
 
@@ -111,7 +142,9 @@ export default function DashboardPage() {
         setUndoHistory(prev => prev.slice(0, -1));
 
         // Optimistic update to previous status
-        setTasks(tasks.map(t => t.id === lastAction.id ? { ...t, status: lastAction.status } : t));
+        const updatedTasks = tasks.map(t => t.id === lastAction.id ? { ...t, status: lastAction.status } : t);
+        setTasks(updatedTasks);
+        saveCache(updatedTasks);
 
         try {
             const isDone = lastAction.status === 'DONE';
@@ -121,16 +154,23 @@ export default function DashboardPage() {
         }
     };
 
-    const handleAddTask = async (e) => {
+    const handleQuickAdd = async (e) => {
         e.preventDefault();
-        if (!newTask.title.trim()) return;
+        if (!newTaskTitle.trim()) return;
 
         setIsSubmitting(true);
         try {
             const todayStr = new Date().toISOString().split('T')[0];
+
+            // Optimistic UI: Add a fake task temporarily (optional, but good for speed feel)
+            // For now, we'll wait for the API because we need the real ID for subsequent actions.
+            // Or we could rely on the refresh. Let's just do the API calls.
+
             // 1. Create in Backlog
             const createdItem = await api.addBacklogItem({
-                ...newTask,
+                title: newTaskTitle,
+                category: 'Research', // Default category
+                priority: 'Medium',  // Default priority
                 deadline: todayStr,
                 scheduled_date: todayStr
             });
@@ -138,16 +178,19 @@ export default function DashboardPage() {
             // 2. Pick for Today
             await api.pickFromBacklog(createdItem.id);
 
-            // 3. Refresh
-            await init();
+            // 3. Clear Input
+            setNewTaskTitle('');
 
-            setIsModalOpen(false);
-            setNewTask(prev => ({ ...prev, title: '' }));
+            // 4. Refresh & Cache
+            await init(); // This will update state and cache
+
         } catch (e) {
             console.error(e);
             alert('Failed to add task');
         } finally {
             setIsSubmitting(false);
+            // Keep focus for rapid entry? Or dismiss?
+            // inputRef.current?.focus(); // Uncomment to keep focus
         }
     };
 
@@ -159,12 +202,14 @@ export default function DashboardPage() {
         e.stopPropagation();
         setOpenMenuId(null);
         // Optimistic update
-        setTasks(tasks.map(t => t.id === id ? { ...t, status: 'SKIPPED' } : t));
+        const updatedTasks = tasks.map(t => t.id === id ? { ...t, status: 'SKIPPED' } : t);
+        setTasks(updatedTasks);
+        saveCache(updatedTasks);
+
         try {
             await api.skipTask(id);
         } catch (e) {
             console.error("Failed to skip", e);
-            // Revert on error? For now simple log
         }
     };
 
@@ -184,7 +229,9 @@ export default function DashboardPage() {
         const dateStr = postponeDate.toISOString().split('T')[0];
 
         // Optimistic update: Remove from today
-        setTasks(tasks.filter(t => t.id !== taskToPostpone.id));
+        const updatedTasks = tasks.filter(t => t.id !== taskToPostpone.id);
+        setTasks(updatedTasks);
+        saveCache(updatedTasks);
         setPostponeModalOpen(false);
 
         try {
@@ -201,7 +248,9 @@ export default function DashboardPage() {
         setOpenMenuId(null);
         const newStatus = !currentStatus;
         // Optimistic update
-        setTasks(tasks.map(t => t.id === id ? { ...t, is_highlighted: newStatus } : t));
+        const updatedTasks = tasks.map(t => t.id === id ? { ...t, is_highlighted: newStatus } : t);
+        setTasks(updatedTasks);
+        saveCache(updatedTasks);
 
         try {
             await api.highlightTask(id, newStatus);
@@ -214,7 +263,6 @@ export default function DashboardPage() {
     const onDragStart = (e, task) => {
         setDraggedItem(task);
         e.dataTransfer.effectAllowed = 'move';
-        // e.dataTransfer.setDragImage(e.target, 0, 0); // Optional: customize drag image
     };
 
     const onDragOver = (e, targetTask) => {
@@ -226,14 +274,12 @@ export default function DashboardPage() {
 
         if (oldIndex === -1 || newIndex === -1) return;
 
-        // Create new array
         const newTasks = [...tasks];
-        // Remove dragged item
         newTasks.splice(oldIndex, 1);
-        // Insert at new position
         newTasks.splice(newIndex, 0, draggedItem);
 
         setTasks(newTasks);
+        saveCache(newTasks);
     };
 
     const onDragEnd = async () => {
@@ -261,21 +307,21 @@ export default function DashboardPage() {
         const newTasks = [...tasks];
 
         if (direction === 'UP') {
-            if (index === 0) return; // Already at top
+            if (index === 0) return;
             [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
         } else if (direction === 'DOWN') {
-            if (index === newTasks.length - 1) return; // Already at bottom
+            if (index === newTasks.length - 1) return;
             [newTasks[index], newTasks[index + 1]] = [newTasks[index + 1], newTasks[index]];
         }
 
         setTasks(newTasks);
+        saveCache(newTasks);
 
         const ids = newTasks.map(t => t.id);
         try {
             await api.reorderDaily(ids);
         } catch (e) {
             console.error("Failed to reorder manually", e);
-            // Revert could be added here if strict consistency is needed
         }
     };
 
@@ -283,7 +329,7 @@ export default function DashboardPage() {
         <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden min-h-0">
             <div className="flex-1 flex overflow-hidden">
                 {/* Main Content */}
-                <div className="flex-1 flex flex-col h-full p-2 md:p-4 gap-2 min-h-0 min-w-0">
+                <div className="flex-1 flex flex-col h-full p-2 md:p-4 gap-2 min-h-0 min-w-0 pb-16 md:pb-4">
 
                     {/* Header */}
                     <div className="flex-none flex flex-col md:flex-row md:items-end justify-between gap-2">
@@ -295,12 +341,7 @@ export default function DashboardPage() {
                             </div>
                         </div>
                         <div className="flex items-center gap-2 self-end md:self-auto">
-                            <button
-                                onClick={() => setIsModalOpen(true)}
-                                className="bg-slate-900 text-white text-[10px] font-bold px-3 py-1.5 rounded-full shadow-md hover:bg-slate-800 transition-all flex items-center gap-1"
-                            >
-                                <span>+</span> Add Task
-                            </button>
+                            {/* Replaced Add Task button with Bottom Bar, but kept Undo/Show toggle */}
                             <button
                                 onClick={handleUndo}
                                 disabled={undoHistory.length === 0}
@@ -330,7 +371,7 @@ export default function DashboardPage() {
                     <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setOpenMenuId(null); setReorderMenuId(null); }}>
                         <div className="h-1 bg-indigo-500 w-full flex-shrink-0" />
 
-                        <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar">
+                        <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar pb-20 md:pb-1">
                             {loading && tasks.length === 0 ? <div className="text-center py-10 opacity-50 text-xs">Loading Focus...</div> : visibleTasks.length === 0 ? (
                                 <div className="text-center py-20">
                                     <div className="text-4xl mb-2">☕</div>
@@ -338,7 +379,7 @@ export default function DashboardPage() {
                                         {tasks.length > 0 && !showCompleted ? 'All done for now!' : 'All caught up!'}
                                     </h3>
                                     <p className="text-xs text-slate-500 mt-1">
-                                        {tasks.length > 0 && !showCompleted ? 'Toggle "Hiding Done" to see completed tasks.' : <span>Go to <a href="/backlog" className="text-indigo-600 underline">Backlog</a> to pick new tasks.</span>}
+                                        Type below to add a new task.
                                     </p>
                                 </div>
                             ) : (
@@ -488,86 +529,58 @@ export default function DashboardPage() {
                 )}
             </div>
 
-            {/* Add Task Modal */}
-            {isModalOpen && (
-                <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/40 backdrop-blur-sm animate-in fade-in duration-200">
-                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200">
-                        <div className="px-6 py-4 border-b border-slate-100 flex justify-between items-center bg-slate-50/50">
-                            <h3 className="font-bold text-slate-800 text-lg">Add to Today</h3>
-                            <button onClick={() => setIsModalOpen(false)} className="text-slate-400 hover:text-slate-600 transition-colors">
-                                <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
-                            </button>
-                        </div>
-                        <form onSubmit={handleAddTask} className="p-6 space-y-5">
-                            <div>
-                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Task Title</label>
-                                <input
-                                    type="text"
-                                    value={newTask.title}
-                                    onChange={(e) => setNewTask({ ...newTask, title: e.target.value })}
-                                    className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all font-medium text-slate-700"
-                                    placeholder="What do you want to do today?"
-                                    autoFocus
-                                />
-                            </div>
+            {/* Quick Input Bar (Fixed Bottom) */}
+            <div className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 p-2 md:p-3 shadow-lg z-50 md:hidden pb-safe">
+                {/* pb-safe for iOS home bar */}
+                <form onSubmit={handleQuickAdd} className="flex gap-2 items-center">
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        placeholder="Add a new task..."
+                        className="flex-1 bg-slate-100 border-none rounded-full px-4 py-3 text-sm font-medium focus:ring-2 focus:ring-indigo-500 focus:bg-white transition-all shadow-inner outline-none"
+                    />
+                    <button
+                        type="submit"
+                        disabled={isSubmitting || !newTaskTitle.trim()}
+                        className="bg-indigo-600 text-white rounded-full w-10 h-10 flex items-center justify-center shadow-md disabled:opacity-50 disabled:shadow-none transition-all active:scale-90"
+                    >
+                        {isSubmitting ? (
+                            <div className="w-4 h-4 border-2 border-white/30 border-t-white rounded-full animate-spin" />
+                        ) : (
+                            <svg className="w-5 h-5 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 12h14M12 5l7 7-7 7" />
+                            </svg>
+                        )}
+                    </button>
+                </form>
+            </div>
+            {/* Desktop Input */}
+            <div className="hidden md:flex fixed bottom-8 left-1/2 -translate-x-1/2 w-[500px] bg-white border border-slate-200 p-2 rounded-full shadow-2xl z-50">
+                <form onSubmit={handleQuickAdd} className="flex-1 flex gap-2 items-center px-1">
+                    <input
+                        ref={inputRef}
+                        type="text"
+                        value={newTaskTitle}
+                        onChange={(e) => setNewTaskTitle(e.target.value)}
+                        placeholder="Add a new task..."
+                        className="flex-1 bg-transparent border-none px-4 py-2 text-sm font-medium focus:ring-0 outline-none"
+                        autoFocus
+                    />
+                    <button
+                        type="submit"
+                        disabled={isSubmitting || !newTaskTitle.trim()}
+                        className="bg-indigo-600 text-white rounded-full w-8 h-8 flex items-center justify-center shadow-md disabled:opacity-50 transition-all hover:bg-indigo-700"
+                    >
+                        <svg className="w-4 h-4 ml-0.5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2.5" d="M5 12h14M12 5l7 7-7 7" />
+                        </svg>
+                    </button>
+                </form>
+            </div>
 
-                            <div className="grid grid-cols-2 gap-5">
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Category</label>
-                                    <div className="relative">
-                                        <select
-                                            value={newTask.category}
-                                            onChange={(e) => setNewTask({ ...newTask, category: e.target.value })}
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all appearance-none text-slate-700 font-medium text-sm"
-                                        >
-                                            {CATEGORY_KEYS.map(key => (
-                                                <option key={key} value={key}>{CATEGORIES[key].label}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                        </div>
-                                    </div>
-                                </div>
-                                <div>
-                                    <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-1">Priority</label>
-                                    <div className="relative">
-                                        <select
-                                            value={newTask.priority}
-                                            onChange={(e) => setNewTask({ ...newTask, priority: e.target.value })}
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 focus:ring-1 focus:ring-indigo-500 outline-none transition-all appearance-none text-slate-700 font-medium text-sm"
-                                        >
-                                            {Object.keys(PRIORITIES).map(key => (
-                                                <option key={key} value={key}>{PRIORITIES[key].label}</option>
-                                            ))}
-                                        </select>
-                                        <div className="absolute right-3 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400">
-                                            <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 9l-7 7-7-7" /></svg>
-                                        </div>
-                                    </div>
-                                </div>
-                            </div>
 
-                            <div className="pt-2 flex justify-end gap-3 border-t border-slate-100 mt-4">
-                                <button
-                                    type="button"
-                                    onClick={() => setIsModalOpen(false)}
-                                    className="px-4 py-2 text-slate-500 hover:text-slate-700 font-bold text-sm"
-                                >
-                                    Cancel
-                                </button>
-                                <button
-                                    type="submit"
-                                    disabled={isSubmitting || !newTask.title.trim()}
-                                    className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 hover:shadow-lg transform active:scale-95 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
-                                >
-                                    {isSubmitting ? 'Adding...' : 'Add Task'}
-                                </button>
-                            </div>
-                        </form>
-                    </div>
-                </div>
-            )}
             {/* Postpone Modal */}
             {postponeModalOpen && (
                 <div className="fixed inset-0 z-[60] flex items-center justify-center p-4 bg-slate-900/20 backdrop-blur-sm animate-in fade-in duration-200">

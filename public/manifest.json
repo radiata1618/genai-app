@@ -16,5 +16,19 @@
             "sizes": "512x512",
             "type": "image/png"
         }
+    ],
+    "shortcuts": [
+        {
+            "name": "Add Task",
+            "short_name": "Add",
+            "description": "Add a new task for today",
+            "url": "/dashboard?focus=input",
+            "icons": [
+                {
+                    "src": "/icons/icon-192x192.png",
+                    "sizes": "192x192"
+                }
+            ]
+        }
     ]
 }
