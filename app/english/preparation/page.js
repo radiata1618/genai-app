@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import MobileMenuButton from "../../components/MobileMenuButton";
 
 export default function PreparationPage() {
     const [tasks, setTasks] = useState([]);
@@ -10,8 +11,24 @@ export default function PreparationPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [filterDone, setFilterDone] = useState(false); // Default: show all or only stock? User asked for "Check Done", default "Uncompleted only"
 
+    // UI State
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+
     useEffect(() => {
         fetchTasks();
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setIsSidebarOpen(false);
+            } else {
+                setIsSidebarOpen(true);
+            }
+        };
+
+        // Initial check
+        handleResize();
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     const fetchTasks = async () => {
@@ -41,6 +58,12 @@ export default function PreparationPage() {
                 setSelectedTask(newTask);
                 setIsCreating(false);
                 setNewTopic("");
+
+                // On mobile, close sidebar after creation to show content
+                if (window.innerWidth < 768) {
+                    setIsSidebarOpen(false);
+                }
+
                 alert("Generation Successful! \n\n作成が完了しました。"); // Simple alert as requested/implied for clarity
             } else {
                 alert("Failed to generate content. Please try again.");
@@ -87,13 +110,25 @@ export default function PreparationPage() {
         }
     };
 
+    const handleSelectTask = (task) => {
+        setSelectedTask(task);
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    };
+
     const filteredTasks = tasks.filter(t => filterDone ? true : t.status !== "DONE");
 
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans">
+        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Left Sidebar for List */}
-            <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-                <div className="p-4 border-b border-gray-100 bg-gray-50">
+            <div className={`
+                ${isSidebarOpen ? "w-80 border-r" : "w-0 border-none"} 
+                transition-all duration-300 ease-in-out
+                bg-white flex flex-col overflow-hidden border-gray-200
+                flex-shrink-0
+            `}>
+                <div className="p-4 border-b border-gray-100 bg-gray-50 w-80">
                     <div className="flex justify-between items-center mb-4">
                         <h2 className="text-lg font-bold text-slate-700">Preparation</h2>
                         <button
@@ -116,11 +151,11 @@ export default function PreparationPage() {
                     </div>
                 </div>
 
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto w-80">
                     {filteredTasks.map((task) => (
                         <div
                             key={task.id}
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => handleSelectTask(task)}
                             className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-cyan-50 transition-colors group relative
                                 ${selectedTask?.id === task.id ? "bg-cyan-100 border-l-4 border-cyan-500" : ""}
                             `}
@@ -149,10 +184,25 @@ export default function PreparationPage() {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-white">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
+                {/* Header / Sidebar Toggle */}
+                <div className="flex items-center p-2 border-b border-gray-100 lg:border-none gap-2">
+                    <MobileMenuButton />
+                    <button
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+                        title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+                    >
+                        {isSidebarOpen ? "◀" : "▶"}
+                    </button>
+                    <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
+                        {isCreating ? "New Topic" : selectedTask ? selectedTask.topic : "Preparation"}
+                    </span>
+                </div>
+
                 {isCreating ? (
-                    <div className="flex-1 flex items-center justify-center p-8">
-                        <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
+                    <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+                        <div className="w-full max-w-lg bg-white p-4 sm:p-8 rounded-2xl shadow-xl border border-gray-100">
                             <h3 className="text-2xl font-bold mb-6 text-slate-800">New Preparation Topic</h3>
                             <input
                                 type="text"
@@ -180,9 +230,9 @@ export default function PreparationPage() {
                         </div>
                     </div>
                 ) : selectedTask ? (
-                    <div className="flex-1 overflow-y-auto p-8">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8">
                         <div className="max-w-4xl mx-auto">
-                            <h1 className="text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.topic}</h1>
+                            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.topic}</h1>
                             <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
                                 <span>Generated on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                 <span className={`px-2 py-0.5 rounded font-medium ${selectedTask.status === "DONE" ? "bg-green-100 text-green-800" : "bg-yellow-100 text-yellow-800"}`}>

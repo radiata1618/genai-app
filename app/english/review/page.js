@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import MobileMenuButton from "../../components/MobileMenuButton";
 
 export default function ReviewPage() {
     const [tasks, setTasks] = useState([]);
@@ -10,6 +11,9 @@ export default function ReviewPage() {
     const [progress, setProgress] = useState("");
     const [uploadProgress, setUploadProgress] = useState(0);
     const [isDragging, setIsDragging] = useState(false);
+
+    // UI State
+    const [isSidebarOpen, setIsSidebarOpen] = useState(true);
 
     const fetchTasks = async () => {
         try {
@@ -25,6 +29,20 @@ export default function ReviewPage() {
 
     useEffect(() => {
         fetchTasks();
+
+        const handleResize = () => {
+            if (window.innerWidth < 768) {
+                setIsSidebarOpen(false);
+            } else {
+                setIsSidebarOpen(true);
+            }
+        };
+
+        // Initial check
+        handleResize();
+
+        window.addEventListener('resize', handleResize);
+        return () => window.removeEventListener('resize', handleResize);
     }, []);
 
     const handleDragOver = (e) => {
@@ -92,6 +110,12 @@ export default function ReviewPage() {
                 setTasks([newTask, ...tasks]);
                 setSelectedTask(newTask);
                 setIsCreating(false);
+
+                // Close sidebar on mobile
+                if (window.innerWidth < 768) {
+                    setIsSidebarOpen(false);
+                }
+
             } else {
                 throw new Error("Analysis failed");
             }
@@ -121,11 +145,23 @@ export default function ReviewPage() {
         }
     };
 
+    const handleSelectTask = (task) => {
+        setSelectedTask(task);
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    };
+
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans">
+        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Left Sidebar */}
-            <div className="w-80 border-r border-gray-200 bg-white flex flex-col">
-                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
+            <div className={`
+                ${isSidebarOpen ? "w-80 border-r" : "w-0 border-none"} 
+                transition-all duration-300 ease-in-out
+                bg-white flex flex-col overflow-hidden border-gray-200
+                flex-shrink-0
+            `}>
+                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center w-80">
                     <h2 className="text-lg font-bold text-slate-700">Review History</h2>
                     <button
                         onClick={() => setIsCreating(true)}
@@ -134,11 +170,11 @@ export default function ReviewPage() {
                         + New
                     </button>
                 </div>
-                <div className="flex-1 overflow-y-auto">
+                <div className="flex-1 overflow-y-auto w-80">
                     {tasks.map((task) => (
                         <div
                             key={task.id}
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => handleSelectTask(task)}
                             className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-cyan-50 transition-colors group relative
                                 ${selectedTask?.id === task.id ? "bg-cyan-100 border-l-4 border-cyan-500" : ""}
                             `}
@@ -159,10 +195,25 @@ export default function ReviewPage() {
             </div>
 
             {/* Main Content */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-white">
+            <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
+                {/* Header / Sidebar Toggle */}
+                <div className="flex items-center p-2 border-b border-gray-100 lg:border-none gap-2">
+                    <MobileMenuButton />
+                    <button
+                        onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                        className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+                        title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
+                    >
+                        {isSidebarOpen ? "◀" : "▶"}
+                    </button>
+                    <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
+                        {isCreating ? "New Review" : selectedTask ? selectedTask.video_filename : "Review"}
+                    </span>
+                </div>
+
                 {isCreating ? (
-                    <div className="flex-1 flex items-center justify-center p-8">
-                        <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
+                    <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+                        <div className="w-full max-w-lg bg-white p-4 sm:p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
                             <h3 className="text-2xl font-bold mb-6 text-slate-800">Upload Lesson Video</h3>
                             <div className="mb-8">
                                 <label
@@ -193,9 +244,9 @@ export default function ReviewPage() {
                         </div>
                     </div>
                 ) : selectedTask ? (
-                    <div className="flex-1 overflow-y-auto p-8">
+                    <div className="flex-1 overflow-y-auto p-4 sm:p-8">
                         <div className="max-w-4xl mx-auto">
-                            <h1 className="text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.video_filename}</h1>
+                            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.video_filename}</h1>
                             <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
                                 <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                             </div>

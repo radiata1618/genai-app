@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
+import MobileMenuButton from "../../components/MobileMenuButton";
 
 export default function YouTubePrepPage() {
     const [tasks, setTasks] = useState([]);
@@ -15,17 +16,21 @@ export default function YouTubePrepPage() {
     const [activeTab, setActiveTab] = useState("notes"); // "video", "notes"
 
     useEffect(() => {
-        // Adjust default tab based on screen width
+        // Adjust sidebar based on screen width
         const handleResize = () => {
-            // If we ever want to auto-switch on resize, can add logic here.
-            // For now, keep it simple.
+            if (window.innerWidth < 768) {
+                setIsSidebarOpen(false);
+            } else {
+                setIsSidebarOpen(true);
+            }
         };
+
         // Initial check
-        // if (typeof window !== 'undefined' && window.innerWidth < 1024) setActiveTab("video");
+        handleResize();
 
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
-    }, [activeTab]);
+    }, []);
 
     useEffect(() => {
         fetchTasks();
@@ -58,6 +63,12 @@ export default function YouTubePrepPage() {
                 setSelectedTask(newTask);
                 setIsCreating(false);
                 setNewUrl("");
+
+                // Close sidebar on mobile
+                if (window.innerWidth < 768) {
+                    setIsSidebarOpen(false);
+                }
+
                 alert("Generation Successful! \n\n作成が完了しました。");
             } else {
                 const err = await res.json();
@@ -105,15 +116,23 @@ export default function YouTubePrepPage() {
         }
     };
 
+    const handleSelectTask = (task) => {
+        setSelectedTask(task);
+        if (window.innerWidth < 768) {
+            setIsSidebarOpen(false);
+        }
+    };
+
     const filteredTasks = tasks.filter(t => filterDone ? true : t.status !== "DONE");
 
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans">
+        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Left Sidebar for List */}
             <div className={`
                 ${isSidebarOpen ? "w-80 border-r" : "w-0 border-none"} 
                 transition-all duration-300 ease-in-out
                 bg-white flex flex-col overflow-hidden border-gray-200
+                flex-shrink-0
             `}>
                 <div className="p-4 border-b border-gray-100 bg-gray-50 w-80">
                     <div className="flex justify-between items-center mb-4">
@@ -142,7 +161,7 @@ export default function YouTubePrepPage() {
                     {filteredTasks.map((task) => (
                         <div
                             key={task.id}
-                            onClick={() => setSelectedTask(task)}
+                            onClick={() => handleSelectTask(task)}
                             className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-red-50 transition-colors group relative
                                 ${selectedTask?.id === task.id ? "bg-red-100 border-l-4 border-red-500" : ""}
                             `}
@@ -172,19 +191,23 @@ export default function YouTubePrepPage() {
 
             {/* Main Content */}
             <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
-                {/* Sidebar Toggle Button (Floating or fixed in header) */}
-                <div className="absolute top-4 left-4 z-20">
+                {/* Header / Sidebar Toggle */}
+                <div className="flex items-center p-2 border-b border-gray-100 gap-2 bg-white z-20">
+                    <MobileMenuButton />
                     <button
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="bg-white p-2 rounded-full shadow-md border border-gray-200 text-gray-500 hover:text-slate-800 transition-colors flex items-center justify-center w-8 h-8"
+                        className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
                         title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
                     >
                         {isSidebarOpen ? "◀" : "▶"}
                     </button>
+                    <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
+                        {isCreating ? "New Video" : selectedTask ? (selectedTask.topic || "Video") : "YouTube Prep"}
+                    </span>
                 </div>
 
                 {isCreating ? (
-                    <div className="flex-1 flex items-center justify-center p-8">
+                    <div className="flex-1 flex items-center justify-center p-8 overflow-y-auto">
                         <div className="w-full max-w-lg bg-white p-8 rounded-2xl shadow-xl border border-gray-100">
                             <h3 className="text-2xl font-bold mb-6 text-slate-800">New YouTube Prep</h3>
                             <input
@@ -218,7 +241,7 @@ export default function YouTubePrepPage() {
                 ) : selectedTask ? (
                     <div className="flex-1 flex flex-col overflow-hidden">
                         {/* Tab Header */}
-                        <div className="flex items-center justify-center space-x-1 p-2 bg-gray-50 border-b border-gray-200 pl-16">
+                        <div className="flex items-center justify-center space-x-1 p-2 bg-gray-50 border-b border-gray-200">
                             <button
                                 onClick={() => setActiveTab("video")}
                                 className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === "video" ? "bg-white text-red-600 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-700"}`}
@@ -231,13 +254,12 @@ export default function YouTubePrepPage() {
                             >
                                 Notes
                             </button>
-                            <div className="ml-auto pr-4 text-xs text-gray-400 hidden sm:block">
-                                Created: {new Date(selectedTask.created_at).toLocaleDateString()}
-                            </div>
+                        </div>
+                        <div className="text-center text-xs text-gray-400 py-1 bg-gray-50 border-b border-gray-100 hidden sm:block">
+                            Created: {new Date(selectedTask.created_at).toLocaleDateString()}
                         </div>
 
                         {/* Content Area */}
-
                         <div className="flex-1 overflow-hidden relative">
                             {/* Video View */}
                             <div className={`absolute inset-0 bg-black flex items-center justify-center transition-all duration-300
@@ -309,15 +331,6 @@ export default function YouTubePrepPage() {
                     </div>
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-gray-400 relative">
-                        {/* Sidebar Toggle even in empty state */}
-                        <div className="absolute top-4 left-4 z-20">
-                            <button
-                                onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                                className="bg-white p-2 rounded-full shadow-md border border-gray-200 text-gray-500 hover:text-slate-800 transition-colors flex items-center justify-center w-8 h-8"
-                            >
-                                {isSidebarOpen ? "◀" : "▶"}
-                            </button>
-                        </div>
                         <div className="text-center">
                             <p className="text-6xl mb-4">📺</p>
                             <p className="text-xl font-medium">Select a video or add a new one</p>
