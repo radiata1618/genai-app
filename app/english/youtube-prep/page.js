@@ -12,17 +12,16 @@ export default function YouTubePrepPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [activeTab, setActiveTab] = useState("split"); // "video", "notes", "split"
+    const [activeTab, setActiveTab] = useState("notes"); // "video", "notes"
 
     useEffect(() => {
         // Adjust default tab based on screen width
         const handleResize = () => {
-            if (window.innerWidth < 1024) {
-                if (activeTab === "split") setActiveTab("video");
-            }
+            // If we ever want to auto-switch on resize, can add logic here.
+            // For now, keep it simple.
         };
         // Initial check
-        if (typeof window !== 'undefined' && window.innerWidth < 1024) setActiveTab("video");
+        // if (typeof window !== 'undefined' && window.innerWidth < 1024) setActiveTab("video");
 
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
@@ -232,12 +231,6 @@ export default function YouTubePrepPage() {
                             >
                                 Notes
                             </button>
-                            <button
-                                onClick={() => setActiveTab("split")}
-                                className={`hidden lg:block px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === "split" ? "bg-white text-red-600 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-700"}`}
-                            >
-                                Split View
-                            </button>
                             <div className="ml-auto pr-4 text-xs text-gray-400 hidden sm:block">
                                 Created: {new Date(selectedTask.created_at).toLocaleDateString()}
                             </div>
@@ -248,8 +241,7 @@ export default function YouTubePrepPage() {
                         <div className="flex-1 overflow-hidden relative">
                             {/* Video View */}
                             <div className={`absolute inset-0 bg-black flex items-center justify-center transition-all duration-300
-                                 ${activeTab === "video" ? "z-10 opacity-100" :
-                                    activeTab === "split" ? "w-1/2 z-10 opacity-100 border-r border-gray-800" : "z-0 opacity-0 pointer-events-none"}
+                                 ${activeTab === "video" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
                              `}>
                                 <iframe
                                     src={`https://www.youtube.com/embed/${selectedTask.video_id}`}
@@ -263,8 +255,7 @@ export default function YouTubePrepPage() {
 
                             {/* Notes View */}
                             <div className={`absolute inset-0 bg-white overflow-y-auto p-4 md:p-8 transition-all duration-300
-                                 ${activeTab === "notes" ? "z-10 opacity-100" :
-                                    activeTab === "split" ? "left-1/2 w-1/2 z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
+                                 ${activeTab === "notes" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
                              `}>
                                 <div className="max-w-3xl mx-auto">
                                     <h1 className="text-2xl font-extrabold text-slate-900 mb-2">{selectedTask.topic}</h1>
