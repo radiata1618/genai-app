@@ -248,6 +248,37 @@ export default function DashboardPage() {
         }
     };
 
+    // Manual Reorder Handlers
+    const [reorderMenuId, setReorderMenuId] = useState(null);
+
+    const handleMove = async (task, direction, e) => {
+        e.stopPropagation();
+        setReorderMenuId(null);
+
+        const index = tasks.findIndex(t => t.id === task.id);
+        if (index === -1) return;
+
+        const newTasks = [...tasks];
+
+        if (direction === 'UP') {
+            if (index === 0) return; // Already at top
+            [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+        } else if (direction === 'DOWN') {
+            if (index === newTasks.length - 1) return; // Already at bottom
+            [newTasks[index], newTasks[index + 1]] = [newTasks[index + 1], newTasks[index]];
+        }
+
+        setTasks(newTasks);
+
+        const ids = newTasks.map(t => t.id);
+        try {
+            await api.reorderDaily(ids);
+        } catch (e) {
+            console.error("Failed to reorder manually", e);
+            // Revert could be added here if strict consistency is needed
+        }
+    };
+
     return (
         <div className="relative w-full h-full bg-slate-50 font-sans text-slate-900 flex flex-col overflow-hidden min-h-0">
             <div className="flex-1 flex overflow-hidden">
@@ -296,7 +327,7 @@ export default function DashboardPage() {
                     </div>
 
                     {/* Tasks List - Scrollable Area */}
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => setOpenMenuId(null)}>
+                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setOpenMenuId(null); setReorderMenuId(null); }}>
                         <div className="h-1 bg-indigo-500 w-full flex-shrink-0" />
 
                         <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar">
@@ -329,21 +360,43 @@ export default function DashboardPage() {
                                     >
                                         {/* Drag Handle */}
                                         <div
-                                            className="text-slate-300 cursor-grab active:cursor-grabbing p-0.5 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-5 w-3 opacity-0 group-hover:opacity-100"
-                                            onClick={(e) => e.stopPropagation()}
+                                            className="text-slate-300 cursor-pointer p-2 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-8 w-6 group-hover:text-indigo-400"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setReorderMenuId(reorderMenuId === t.id ? null : t.id);
+                                                setOpenMenuId(null); // Close other menu
+                                            }}
                                         >
                                             <div className="flex gap-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
                                             </div>
                                             <div className="flex gap-0.5 mt-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
                                             </div>
                                             <div className="flex gap-0.5 mt-0.5">
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
-                                                <div className="w-0.5 h-0.5 bg-slate-400 rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
                                             </div>
+
+                                            {/* Reorder Menu */}
+                                            {reorderMenuId === t.id && (
+                                                <div className="absolute left-0 top-8 w-32 bg-white border border-slate-200 shadow-xl rounded-lg z-[60] overflow-hidden animate-in fade-in zoom-in duration-100">
+                                                    <button
+                                                        onClick={(e) => handleMove(t, 'UP', e)}
+                                                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50"
+                                                    >
+                                                        <span>⬆️</span> Move Up
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleMove(t, 'DOWN', e)}
+                                                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                    >
+                                                        <span>⬇️</span> Move Down
+                                                    </button>
+                                                </div>
+                                            )}
                                         </div>
 
                                         <div

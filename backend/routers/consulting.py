@@ -12,6 +12,8 @@ from google.genai import types
 from google.api_core.client_options import ClientOptions
 import vertexai
 from vertexai.vision_models import MultiModalEmbeddingModel, Image
+from bs4 import BeautifulSoup
+from urllib.parse import urljoin
 
 router = APIRouter(
     tags=["consulting"],
@@ -137,23 +139,71 @@ class SlidePolisherRequest(BaseModel):
 
 @router.post("/consulting/collect")
 async def collect_data(req: CollectRequest):
-    """Downloads a PDF from URL and saves to GCS."""
+    """
+    Downloads content from URL.
+    - If PDF: Downloads directly.
+    - If HTML: Scrapes for .pdf links and downloads all of them.
+    Saves to GCS.
+    """
     try:
+        # 1. Fetch the URL
         response = requests.get(req.url, stream=True)
         response.raise_for_status()
         
-        filename = req.url.split("/")[-1]
-        if not filename.endswith(".pdf"):
-            filename += ".pdf"
-        
-        # Upload to GCS
+        content_type = response.headers.get('Content-Type', '').lower()
         client = get_storage_client()
         bucket = client.bucket(GCS_BUCKET_NAME)
-        blob = bucket.blob(f"consulting_raw/{filename}")
-        blob.upload_from_string(response.content, content_type="application/pdf")
         
-        return {"status": "success", "message": f"Collected {filename} to gs://{GCS_BUCKET_NAME}/consulting_raw/{filename}"}
+        collected_files = []
+
+        # 2. Case: Single PDF
+        if 'application/pdf' in content_type or req.url.lower().endswith('.pdf'):
+            filename = req.url.split("/")[-1]
+            if not filename.endswith(".pdf"): filename += ".pdf"
+            
+            blob = bucket.blob(f"consulting_raw/{filename}")
+            blob.upload_from_string(response.content, content_type="application/pdf")
+            collected_files.append(filename)
+            
+        # 3. Case: HTML Page (Scraping)
+        elif 'text/html' in content_type:
+            soup = BeautifulSoup(response.content, 'html.parser')
+            pdf_links = set()
+            
+            # Find all links ending in .pdf
+            for a in soup.find_all('a', href=True):
+                href = a['href']
+                if href.lower().endswith('.pdf'):
+                    full_url = urljoin(req.url, href)
+                    pdf_links.add(full_url)
+            
+            print(f"Found {len(pdf_links)} PDFs on page.")
+
+            # Download each PDF
+            for pdf_url in pdf_links:
+                try:
+                    pdf_res = requests.get(pdf_url)
+                    if pdf_res.status_code == 200:
+                        filename = pdf_url.split("/")[-1]
+                        blob = bucket.blob(f"consulting_raw/{filename}")
+                        blob.upload_from_string(pdf_res.content, content_type="application/pdf")
+                        collected_files.append(filename)
+                except Exception as e:
+                    print(f"Failed to download {pdf_url}: {e}")
+
+        else:
+            return {"status": "error", "message": f"Unsupported content type: {content_type}"}
+        
+        if not collected_files:
+             return {"status": "warning", "message": "No PDFs found to collect."}
+
+        return {
+            "status": "success", 
+            "message": f"Collected {len(collected_files)} files: {', '.join(collected_files[:5])}..."
+        }
+
     except Exception as e:
+        print(f"Collection Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/consulting/logic-mapper")

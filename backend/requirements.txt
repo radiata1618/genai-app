@@ -10,3 +10,4 @@ google-api-python-client
 moviepy
 youtube-transcript-api
 requests
+beautifulsoup4
