@@ -11,3 +11,4 @@ moviepy
 youtube-transcript-api
 requests
 beautifulsoup4
+pypdf

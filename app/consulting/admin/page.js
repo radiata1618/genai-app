@@ -3,27 +3,42 @@ import React, { useState } from 'react';
 import MobileMenuButton from '../../../components/MobileMenuButton';
 
 export default function AdminPage() {
+    const [activeTab, setActiveTab] = useState('url'); // 'url' or 'file'
     const [url, setUrl] = useState('');
+    const [file, setFile] = useState(null);
     const [logs, setLogs] = useState([]);
     const [loading, setLoading] = useState(false);
 
     const log = (msg) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
 
     const handleCollect = async () => {
-        if (!url) return;
+        if (activeTab === 'url' && !url) return;
+        if (activeTab === 'file' && !file) return;
+
         setLoading(true);
-        log(`Starting collection for: ${url}`);
         try {
-            const res = await fetch('/api/consulting/collect', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json' },
-                body: JSON.stringify({ url })
-            });
-            const data = await res.json();
-            if (res.ok) {
-                log(`Success: ${data.message}`);
+            if (activeTab === 'url') {
+                log(`Starting URL collection for: ${url}`);
+                const res = await fetch('/api/consulting/collect', {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ url })
+                });
+                const data = await res.json();
+                if (res.ok) log(`Success: ${data.message}`);
+                else log(`Error: ${data.detail || data.message}`);
             } else {
-                log(`Error: ${data.detail}`);
+                log(`Starting File analysis for: ${file.name}`);
+                const formData = new FormData();
+                formData.append('file', file);
+
+                const res = await fetch('/api/consulting/collect-file', {
+                    method: 'POST',
+                    body: formData
+                });
+                const data = await res.json();
+                if (res.ok) log(`Success: ${data.message}`);
+                else log(`Error: ${data.detail || data.message}`);
             }
         } catch (e) {
             log(`Network Error: ${e.message}`);
@@ -46,20 +61,60 @@ export default function AdminPage() {
                     <p className="text-sm text-slate-500 mb-4">
                         Enter a URL (PDF or Page) to download and add to the Consulting Knowledge Base (GCS).
                     </p>
-                    <div className="flex gap-4">
-                        <input
-                            type="text"
-                            value={url}
-                            onChange={(e) => setUrl(e.target.value)}
-                            placeholder="https://www.meti.go.jp/.../report.pdf"
-                            className="flex-1 p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-cyan-500"
-                        />
+                    <div className="flex border-b border-slate-200 mb-6">
+                        <button
+                            className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'url' ? 'border-cyan-600 text-cyan-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            onClick={() => setActiveTab('url')}
+                        >
+                            Web URL
+                        </button>
+                        <button
+                            className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'file' ? 'border-cyan-600 text-cyan-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
+                            onClick={() => setActiveTab('file')}
+                        >
+                            <span className="mr-2">📂</span> Upload PDF File
+                        </button>
+                    </div>
+
+                    <p className="text-sm text-slate-500 mb-4">
+                        {activeTab === 'url'
+                            ? "Enter a URL (PDF or Page) to download and add to the Consulting Knowledge Base."
+                            : "Upload a PDF file containing links to reports. We will extract and download all linked PDFs."}
+                    </p>
+
+                    <div className="flex gap-4 items-center">
+                        {activeTab === 'url' ? (
+                            <input
+                                type="text"
+                                value={url}
+                                onChange={(e) => setUrl(e.target.value)}
+                                placeholder="https://www.meti.go.jp/.../report.pdf"
+                                className="flex-1 p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-cyan-500"
+                            />
+                        ) : (
+                            <div className="flex-1">
+                                <label className="flex items-center gap-3 p-3 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
+                                    <span className="text-2xl">📄</span>
+                                    <div className="flex-1">
+                                        <div className="text-sm font-bold text-slate-700">{file ? file.name : "Choose a PDF file..."}</div>
+                                        <div className="text-xs text-slate-400">PDFs with embedded links</div>
+                                    </div>
+                                    <input
+                                        type="file"
+                                        accept=".pdf"
+                                        className="hidden"
+                                        onChange={(e) => setFile(e.target.files[0])}
+                                    />
+                                </label>
+                            </div>
+                        )}
+
                         <button
                             onClick={handleCollect}
-                            disabled={loading || !url}
-                            className="bg-cyan-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors"
+                            disabled={loading || (activeTab === 'url' ? !url : !file)}
+                            className="bg-cyan-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors whitespace-nowrap"
                         >
-                            {loading ? 'Collecting...' : 'Collect'}
+                            {loading ? 'Processing...' : 'Collect'}
                         </button>
                     </div>
                 </div>

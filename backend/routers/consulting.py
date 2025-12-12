@@ -14,6 +14,8 @@ import vertexai
 from vertexai.vision_models import MultiModalEmbeddingModel, Image
 from bs4 import BeautifulSoup
 from urllib.parse import urljoin
+from pypdf import PdfReader
+import io
 
 router = APIRouter(
     tags=["consulting"],
@@ -207,6 +209,70 @@ async def collect_data(req: CollectRequest):
 
     except Exception as e:
         print(f"Collection Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/consulting/collect-file")
+async def collect_file(file: UploadFile = File(...)):
+    """
+    Accepts a PDF file upload.
+    - Parses attributes to find links (Annotations /URI).
+    - Downloads all found .pdf links to GCS.
+    """
+    try:
+        content = await file.read()
+        pdf_file = io.BytesIO(content)
+        reader = PdfReader(pdf_file)
+        
+        pdf_links = set()
+        
+        # Iterate pages
+        for page in reader.pages:
+            if "/Annots" in page:
+                for annot in page["/Annots"]:
+                    obj = annot.get_object()
+                    if "/A" in obj and "/URI" in obj["/A"]:
+                        uri = obj["/A"]["/URI"]
+                        if uri.lower().endswith(".pdf"):
+                            pdf_links.add(uri)
+                            
+        print(f"Found {len(pdf_links)} PDF links in uploaded file.")
+        
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        collected_files = []
+
+        # Download found PDFs
+        for pdf_url in pdf_links:
+            try:
+                # Add User-Agent to avoid 403
+                headers = {
+                    'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
+                }
+                pdf_res = requests.get(pdf_url, headers=headers)
+                
+                if pdf_res.status_code == 200:
+                    filename = pdf_url.split("/")[-1]
+                    # basic sanitization
+                    filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+                    
+                    blob = bucket.blob(f"consulting_raw/{filename}")
+                    blob.upload_from_string(pdf_res.content, content_type="application/pdf")
+                    collected_files.append(filename)
+                else:
+                    print(f"Failed to download {pdf_url}: Status {pdf_res.status_code}")
+            except Exception as e:
+                print(f"Failed to download {pdf_url}: {e}")
+
+        if not collected_files:
+             return {"status": "warning", "message": "No accessible PDF links found in the uploaded file."}
+
+        return {
+            "status": "success", 
+            "message": f"Collected {len(collected_files)} files from upload: {', '.join(collected_files[:3])}..."
+        }
+
+    except Exception as e:
+        print(f"File Collection Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/consulting/logic-mapper")
