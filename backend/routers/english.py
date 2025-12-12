@@ -124,7 +124,7 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     
     try:
         response = client.models.generate_content(
-            model="gemini-3-pro-preview",
+            model="gemini-2.5-pro",
             contents=prompt,
         )
         content = response.text
@@ -189,8 +189,8 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
 
     # 3. Generate Content with Gemini
     prompt = f"""
-    あなたはTOEIC900点以上を目指す上級英語学習者のためのプロの英語教師です。
-    以下はYouTube動画の字幕テキストです。この動画を視聴して学習するための予習資料を作成してください。
+    あなたは既にTOEIC900点以上を取得し、ネイティブレベルの英語力を目指している学習者のためのプロの英語教師です。
+    以下はYouTube動画の字幕テキストです。この動画を視聴して学習するための、妥協のない高度な予習資料を作成してください。
 
     **字幕テキスト:**
     {full_text[:20000]} 
@@ -205,21 +205,24 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
     1. **概要 (Summary)**
        - 動画の内容を3行程度で要約。
 
-    2. **重要語彙 (Advanced Vocabulary)**
-       - 動画内で使われている難解な単語や重要な単語（3〜5個）。
-       - 意味と、動画内での使われ方（文脈）の解説。
+    2. **発展的語彙・専門用語 (Advanced & Niche Vocabulary)**
+       - 動画内で使われている、TOEIC等の試験範囲を超えた難解な単語、専門用語、文学的な表現などを**可能な限りすべて（少なくとも20個以上）**列挙してください。
+       - 既知の単語でも、文脈が特殊な場合や、第二義・第三義で使われているものも含めてください。
+       - **Word**: 意味 - 動画内での文脈、語源、または類義語とのニュアンスの違いなども含めた深い解説
 
-    3. **キーフレーズ (Key Phrases)**
-       - 実践的なフレーズやイディオム。
+    3. **高度なフレーズ・慣用句 (Sophisticated Phrases & Idioms)**
+       - ネイティブが使うこなれた言い回し、スラング、教養ある表現などを**徹底的に（10個以上）**ピックアップしてください。
+       - **Phrase**: 意味 - 解説（どのようなシチュエーションで使われるか等）
 
     4. **リスニング、理解のポイント (Listening Points)**
-       - 特に聞き取るべき箇所や、話の展開のポイント。
+       - 特に聞き取るべき箇所や、話の展開のポイント。難易度が高い箇所があれば解説。
+
 
     """
 
     try:
         response = client.models.generate_content(
-            model="gemini-3-pro-preview",
+            model="gemini-2.5-pro",
             contents=prompt,
         )
         content = response.text
@@ -372,16 +375,38 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
         """
         
         print(f"DEBUG: STARTING GEMINI GENERATION")
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview",
-            contents=[prompt, part]
-        )
-        print(f"DEBUG: GEMINI GENERATION COMPLETE")
-        content = response.text
+        
+        # Retry logic for 429 RESOURCE_EXHAUSTED
+        import time
+        max_retries = 3
+        retry_delay = 5 # seconds
+        
+        for attempt in range(max_retries):
+            try:
+                response = client.models.generate_content(
+                    model="gemini-2.5-pro",
+                    contents=[prompt, part]
+                )
+                content = response.text
+                print(f"DEBUG: GEMINI GENERATION COMPLETE")
+                break # Success, exit loop
+            except Exception as e:
+                error_str = str(e)
+                if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                    print(f"WARNING: Rate limit hit (Attempt {attempt + 1}/{max_retries}). Retrying in {retry_delay}s...")
+                    if attempt == max_retries - 1:
+                        raise e # Re-raise if last attempt
+                    time.sleep(retry_delay)
+                    retry_delay *= 2 # Exponential backoff
+                else:
+                    raise e # Re-raise other errors immediately
 
     except Exception as e:
         print(f"Review Processing Error: {e}")
-        raise HTTPException(status_code=500, detail=f"Processing Failed: {str(e)}")
+        error_detail = str(e)
+        if "429" in error_detail or "RESOURCE_EXHAUSTED" in error_detail:
+             error_detail = "AI Service Busy (Rate Limit). Please try again in a few minutes."
+        raise HTTPException(status_code=500, detail=f"Processing Failed: {error_detail}")
     # No finally block needed as no local files are created
     
     # 4. Save to Firestore
