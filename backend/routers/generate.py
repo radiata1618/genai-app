@@ -1,10 +1,9 @@
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel
 from typing import Optional
-
-import vertexai
-from vertexai.preview.generative_models import GenerativeModel, Part, Tool, grounding
-# ↑ GoogleSearchRetrieval は grounding サブモジュールから使う
+import os
+from google import genai
+from google.genai import types
 
 router = APIRouter()
 
@@ -18,29 +17,51 @@ class GenerateRequest(BaseModel):
 @router.post("/generate")
 async def generate_content(request: GenerateRequest):
     try:
-        # 必要ならどこかで init 済みか確認:
-        # vertexai.init(project="YOUR_PROJECT_ID", location="us-central1")
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+        if api_key:
+            api_key = api_key.strip()
 
-        model = GenerativeModel("gemini-2.0-flash-001")
-
-        # Google Search Grounding 用ツール設定
-        search_tool = Tool.from_google_search_retrieval(
-            google_search_retrieval=grounding.GoogleSearchRetrieval()
+        client = genai.Client(
+            vertexai=True,
+            api_key=api_key,
+            http_options={'api_version': 'v1beta1'}
         )
 
-        parts = []
+        model = "gemini-2.0-flash-001"
+
+        # Google Search Grounding Tool
+        search_tool = types.Tool(
+            google_search=types.GoogleSearch()
+        )
+
+        contents = []
         if request.query:
-            parts.append(Part.from_text(request.query))
+            contents.append(request.query)
 
         if request.image and request.mimeType:
-            parts.append(Part.from_data(data=request.image, mime_type=request.mimeType))
+             # Assuming naive pass-through or similar handling if needed. 
+             # But the original code used Part.from_data. 
+             # genai SDK prefers Part.from_bytes or similar if we have base64.
+             # However, the input 'image' is likely base64 string from frontend.
+             import base64
+             try:
+                image_bytes = base64.b64decode(request.image)
+                contents.append(types.Part.from_bytes(
+                    data=image_bytes,
+                    mime_type=request.mimeType
+                ))
+             except Exception:
+                 pass # Ignore invalid image data for now or handle error
 
-        if not parts:
+        if not contents:
             return {"answer": "(no content to generate)"}
 
-        response = model.generate_content(
-            parts,
-            tools=[search_tool],
+        response = client.models.generate_content(
+            model=model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                tools=[search_tool],
+            ),
         )
 
         text = response.text or "(no text response)"

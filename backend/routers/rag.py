@@ -31,7 +31,19 @@ class RagRequest(BaseModel):
     mimeType: Optional[str] = None   # "image/png" etc
     top_k: int = 3
 
+_vertexai_initialized = False
+
+def _ensure_vertexai_init():
+    global _vertexai_initialized
+    if not _vertexai_initialized:
+        if not PROJECT_ID or not LOCATION:
+            print("Warning: PROJECT_ID or LOCATION not set for Vertex AI init")
+        else:
+            vertexai.init(project=PROJECT_ID, location=LOCATION)
+            _vertexai_initialized = True
+
 def get_embedding(text: str = None, image_bytes: bytes = None):
+    _ensure_vertexai_init()
     model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding@001")
     if image_bytes:
         image = Image(image_bytes)

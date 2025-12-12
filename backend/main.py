@@ -1,7 +1,7 @@
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 import os
-import vertexai
+
 from dotenv import load_dotenv
 from pathlib import Path
 from routers import generate
@@ -56,18 +56,6 @@ app.add_middleware(PerformanceMiddleware)
 app.add_middleware(APIKeyMiddleware)
 # ---------------------------
 
-# Initialize Vertex AI
-PROJECT_ID = os.getenv("PROJECT_ID")
-LOCATION = os.getenv("LOCATION_FOR_CAR_QUIZZ")
-
-# Check if environment variables are set
-if not PROJECT_ID or not LOCATION:
-    print("Warning: PROJECT_ID or LOCATION environment variables are not set.")
-
-try:
-    vertexai.init(project=PROJECT_ID, location=LOCATION)
-except Exception as e:
-    print(f"Error initializing Vertex AI: {e}")
 
 # Include routers
 app.include_router(generate.router, prefix="/api", tags=["generate"])
