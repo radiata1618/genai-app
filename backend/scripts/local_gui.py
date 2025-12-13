@@ -180,5 +180,7 @@ if st.button("実行 (Collect)", type="primary"):
                 st.success("完了しました！")
 
         except Exception as e:
-            st.error(f"予期せぬエラーが発生しました: {e}")
-            gui_log(f"[EXCEPTION] {e}")
+            st.error(f"予期せぬエラーが発生しました: {type(e).__name__}: {e}")
+            gui_log(f"[EXCEPTION] {repr(e)}")
+            import traceback
+            traceback.print_exc()

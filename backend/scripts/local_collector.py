@@ -129,13 +129,30 @@ def analyze_batch_with_gemini(pages_bytes_list, batch_index, log_func=print):
         if not text:
             return []
 
+        # Attempt to clean markdown code blocks
         if text.startswith("```json"):
             text = text.replace("```json", "").replace("```", "")
-        
-        data = json.loads(text)
-        return data
+        elif text.startswith("```"):
+            text = text.replace("```", "")
+
+        try:
+            data = json.loads(text)
+            return data
+        except json.JSONDecodeError:
+            # Fallback: Try to find JSON list via regex
+            match = re.search(r'\[.*\]', text, re.DOTALL)
+            if match:
+                try:
+                    data = json.loads(match.group(0))
+                    return data
+                except:
+                    pass
+            
+            log_func(f"[Batch-{batch_index} Error] Invalid JSON: {text[:100]}...")
+            return []
+            
     except Exception as e:
-        log_func(f"[Batch-{batch_index} Error] {e}")
+        log_func(f"[Batch-{batch_index} Error] {type(e).__name__}: {e}")
         return []
 
 def scan_pdf_with_gemini(file_stream, log_func=print):
