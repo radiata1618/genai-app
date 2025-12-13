@@ -43,15 +43,15 @@ target_input = None
 uploaded_file = None
 
 if input_type.startswith("URL"):
-    target_input = st.text_input("収集対象のURL (PDFまたはページ)", placeholder="https://example.com/report_list.pdf")
+    target_input = st.text_area("収集対象のURL (複数可: 改行区切り)", placeholder="https://example.com/report1.pdf\nhttps://example.com/report2.pdf", height=150)
 else:
-    uploaded_file = st.file_uploader("PDFファイルをアップロード", type=["pdf"])
+    uploaded_files = st.file_uploader("PDFファイルをアップロード (複数可)", type=["pdf"], accept_multiple_files=True)
 
 # Run Button
 if st.button("実行 (Collect)", type="primary"):
-    if input_type.startswith("URL") and not target_input:
+    if input_type.startswith("URL") and not target_input.strip():
         st.warning("URLを入力してください。")
-    elif input_type.startswith("ローカル") and not uploaded_file:
+    elif input_type.startswith("ローカル") and not uploaded_files:
         st.warning("ファイルをアップロードしてください。")
     else:
         # --- Execution Logic ---
@@ -75,46 +75,68 @@ if st.button("実行 (Collect)", type="primary"):
         try:
             pdf_stream = None
             
-            # 1. Get Input
-            if uploaded_file:
-                gui_log(f"[*] アップロードされたファイルを読み込み中: {uploaded_file.name}")
-                pdf_stream = uploaded_file
+            # 1. Prepare Input Sources
+            input_sources = [] # List of (name, bytes)
+            
+            if input_type.startswith("ローカル"):
+                for f in uploaded_files:
+                    input_sources.append((f.name, f.read()))
             else:
-                gui_log(f"[*] URLから親PDFを取得中: {target_input}")
-                try:
-                    res = requests.get(target_input, headers=local_collector.HEADERS, timeout=30)
-                    res.raise_for_status()
-                    pdf_stream = io.BytesIO(res.content)
-                except Exception as e:
-                    gui_log(f"[致命的エラー] 入力URLの取得に失敗: {e}")
-                    st.stop()
+                urls = [u.strip() for u in target_input.split('\n') if u.strip()]
+                for i, url in enumerate(urls):
+                    gui_log(f"[*] URLから親PDFを取得中 ({i+1}/{len(urls)}): {url}")
+                    try:
+                        res = requests.get(url, headers=local_collector.HEADERS, timeout=60)
+                        res.raise_for_status()
+                        input_sources.append((url, res.content))
+                    except Exception as e:
+                        gui_log(f"[エラー] URL取得失敗 ({url}): {e}")
 
-            # 2. AI Analysis & Link Extraction
-            gui_log("[*] PDFを解析中 (AI Metadata + Link Extraction)...")
+            if not input_sources:
+                 gui_log("[!] 処理対象が見つかりませんでした。")
+                 st.stop()
             
-            # Run AI Analysis (Gemini)
-            # Need to clone stream because it's read twice
-            pdf_bytes = pdf_stream.read()
-            pdf_stream_ai = io.BytesIO(pdf_bytes)
-            pdf_stream_links = io.BytesIO(pdf_bytes)
+            # 2. Iterate Sources
+            all_targets = []
             
-            gemini_metadata = local_collector.scan_pdf_with_gemini(pdf_stream_ai, log_func=gui_log)
-            raw_links = local_collector.extract_pdf_links(pdf_stream_links, log_func=gui_log)
-            
-            gui_log(f"[*] 抽出されたリンク数(Raw): {len(raw_links)} 件")
-            
-            if not raw_links and not gemini_metadata:
-                gui_log("[*] ダウンロードすべきリンクが見つかりませんでした。終了します。")
-            else:
-                 # 3. Merge Logic (Same as local_collector)
-                targets = []
+            for idx, (source_name, content_bytes) in enumerate(input_sources):
+                gui_log(f"--- 親PDF処理 ({idx+1}/{len(input_sources)}): {source_name} ---")
+                
+                # Streams for this source
+                pdf_stream_ai = io.BytesIO(content_bytes)
+                pdf_stream_links = io.BytesIO(content_bytes)
+                
+                # Analysis
+                gui_log(f"[*] AI解析を実行中...")
+                gemini_metadata = local_collector.scan_pdf_with_gemini(pdf_stream_ai, log_func=gui_log)
+                
+                gui_log(f"[*] リンク抽出を実行中...")
+                raw_links = local_collector.extract_pdf_links(pdf_stream_links, log_func=gui_log)
+                
+                gui_log(f"[*] 抽出リンク数: {len(raw_links)}")
+                
+                # Merge
+                source_targets = []
                 for link in raw_links:
                     suggested = None
                     for meta_url, meta_name in gemini_metadata.items():
                         if meta_url in link or link in meta_url:
                             suggested = meta_name
                             break
-                    targets.append((link, suggested))
+                    source_targets.append((link, suggested))
+                
+                all_targets.extend(source_targets)
+                gui_log(f"[+] {len(source_targets)} 件をダウンロードリストに追加しました。")
+
+            gui_log(f"==========================================")
+            gui_log(f"[*] 解析完了。合計 {len(all_targets)} 件のファイルを処理します。")
+            
+            if not all_targets:
+                gui_log("[*] ダウンロード対象がありませんでした。")
+            else:
+                 # 3. Batch Download
+                targets = all_targets # already merged
+
                 
                 # 4. Download & Upload
                 gui_log(f"[*] 一括ダウンロード＆アップロードを開始します (並列数: 5)")

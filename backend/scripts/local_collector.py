@@ -119,7 +119,16 @@ def analyze_batch_with_gemini(pages_bytes_list, batch_index, log_func=print):
         )
         
         # Parse JSON
-        text = response.text
+        try:
+            text = response.text
+        except ValueError:
+             # Safety filters might block content, accessing .text raises ValueError
+             log_func(f"[Batch-{batch_index} Warning] Response blocked or empty. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'Unknown'}")
+             return []
+
+        if not text:
+            return []
+
         if text.startswith("```json"):
             text = text.replace("```json", "").replace("```", "")
         
