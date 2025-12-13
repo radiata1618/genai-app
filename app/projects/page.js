@@ -36,6 +36,9 @@ export default function ProjectsPage() {
     const [editingProjectId, setEditingProjectId] = useState(null);
     const [editingTitle, setEditingTitle] = useState("");
 
+    // Manual Reorder State
+    const [reorderMenuId, setReorderMenuId] = useState(null);
+
     useEffect(() => {
         fetchProjects();
     }, []);
@@ -269,6 +272,34 @@ export default function ProjectsPage() {
         }
     };
 
+    const handleMove = async (task, direction, e) => {
+        e.stopPropagation();
+        setReorderMenuId(null);
+
+        const index = tasks.findIndex(t => t.id === task.id);
+        if (index === -1) return;
+
+        const newTasks = [...tasks];
+
+        if (direction === 'UP') {
+            if (index === 0) return;
+            [newTasks[index - 1], newTasks[index]] = [newTasks[index], newTasks[index - 1]];
+        } else if (direction === 'DOWN') {
+            if (index === newTasks.length - 1) return;
+            [newTasks[index], newTasks[index + 1]] = [newTasks[index + 1], newTasks[index]];
+        }
+
+        setTasks(newTasks);
+
+        try {
+            const ids = newTasks.map(t => t.id);
+            await reorderProjectTasks(selectedProject.id, ids);
+        } catch (e) {
+            console.error("Failed to reorder manually", e);
+            fetchTasks(selectedProject.id); // Revert on failure
+        }
+    };
+
     const visibleTasks = showCompleted ? tasks : tasks.filter(t => !t.is_completed);
 
     return (
@@ -413,10 +444,51 @@ export default function ProjectsPage() {
                                         onDragStart={(e) => onTaskDragStart(e, t)}
                                         onDragOver={(e) => onTaskDragOver(e, t)}
                                         onDragEnd={onTaskDragEnd}
-                                        className={`group p-3 rounded-lg border transition-all flex items-start gap-3 bg-white hover:shadow-md
+                                        className={`group p-3 rounded-lg border transition-all flex items-start gap-2 bg-white hover:shadow-md relative
                                             ${t.is_completed ? 'opacity-50 bg-slate-50' : 'hover:border-indigo-200'}
                                         `}
+                                        onClick={() => setReorderMenuId(null)}
                                     >
+                                        {/* Drag Handle & Menu */}
+                                        <div
+                                            className="text-slate-300 cursor-pointer p-1 hover:bg-slate-100 rounded transition-colors flex flex-col justify-center items-center h-6 w-5 mr-1 group-hover:text-indigo-400 self-center"
+                                            onClick={(e) => {
+                                                e.stopPropagation();
+                                                setReorderMenuId(reorderMenuId === t.id ? null : t.id);
+                                            }}
+                                        >
+                                            <div className="flex gap-0.5">
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                            </div>
+                                            <div className="flex gap-0.5 mt-0.5">
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                            </div>
+                                            <div className="flex gap-0.5 mt-0.5">
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                                <div className="w-0.5 h-0.5 bg-current rounded-full"></div>
+                                            </div>
+
+                                            {/* Reorder Menu */}
+                                            {reorderMenuId === t.id && (
+                                                <div className="absolute left-0 top-8 w-32 bg-white border border-slate-200 shadow-xl rounded-lg z-[60] overflow-hidden animate-in fade-in zoom-in duration-100">
+                                                    <button
+                                                        onClick={(e) => handleMove(t, 'UP', e)}
+                                                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2 border-b border-slate-50"
+                                                    >
+                                                        <span>⬆️</span> Move Up
+                                                    </button>
+                                                    <button
+                                                        onClick={(e) => handleMove(t, 'DOWN', e)}
+                                                        className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                    >
+                                                        <span>⬇️</span> Move Down
+                                                    </button>
+                                                </div>
+                                            )}
+                                        </div>
+
                                         <div
                                             onClick={() => handleToggleTask(t.id)}
                                             className={`mt-0.5 w-5 h-5 rounded border flex-shrink-0 cursor-pointer flex items-center justify-center transition-colors
@@ -437,12 +509,13 @@ export default function ProjectsPage() {
 
                                         <button
                                             onClick={() => handleDeleteTask(t.id)}
-                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity"
+                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity self-start"
                                         >
                                             <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
                                         </button>
                                     </div>
-                                ))}
+                                ))
+                                }
                                 {visibleTasks.length === 0 && !loadingTasks && (
                                     <div className="text-center py-20 text-slate-400 text-sm">
                                         {tasks.length > 0 ? "All tasks completed! Toggle 'All' to see them." : "No tasks in this project."}

@@ -34,7 +34,7 @@ export default function BacklogPage() {
 
     // Filters
     const [filterPriority, setFilterPriority] = useState('All'); // All, High, Medium
-    const [filterCategory, setFilterCategory] = useState('All');
+    const [filterCategory, setFilterCategory] = useState([]); // Array of selected categories. Empty = All
 
     const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(true);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
@@ -245,7 +245,7 @@ export default function BacklogPage() {
         if (filterExcludePending && task.status === 'PENDING') return false;
         if (filterPriority === 'High' && task.priority !== 'High') return false;
         if (filterPriority === 'Medium' && task.priority === 'Low') return false; // Show Medium & High
-        if (filterCategory !== 'All' && task.category !== filterCategory) return false;
+        if (filterCategory.length > 0 && !filterCategory.includes(task.category)) return false;
         if (filterPetAllowedOnly && !task.is_pet_allowed) return false;
 
         if (filterKeyword.trim()) {
@@ -760,21 +760,38 @@ export default function BacklogPage() {
                     <h3 className="text-xs font-bold text-slate-400 uppercase tracking-wider mb-3">Category</h3>
                     <div className="space-y-1">
                         <button
-                            onClick={() => setFilterCategory('All')}
-                            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all ${filterCategory === 'All' ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                            onClick={() => setFilterCategory([])}
+                            className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${filterCategory.length === 0 ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
                         >
-                            All Categories
+                            <div className={`w-4 h-4 rounded border flex items-center justify-center ${filterCategory.length === 0 ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 bg-white'}`}>
+                                {filterCategory.length === 0 && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                            </div>
+                            <span>All Categories</span>
                         </button>
-                        {CATEGORY_KEYS.map(key => (
-                            <button
-                                key={key}
-                                onClick={() => setFilterCategory(key)}
-                                className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${filterCategory === key ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
-                            >
-                                <span>{CATEGORIES[key].icon}</span>
-                                <span>{CATEGORIES[key].label}</span>
-                            </button>
-                        ))}
+                        {CATEGORY_KEYS.map(key => {
+                            const isSelected = filterCategory.includes(key);
+                            return (
+                                <button
+                                    key={key}
+                                    onClick={() => {
+                                        setFilterCategory(prev => {
+                                            if (isSelected) {
+                                                return prev.filter(k => k !== key);
+                                            } else {
+                                                return [...prev, key];
+                                            }
+                                        });
+                                    }}
+                                    className={`w-full text-left px-3 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2 ${isSelected ? 'bg-indigo-50 text-indigo-700' : 'text-slate-600 hover:bg-slate-50'}`}
+                                >
+                                    <div className={`w-4 h-4 rounded border flex items-center justify-center ${isSelected ? 'border-indigo-500 bg-indigo-500 text-white' : 'border-slate-300 bg-white'}`}>
+                                        {isSelected && <svg className="w-3 h-3" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="3" d="M5 13l4 4L19 7" /></svg>}
+                                    </div>
+                                    <span>{CATEGORIES[key].icon}</span>
+                                    <span>{CATEGORIES[key].label}</span>
+                                </button>
+                            );
+                        })}
                     </div>
                 </div>
             </div>
