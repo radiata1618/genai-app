@@ -195,7 +195,109 @@ class SlidePolisherRequest(BaseModel):
     text: Optional[str] = None
     image: Optional[str] = None # base64
 
+class SlidePolisherRequest(BaseModel):
+    text: Optional[str] = None
+    image: Optional[str] = None # base64
+
+class DeleteFilesRequest(BaseModel):
+    filenames: List[str]
+
+class GenerateSignedUrlRequest(BaseModel):
+    filename: str
+
 # --- Endpoints ---
+
+@router.get("/consulting/files")
+async def list_files():
+    """Lists PDF files in the consulting_raw directory."""
+    try:
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        # Scan 'consulting_raw/' prefix
+        blobs = bucket.list_blobs(prefix="consulting_raw/")
+        
+        file_list = []
+        for blob in blobs:
+            if blob.name.endswith(".pdf"):
+                file_list.append({
+                    "name": blob.name,
+                    "basename": blob.name.split("/")[-1],
+                    "size": blob.size,
+                    "updated": blob.updated.isoformat() if blob.updated else None,
+                    "content_type": blob.content_type
+                })
+        
+        # Sort by updated desc
+        file_list.sort(key=lambda x: x["updated"] or "", reverse=True)
+        return {"files": file_list}
+    except Exception as e:
+        print(f"List Files Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/consulting/files/delete")
+async def delete_files(req: DeleteFilesRequest):
+    """Deletes specified files."""
+    try:
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        
+        deleted_count = 0
+        errors = []
+        
+        for filename in req.filenames:
+            # filename is full path e.g. "consulting_raw/foo.pdf"
+            try:
+                blob = bucket.blob(filename)
+                blob.delete()
+                deleted_count += 1
+            except Exception as e:
+                errors.append(f"{filename}: {e}")
+        
+        return {"deleted_count": deleted_count, "errors": errors}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/consulting/files/signed-url")
+async def get_file_signed_url(req: GenerateSignedUrlRequest):
+    """Generates a signed URL for viewing the file."""
+    try:
+        # Re-use helper
+        # Helper expects gs://URI, but we can just use blob logic directly if we have bucket/blob
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(req.filename)
+        
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(minutes=60),
+            method="GET",
+        )
+        return {"url": url}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/consulting/files/upload")
+async def simple_upload_file(file: UploadFile = File(...)):
+    """Simple synchronous upload for the file manager."""
+    try:
+        if not GCS_BUCKET_NAME:
+            raise HTTPException(status_code=500, detail="GCS config missing")
+            
+        content = await file.read()
+        filename = file.filename
+        # Sanitize
+        filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        if not filename.lower().endswith(".pdf"): filename += ".pdf"
+        
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        blob = bucket.blob(f"consulting_raw/{filename}")
+        blob.upload_from_string(content, content_type="application/pdf")
+        
+        return {"message": "Uploaded", "filename": f"consulting_raw/{filename}"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 
 # --- Task Management ---
 

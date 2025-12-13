@@ -1,161 +1,230 @@
 "use client";
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import MobileMenuButton from '../../../components/MobileMenuButton';
 
 export default function AdminPage() {
-    const [activeTab, setActiveTab] = useState('url'); // 'url' or 'file'
-    const [url, setUrl] = useState('');
-    const [file, setFile] = useState(null);
-    const [logs, setLogs] = useState([]);
+    const [files, setFiles] = useState([]);
     const [loading, setLoading] = useState(false);
+    const [selectedFiles, setSelectedFiles] = useState([]);
+    const [uploading, setUploading] = useState(false);
 
-    const log = (msg) => setLogs(prev => [...prev, `[${new Date().toLocaleTimeString()}] ${msg}`]);
+    // Auto-refresh on mount
+    useEffect(() => {
+        fetchFiles();
+    }, []);
 
-    const handleCollect = async () => {
-        if (activeTab === 'url' && !url) return;
-        if (activeTab === 'file' && !file) return;
-
+    const fetchFiles = async () => {
         setLoading(true);
-        setLogs([]); // Clear previous logs
-        let taskId = null;
-
         try {
-            // 1. Start Task
-            let res;
-            if (activeTab === 'url') {
-                log(`Starting URL collection for: ${url}`);
-                res = await fetch('/api/consulting/collect', {
-                    method: 'POST',
-                    headers: { 'Content-Type': 'application/json' },
-                    body: JSON.stringify({ url })
-                });
-            } else {
-                log(`Starting File analysis for: ${file.name}`);
-                const formData = new FormData();
-                formData.append('file', file);
-                res = await fetch('/api/consulting/collect-file', {
-                    method: 'POST',
-                    body: formData
-                });
-            }
-
+            const res = await fetch('/api/consulting/files');
             const data = await res.json();
-            if (!res.ok) {
-                log(`Error starting task: ${data.detail || data.message}`);
-                setLoading(false);
-                return;
+            if (data.files) {
+                setFiles(data.files);
             }
-
-            taskId = data.task_id;
-            log(`Task Started (ID: ${taskId}). Connect to stream...`);
-
-            // 2. Open Stream
-            const eventSource = new EventSource(`/api/consulting/tasks/${taskId}/stream`);
-
-            eventSource.onmessage = (event) => {
-                const payload = JSON.parse(event.data);
-                const message = payload.message;
-
-                // Direct append to logs to avoid "log" helper timestamp duplication if backend sends it? 
-                // Backend sends "[HH:MM:SS] Msg". Helper adds another timestamp. 
-                // Let's rely on backend timestamp or just print raw message.
-                // But "log" helper adds local time. Let's just use "setLogs" directly for stream or modify helper.
-                setLogs(prev => [...prev, message]);
-
-                if (message === "DONE" || message.includes("Critical Error")) {
-                    eventSource.close();
-                    setLoading(false);
-                }
-            };
-
-            eventSource.onerror = (e) => {
-                // EventSource error (often end of stream)
-                eventSource.close();
-                setLoading(false);
-            };
-
         } catch (e) {
-            log(`Network Error: ${e.message}`);
+            console.error("Failed to fetch files", e);
+        } finally {
             setLoading(false);
         }
     };
 
+    const handleToggleSelect = (filename) => {
+        setSelectedFiles(prev => {
+            if (prev.includes(filename)) return prev.filter(f => f !== filename);
+            return [...prev, filename];
+        });
+    };
+
+    const handleSelectAll = () => {
+        if (selectedFiles.length === files.length) {
+            setSelectedFiles([]);
+        } else {
+            setSelectedFiles(files.map(f => f.name));
+        }
+    };
+
+    const handleDelete = async () => {
+        if (!confirm(`Are you sure you want to delete ${selectedFiles.length} files?`)) return;
+
+        setLoading(true);
+        try {
+            await fetch('/api/consulting/files/delete', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filenames: selectedFiles })
+            });
+            setSelectedFiles([]);
+            await fetchFiles();
+        } catch (e) {
+            alert("Delete failed");
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    const handleView = async (filename) => {
+        try {
+            const res = await fetch('/api/consulting/files/signed-url', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json' },
+                body: JSON.stringify({ filename })
+            });
+            const data = await res.json();
+            if (data.url) {
+                window.open(data.url, '_blank');
+            }
+        } catch (e) {
+            alert("Failed to open file");
+        }
+    };
+
+    const handleUpload = async (e) => {
+        const file = e.target.files[0];
+        if (!file) return;
+
+        setUploading(true);
+        const formData = new FormData();
+        formData.append('file', file);
+
+        try {
+            const res = await fetch('/api/consulting/files/upload', {
+                method: 'POST',
+                body: formData
+            });
+            if (!res.ok) throw new Error("Upload failed");
+            await fetchFiles();
+        } catch (e) {
+            alert("Upload failed: " + e.message);
+        } finally {
+            setUploading(false);
+            e.target.value = null; // reset input
+        }
+    };
+
+    const formatSize = (bytes) => {
+        if (bytes === 0) return '0 B';
+        const k = 1024;
+        const sizes = ['B', 'KB', 'MB', 'GB'];
+        const i = Math.floor(Math.log(bytes) / Math.log(k));
+        return parseFloat((bytes / Math.pow(k, i)).toFixed(1)) + ' ' + sizes[i];
+    };
+
     return (
-        <div className="flex-1 flex flex-col h-full bg-slate-50 font-sans text-slate-800">
+        <div className="flex-1 flex flex-col h-full bg-slate-50 font-sans text-slate-800 overflow-y-auto">
             {/* Header */}
             <div className="flex items-center gap-4 p-4 bg-white shadow-sm border-b border-slate-200">
                 <MobileMenuButton />
-                <h1 className="text-xl font-bold text-slate-800">Consulting Admin (Data Collection)</h1>
+                <h1 className="text-xl font-bold text-slate-800">Consulting Data Manager</h1>
             </div>
 
-            <div className="p-6 max-w-4xl mx-auto w-full space-y-6">
-                <div className="bg-white p-6 rounded-xl shadow-sm border border-slate-200">
-                    <h2 className="text-lg font-bold mb-4">Web Data Collection</h2>
-                    <p className="text-sm text-slate-500 mb-4">
-                        Enter a URL (PDF or Page) to download and add to the Consulting Knowledge Base (GCS).
-                    </p>
-                    <div className="flex border-b border-slate-200 mb-6">
-                        <button
-                            className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'url' ? 'border-cyan-600 text-cyan-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                            onClick={() => setActiveTab('url')}
-                        >
-                            Web URL
-                        </button>
-                        <button
-                            className={`px-6 py-3 font-bold text-sm border-b-2 transition-colors ${activeTab === 'file' ? 'border-cyan-600 text-cyan-700' : 'border-transparent text-slate-500 hover:text-slate-700'}`}
-                            onClick={() => setActiveTab('file')}
-                        >
-                            <span className="mr-2">📂</span> Upload PDF File
-                        </button>
+            <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
+
+                {/* NOTICE BLOCK - Local App Instruction */}
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900">
+                    <div className="font-bold flex items-center gap-2 mb-2">
+                        <span>⚠️</span> Web Scraping / Data Collection
                     </div>
-
-                    <p className="text-sm text-slate-500 mb-4">
-                        {activeTab === 'url'
-                            ? "Enter a URL (PDF or Page) to download and add to the Consulting Knowledge Base."
-                            : "Upload a PDF file containing links to reports. We will extract and download all linked PDFs."}
+                    <p className="mb-2">
+                        To avoid blocking (Error 403), data collection must be performed using the <strong>Local App</strong>.
                     </p>
+                    <div className="bg-white border border-amber-200 rounded p-2 font-mono text-xs">
+                        streamlit run backend/scripts/local_gui.py
+                    </div>
+                </div>
 
-                    <div className="flex gap-4 items-center">
-                        {activeTab === 'url' ? (
-                            <input
-                                type="text"
-                                value={url}
-                                onChange={(e) => setUrl(e.target.value)}
-                                placeholder="https://www.meti.go.jp/.../report.pdf"
-                                className="flex-1 p-3 border border-slate-200 rounded-lg outline-none focus:ring-2 focus:ring-cyan-500"
-                            />
-                        ) : (
-                            <div className="flex-1">
-                                <label className="flex items-center gap-3 p-3 border border-dashed border-slate-300 rounded-lg cursor-pointer hover:bg-slate-50 transition-colors">
-                                    <span className="text-2xl">📄</span>
-                                    <div className="flex-1">
-                                        <div className="text-sm font-bold text-slate-700">{file ? file.name : "Choose a PDF file..."}</div>
-                                        <div className="text-xs text-slate-400">PDFs with embedded links</div>
-                                    </div>
-                                    <input
-                                        type="file"
-                                        accept=".pdf"
-                                        className="hidden"
-                                        onChange={(e) => setFile(e.target.files[0])}
-                                    />
-                                </label>
-                            </div>
+                {/* Toolbar */}
+                <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-slate-200">
+                    <div className="flex items-center gap-4">
+                        <h2 className="font-bold text-lg">Stored Files (GCS)</h2>
+                        <span className="text-slate-400 text-sm">{files.length} files</span>
+                    </div>
+                    <div className="flex items-center gap-3">
+                        <label className={`cursor-pointer bg-cyan-600 text-white px-4 py-2 rounded-md hover:bg-cyan-700 transition-colors font-bold text-sm flex items-center gap-2 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                            <span>{uploading ? 'Uploading...' : 'Upload PDF'}</span>
+                            <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
+                        </label>
+
+                        {selectedFiles.length > 0 && (
+                            <button
+                                onClick={handleDelete}
+                                disabled={loading}
+                                className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-md hover:bg-red-100 transition-colors font-bold text-sm"
+                            >
+                                Delete ({selectedFiles.length})
+                            </button>
                         )}
 
                         <button
-                            onClick={handleCollect}
-                            disabled={loading || (activeTab === 'url' ? !url : !file)}
-                            className="bg-cyan-600 text-white px-6 py-3 rounded-lg font-bold hover:bg-cyan-700 disabled:opacity-50 transition-colors whitespace-nowrap"
+                            onClick={fetchFiles}
+                            className="p-2 text-slate-500 hover:text-slate-800 transition-colors"
+                            title="Refresh"
                         >
-                            {loading ? 'Processing...' : 'Collect'}
+                            🔄
                         </button>
                     </div>
                 </div>
 
-                <div className="bg-slate-900 text-slate-200 p-6 rounded-xl shadow-inner font-mono text-xs h-64 overflow-y-auto">
-                    <h3 className="text-slate-400 font-bold mb-2 border-b border-slate-700 pb-2">Execution Logs</h3>
-                    {logs.length === 0 && <span className="opacity-50">Waiting for commands...</span>}
-                    {logs.map((l, i) => <div key={i}>{l}</div>)}
+                {/* File Table */}
+                <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                    <table className="w-full text-sm text-left">
+                        <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                            <tr>
+                                <th className="p-4 w-10">
+                                    <input
+                                        type="checkbox"
+                                        checked={files.length > 0 && selectedFiles.length === files.length}
+                                        onChange={handleSelectAll}
+                                        className="rounded border-slate-300 focus:ring-cyan-500"
+                                    />
+                                </th>
+                                <th className="p-4">Filename</th>
+                                <th className="p-4 w-32">Size</th>
+                                <th className="p-4 w-48">Uploaded</th>
+                                <th className="p-4 w-24 text-right">Action</th>
+                            </tr>
+                        </thead>
+                        <tbody className="divide-y divide-slate-100">
+                            {loading && files.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="p-8 text-center text-slate-400">Loading files...</td>
+                                </tr>
+                            ) : files.length === 0 ? (
+                                <tr>
+                                    <td colSpan="5" className="p-8 text-center text-slate-400">No files found.</td>
+                                </tr>
+                            ) : (
+                                files.map((file) => (
+                                    <tr key={file.name} className="hover:bg-slate-50 transition-colors group">
+                                        <td className="p-4">
+                                            <input
+                                                type="checkbox"
+                                                checked={selectedFiles.includes(file.name)}
+                                                onChange={() => handleToggleSelect(file.name)}
+                                                className="rounded border-slate-300 focus:ring-cyan-500"
+                                            />
+                                        </td>
+                                        <td className="p-4 font-medium text-slate-700">
+                                            <div className="flex items-center gap-2">
+                                                <span className="text-xl text-red-500">📄</span>
+                                                {file.basename}
+                                            </div>
+                                            <div className="text-xs text-slate-400 pl-7">{file.name}</div>
+                                        </td>
+                                        <td className="p-4 text-slate-500 font-mono text-xs">{formatSize(file.size)}</td>
+                                        <td className="p-4 text-slate-500">{new Date(file.updated).toLocaleString()}</td>
+                                        <td className="p-4 text-right">
+                                            <button
+                                                onClick={() => handleView(file.name)}
+                                                className="opacity-0 group-hover:opacity-100 text-cyan-600 font-bold hover:underline transition-opacity"
+                                            >
+                                                Open
+                                            </button>
+                                        </td>
+                                    </tr>
+                                ))
+                            )}
+                        </tbody>
+                    </table>
                 </div>
             </div>
         </div>
