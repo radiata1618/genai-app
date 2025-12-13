@@ -80,23 +80,22 @@ def clean_text(text):
     if not text: return ""
     return "".join(c for c in text if c.isalnum() or c in "._- ")
 
-def analyze_page_with_gemini(page_bytes, log_func=print):
-    """Sends a single PDF page to Gemini to extract metadata."""
+def analyze_batch_with_gemini(pages_bytes_list, batch_index, log_func=print):
+    """Sends a batch of PDF pages to Gemini to extract metadata."""
     client = get_gemini_client()
     if not client:
-        log_func("[警告] GOOGLE_CLOUD_API_KEYが設定されていないため、AI解析をスキップします。")
         return []
 
     prompt = """
     You are a data extraction assistant.
-    Analyze this PDF page (which contains a table of reports).
-    Extract the following information for each row that contains a report link:
+    Analyze these PDF pages (which contain tables of reports).
+    Extract the following information for ALL rows that contain a report link across all pages:
     1. Report Name (委託調査報告書名 or similar)
     2. Contractor Name (委託事業者名 or similar)
     3. Fiscal Year/Date (掲載日 or FY in title). If date is 07.08.15, interpret as FY or Date. Prefer FY format like '2023FY' if obvious, else use the date string.
     4. The URL (HPアドレス).
 
-    Return a JSON list of objects. Each object must have:
+    Return a SINGLE JSON list of objects merging results from all pages. Each object must have:
     - "url": The exact link found in the row.
     - "report_name": The report name.
     - "contractor": The contractor name.
@@ -109,67 +108,82 @@ def analyze_page_with_gemini(page_bytes, log_func=print):
     RETURN ONLY JSON.
     """
 
+    contents = [types.Part.from_text(text=prompt)]
+    for p_bytes in pages_bytes_list:
+        contents.append(types.Part.from_bytes(data=p_bytes, mime_type="application/pdf"))
+
     try:
         response = client.models.generate_content(
             model="gemini-3-pro-preview", 
-            contents=[
-                types.Part.from_text(text=prompt),
-                types.Part.from_bytes(data=page_bytes, mime_type="application/pdf")
-            ]
+            contents=contents
         )
         
         # Parse JSON
         text = response.text
-        # Cleanup markdown
         if text.startswith("```json"):
             text = text.replace("```json", "").replace("```", "")
         
         data = json.loads(text)
         return data
     except Exception as e:
-        log_func(f"[AI解析エラー] {e}")
+        log_func(f"[Batch-{batch_index} Error] {e}")
         return []
 
 def scan_pdf_with_gemini(file_stream, log_func=print):
-    """Splits PDF and parses each page with Gemini."""
+    """Splits PDF and parses using parallel batch processing."""
     reader = PdfReader(file_stream)
-    log_func(f"[*] AI解析開始: 全{len(reader.pages)}ページをGeminiで解析します...")
+    total_pages = len(reader.pages)
+    log_func(f"[*] AI解析開始: 全{total_pages}ページをGeminiで解析します (Parallel Batching)...")
     
     metadata_map = {} # URL -> Filename
     
+    # helper to process a batch
+    batch_size = 5
+    page_batches = []
+    
+    # 1. Prepare Batches
+    current_batch = []
     for i, page in enumerate(reader.pages):
-        log_func(f"[*] ページ {i+1}/{len(reader.pages)} を解析中...")
-        try:
-            # Extract page to bytes
-            writer = PdfWriter()
-            writer.add_page(page)
-            with io.BytesIO() as output_stream:
-                writer.write(output_stream)
-                page_bytes = output_stream.getvalue()
+        writer = PdfWriter()
+        writer.add_page(page)
+        with io.BytesIO() as output_stream:
+            writer.write(output_stream)
+            page_bytes = output_stream.getvalue()
+            current_batch.append(page_bytes)
             
-            # Call Gemini
-            results = analyze_page_with_gemini(page_bytes, log_func)
+        if len(current_batch) >= batch_size:
+            page_batches.append(current_batch)
+            current_batch = []
+    
+    if current_batch:
+        page_batches.append(current_batch)
+        
+    log_func(f"[*] バッチ処理開始: 全{len(page_batches)}バッチ (並列実行)")
+
+    # 2. Execute Parallel
+    with ThreadPoolExecutor(max_workers=5) as executor:
+        futures = []
+        for idx, batch in enumerate(page_batches):
+            futures.append(executor.submit(analyze_batch_with_gemini, batch, idx+1, log_func))
+            
+        for future in as_completed(futures):
+            results = future.result()
+            if not results: continue
             
             for item in results:
                 url = item.get("url")
                 if not url: continue
                 
-                # Construct Filename: FY_ReportName_Contractor.pdf
+                # Construct Filename
                 fy = clean_text(item.get("fy", "")).replace(" ", "")
                 rname = clean_text(item.get("report_name", "")).replace(" ", "_").strip("_")
                 cname = clean_text(item.get("contractor", "")).replace(" ", "_").strip("_")
                 
-                # Limit length to avoid OS limits
                 if len(rname) > 50: rname = rname[:50]
                 if len(cname) > 30: cname = cname[:30]
                 
                 filename = f"{fy}_{rname}_{cname}.pdf"
-                
-                # Normalize URL for matching later
                 metadata_map[url.strip()] = filename
-                
-        except Exception as e:
-            log_func(f"[ページ解析エラー] P{i+1}: {e}")
             
     log_func(f"[*] AI解析完了: {len(metadata_map)}件のメタデータを取得しました。")
     return metadata_map
