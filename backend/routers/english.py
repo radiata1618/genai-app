@@ -126,7 +126,7 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-3-pro-preview",
             contents=prompt,
         )
         content = response.text
@@ -224,7 +224,7 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.5-pro",
+            model="gemini-3-pro-preview",
             contents=prompt,
         )
         content = response.text
@@ -387,7 +387,7 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
         for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
-                    model="gemini-2.5-pro",
+                    model="gemini-3-pro-preview",
                     contents=[prompt, part]
                 )
                 content = response.text
