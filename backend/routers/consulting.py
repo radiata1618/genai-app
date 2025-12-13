@@ -27,9 +27,13 @@ router = APIRouter(
 )
 
 # --- Configuration (Sharing some env vars with RAG) ---
+# DEBUG: Print env vars on load
+print("Loading consulting.py...")
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION = os.getenv("LOCATION")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME_FOR_CONSUL_DOC")
+print(f"DEBUG: PROJECT_ID={PROJECT_ID}, BUCKET={GCS_BUCKET_NAME}")
+
 INDEX_ENDPOINT_ID = os.getenv("INDEX_ENDPOINT_ID")
 DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID")
 VECTOR_SEARCH_LOCATION = os.getenv("VECTOR_SEARCH_LOCATION")
@@ -193,14 +197,22 @@ async def add_log(task_id: str, message: str):
         log_entry = f"[{timestamp}] {message}"
         tasks[task_id]["logs"].append(log_entry)
         await tasks[task_id]["queue"].put(log_entry)
+        # DEBUG: Also print to console so we see it in Docker logs
+        print(f"TASK[{task_id}]: {message}")
 
 async def run_background_collection(task_id: str, mode: str, input_data: Any):
     """
     Background worker that performs the logic and streams logs.
     mode: 'url' or 'file_bytes'
     """
+    print(f"DEBUG: Starting background task {task_id}, mode={mode}")
     try:
         await add_log(task_id, "Task Started.")
+        
+        if not GCS_BUCKET_NAME:
+            await add_log(task_id, "Critical Error: GCS_BUCKET_NAME_FOR_CONSUL_DOC is not set.")
+            return
+
         client = get_storage_client()
         bucket = client.bucket(GCS_BUCKET_NAME)
         pdf_links = []
@@ -244,11 +256,24 @@ async def run_background_collection(task_id: str, mode: str, input_data: Any):
         elif mode == 'file_bytes':
             # Create a bytes stream from the input data
             await add_log(task_id, "Parsing uploaded PDF file...")
-            pdf_file = io.BytesIO(input_data)
             try:
+                # Convert bytes to stream
+                pdf_file = io.BytesIO(input_data)
                 reader = PdfReader(pdf_file)
                 found = set()
-                for page in reader.pages:
+                
+                # Check for encryption
+                if reader.is_encrypted:
+                     await add_log(task_id, "Warning: PDF is encrypted. Attempting to read...")
+                     try:
+                         reader.decrypt("")
+                     except:
+                         await add_log(task_id, "Error: Could not decrypt PDF.")
+                
+                page_count = len(reader.pages)
+                await add_log(task_id, f"PDF has {page_count} pages. Scanning...")
+
+                for i, page in enumerate(reader.pages):
                     if "/Annots" in page:
                         for annot in page["/Annots"]:
                             obj = annot.get_object()
@@ -256,11 +281,16 @@ async def run_background_collection(task_id: str, mode: str, input_data: Any):
                                 uri = obj["/A"]["/URI"]
                                 if uri.lower().endswith(".pdf"):
                                     found.add(uri)
+                    if i > 0 and i % 10 == 0:
+                        print(f"Scanned {i} pages...") # Too noisy for stream?
+                        
                 pdf_links = list(found)
                 await add_log(task_id, f"Found {len(pdf_links)} links in file.")
             except Exception as e:
                 await add_log(task_id, f"Error parsing PDF: {e}")
-                
+                import traceback
+                traceback.print_exc()
+
         # --- 2. Download Phase ---
         if not pdf_links:
             await add_log(task_id, "No PDFs found to download.")
@@ -268,9 +298,6 @@ async def run_background_collection(task_id: str, mode: str, input_data: Any):
             return
 
         await add_log(task_id, f"Starting download of {len(pdf_links)} files...")
-        
-        # Sequential or Parallel? Parallel is better but let's keep it simple-ish or use inner ThreadPool
-        # Since we are in an async function, we should use a ThreadPool for blocking IO (requests/upload)
         
         loop = asyncio.get_running_loop()
         with ThreadPoolExecutor(max_workers=5) as executor:
@@ -308,9 +335,13 @@ async def run_background_collection(task_id: str, mode: str, input_data: Any):
         await add_log(task_id, f"Process Complete. Collected {completed_count}/{len(pdf_links)} files.")
         
     except Exception as e:
+        print(f"CRITICAL BACKGOUND EXCEPTION: {e}")
+        import traceback
+        traceback.print_exc()
         await add_log(task_id, f"Critical Error: {e}")
     finally:
         await add_log(task_id, "DONE")
+        print(f"DEBUG: Task {task_id} finished block.")
 
 # --- Endpoints ---
 
