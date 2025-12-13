@@ -112,48 +112,67 @@ def analyze_batch_with_gemini(pages_bytes_list, batch_index, log_func=print):
     for p_bytes in pages_bytes_list:
         contents.append(types.Part.from_bytes(data=p_bytes, mime_type="application/pdf"))
 
-    try:
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview", 
-            contents=contents
-        )
-        
-        # Parse JSON
+    # Retry settings
+    max_retries = 3
+    base_delay = 2
+
+    for attempt in range(max_retries + 1):
         try:
-            text = response.text
-        except ValueError:
-             # Safety filters might block content, accessing .text raises ValueError
-             log_func(f"[Batch-{batch_index} Warning] Response blocked or empty. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'Unknown'}")
-             return []
-
-        if not text:
-            return []
-
-        # Attempt to clean markdown code blocks
-        if text.startswith("```json"):
-            text = text.replace("```json", "").replace("```", "")
-        elif text.startswith("```"):
-            text = text.replace("```", "")
-
-        try:
-            data = json.loads(text)
-            return data
-        except json.JSONDecodeError:
-            # Fallback: Try to find JSON list via regex
-            match = re.search(r'\[.*\]', text, re.DOTALL)
-            if match:
-                try:
-                    data = json.loads(match.group(0))
-                    return data
-                except:
-                    pass
+            response = client.models.generate_content(
+                model="gemini-3-pro-preview", 
+                contents=contents
+            )
             
-            log_func(f"[Batch-{batch_index} Error] Invalid JSON: {text[:100]}...")
-            return []
-            
-    except Exception as e:
-        log_func(f"[Batch-{batch_index} Error] {type(e).__name__}: {e}")
-        return []
+            # Parse JSON
+            try:
+                text = response.text
+            except ValueError:
+                 # Safety filters might block content, accessing .text raises ValueError
+                 log_func(f"[Batch-{batch_index} Warning] Response blocked or empty. Finish reason: {response.candidates[0].finish_reason if response.candidates else 'Unknown'}")
+                 return []
+
+            if not text:
+                return []
+
+            # Attempt to clean markdown code blocks
+            if text.startswith("```json"):
+                text = text.replace("```json", "").replace("```", "")
+            elif text.startswith("```"):
+                text = text.replace("```", "")
+
+            try:
+                data = json.loads(text)
+                return data
+            except json.JSONDecodeError:
+                # Fallback: Try to find JSON list via regex
+                match = re.search(r'\[.*\]', text, re.DOTALL)
+                if match:
+                    try:
+                        data = json.loads(match.group(0))
+                        return data
+                    except:
+                        pass
+                
+                log_func(f"[Batch-{batch_index} Error] Invalid JSON: {text[:100]}...")
+                return []
+                
+        except Exception as e:
+            # Check for Rate Limit (429) or Service Unavailable (503)
+            error_str = str(e)
+            if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
+                if attempt < max_retries:
+                    wait_time = base_delay * (2 ** attempt)
+                    log_func(f"[Batch-{batch_index}] Rate Limit Hit (429). Retrying in {wait_time}s... (Attempt {attempt+1}/{max_retries})")
+                    import time
+                    time.sleep(wait_time)
+                    continue
+                else:
+                    log_func(f"[Batch-{batch_index} Error] Rate Limit Exceeded after {max_retries} retries: {e}")
+                    return []
+            else:
+                # Other errors
+                log_func(f"[Batch-{batch_index} Error] {type(e).__name__}: {e}")
+                return []
 
 def scan_pdf_with_gemini(file_stream, log_func=print):
     """Splits PDF and parses using parallel batch processing."""
@@ -187,9 +206,15 @@ def scan_pdf_with_gemini(file_stream, log_func=print):
     log_func(f"[*] バッチ処理開始: 全{len(page_batches)}バッチ (並列実行)")
 
     # 2. Execute Parallel
-    with ThreadPoolExecutor(max_workers=5) as executor:
+    import time
+    # Reduced max_workers to prevent Rate Limiting
+    max_workers_count = 3 
+    
+    with ThreadPoolExecutor(max_workers=max_workers_count) as executor:
         futures = []
         for idx, batch in enumerate(page_batches):
+            # Stagger start slightly
+            if idx > 0: time.sleep(1.0)
             futures.append(executor.submit(analyze_batch_with_gemini, batch, idx+1, log_func))
             
         for future in as_completed(futures):
