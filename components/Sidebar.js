@@ -43,7 +43,7 @@ const navItems = [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
             { name: "Visual Search", icon: "👁️", href: "/consulting/visual-search" },
             { name: "Slide Polisher", icon: "✨", href: "/consulting/slide-polisher" },
-            { name: "Admin (Data)", icon: "⚙️", href: "/consulting/admin" },
+            { name: "Admin (Data)", icon: "⚙️", href: "/consulting/data" },
         ],
     },
 ];
