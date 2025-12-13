@@ -57,7 +57,7 @@ export const api = {
 
 
 
-    // Routines (Actions & Mindsets)
+    // Routines (Actions&Mindsets)
     getRoutines: async (type = null) => {
         let url = `${API_BASE}/routines`;
         if (type) url += `?type=${type}`;
