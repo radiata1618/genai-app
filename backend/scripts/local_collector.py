@@ -68,8 +68,13 @@ def get_gemini_client():
     api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
     if not api_key:
         return None
-    # Assuming standard initialization as per consulting.py
-    return genai.Client(api_key=api_key, http_options={'api_version': 'v1beta'})
+        
+    # Match car_quiz.py: vertexai=True, api_key, v1beta1 (No project/location in init)
+    return genai.Client(
+        vertexai=True,
+        api_key=api_key,
+        http_options={'api_version': 'v1beta1'}
+    )
 
 def clean_text(text):
     if not text: return ""
@@ -106,7 +111,7 @@ def analyze_page_with_gemini(page_bytes, log_func=print):
 
     try:
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp", 
+            model="gemini-3-pro-preview", 
             contents=[
                 types.Part.from_text(text=prompt),
                 types.Part.from_bytes(data=page_bytes, mime_type="application/pdf")
