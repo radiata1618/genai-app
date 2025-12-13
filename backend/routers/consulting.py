@@ -27,16 +27,18 @@ router = APIRouter(
 )
 
 # --- Configuration (Sharing some env vars with RAG) ---
+from google.cloud import firestore
+from google.cloud.firestore import Vector
+
+# --- Configuration (Sharing some env vars with RAG) ---
 # DEBUG: Print env vars on load
 print("Loading consulting.py...")
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION = os.getenv("LOCATION")
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME_FOR_CONSUL_DOC")
-print(f"DEBUG: PROJECT_ID={PROJECT_ID}, BUCKET={GCS_BUCKET_NAME}")
+FIRESTORE_COLLECTION_NAME = os.getenv("FIRESTORE_COLLECTION_NAME", "consulting_slides")
 
-INDEX_ENDPOINT_ID = os.getenv("INDEX_ENDPOINT_ID")
-DEPLOYED_INDEX_ID = os.getenv("DEPLOYED_INDEX_ID")
-VECTOR_SEARCH_LOCATION = os.getenv("VECTOR_SEARCH_LOCATION")
+print(f"DEBUG: PROJECT_ID={PROJECT_ID}, BUCKET={GCS_BUCKET_NAME}, COLLECTION={FIRESTORE_COLLECTION_NAME}")
 
 # --- Clients ---
 _vertexai_initialized = False
@@ -49,6 +51,9 @@ def _ensure_vertexai_init():
 
 def get_storage_client():
     return storage.Client(project=PROJECT_ID)
+
+def get_firestore_client():
+    return firestore.Client(project=PROJECT_ID)
 
 # --- Helpers ---
 
@@ -86,50 +91,43 @@ def get_embedding(text: str = None, image_bytes: bytes = None):
             return embeddings.text_embedding
     except Exception as e:
         print(f"Embedding error: {e}")
-        # Return dummy embedding for testing if real model fails (e.g. auth issues locally)
-        # return [0.0] * 1408 
         return None
     return None
 
 def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
-    if not INDEX_ENDPOINT_ID or not DEPLOYED_INDEX_ID:
-        print("Vector Search Env Vars missing. Returning empty results.")
-        return []
-    
-    vs_location = VECTOR_SEARCH_LOCATION if VECTOR_SEARCH_LOCATION else LOCATION
+    """Searches Firestore using Vector Search."""
     try:
-        # Use api_endpoint for specific location
-        api_endpoint = f"{vs_location}-aiplatform.googleapis.com"
-        client_options = ClientOptions(api_endpoint=api_endpoint)
+        db = get_firestore_client()
+        collection = db.collection(FIRESTORE_COLLECTION_NAME)
         
-        # We need to use the lower level SDK or the high level one. 
-        # Using aiplatform.MatchingEngineIndexEndpoint is easiest if initialized correctly.
-        # But we need to set global location or pass it.
+        # Firestore Vector Search
+        # Requires 'embedding' field to be a Vector type
+        # We need to find_nearest
         
-        index_endpoint = aiplatform.MatchingEngineIndexEndpoint(
-            index_endpoint_name=INDEX_ENDPOINT_ID,
-            project=PROJECT_ID,
-            location=vs_location,
-            credentials=None # Uses default 
+        vector_query = collection.find_nearest(
+            vector_field="embedding",
+            query_vector=Vector(vector),
+            distance_measure=firestore.VectorQuery.DistanceMeasure.COSINE, # or DOT_PRODUCT
+            limit=top_k
         )
         
-        response = index_endpoint.find_neighbors(
-            deployed_index_id=DEPLOYED_INDEX_ID,
-            queries=[vector],
-            num_neighbors=top_k
-        )
+        docs = vector_query.get()
         
         results = []
-        if response:
-            for neighbor in response[0]:
-                results.append({
-                    "id": neighbor.id,
-                    "distance": neighbor.distance
-                })
-        return results
+        for doc in docs:
+            data = doc.to_dict()
+            # Calculate a dummy distance/score if not provided directly or use metadata
+            # find_nearest results are ordered by distance.
+            # Currently python SDK might not expose distance directly in the doc snapshot without some trick,
+            # but usually it's close enough for ranking.
+            
+            results.append({
+                "id": data.get("uri"), # GCS URI
+                "distance": 0.0 # Placeholder as distance isn't easily accessible in simple get(), but order is correct
+            })
         return results
     except Exception as e:
-        print(f"Vector Search Error: {e}")
+        print(f"Firestore Vector Search Error: {e}")
         return []
 
 def download_and_upload_worker(pdf_url: str):
@@ -299,6 +297,8 @@ async def simple_upload_file(file: UploadFile = File(...)):
         raise HTTPException(status_code=500, detail=str(e))
 
 
+# ... (Existing code) ...
+
 # --- Task Management ---
 
 # In-memory storage for tasks: task_id -> {"status": str, "queue": asyncio.Queue, "logs": list}
@@ -314,152 +314,162 @@ async def add_log(task_id: str, message: str):
         # DEBUG: Also print to console so we see it in Docker logs
         print(f"TASK[{task_id}]: {message}")
 
-async def run_background_collection(task_id: str, mode: str, input_data: Any):
-    """
-    Background worker that performs the logic and streams logs.
-    mode: 'url' or 'file_bytes'
-    """
-    print(f"DEBUG: Starting background task {task_id}, mode={mode}")
+async def run_background_ingest(task_id: str):
+    """Background worker for Firestore Ingestion."""
+    print(f"DEBUG: Starting background ingest {task_id}")
     try:
-        await add_log(task_id, "Task Started.")
+        await add_log(task_id, "Starting Ingestion...")
         
         if not GCS_BUCKET_NAME:
-            await add_log(task_id, "Critical Error: GCS_BUCKET_NAME_FOR_CONSUL_DOC is not set.")
-            return
-
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
-        pdf_links = []
-        
-        # --- 1. Identify Links ---
-        if mode == 'url':
-            url = input_data
-            await add_log(task_id, f"Fetching URL: {url}...")
-            
-            headers = {
-                'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-                'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8',
-                'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-            }
-            try:
-                response = requests.get(url, headers=headers, stream=True, timeout=30)
-                response.raise_for_status()
-                content_type = response.headers.get('Content-Type', '').lower()
-
-                if 'application/pdf' in content_type or url.lower().endswith('.pdf'):
-                    # Direct PDF
-                    pdf_links.append(url)
-                    await add_log(task_id, "Identified direct PDF URL.")
-                elif 'text/html' in content_type:
-                    # HTML Scraping
-                    await add_log(task_id, "Parsing HTML page...")
-                    soup = BeautifulSoup(response.content, 'html.parser')
-                    count = 0
-                    for a in soup.find_all('a', href=True):
-                        href = a['href']
-                        full_url = urljoin(url, href)
-                        if full_url.lower().endswith('.pdf'):
-                            pdf_links.append(full_url)
-                            count += 1
-                    # Remove duplicates
-                    pdf_links = list(set(pdf_links))
-                    await add_log(task_id, f"Found {len(pdf_links)} unique PDFs on page.")
-                else:
-                    await add_log(task_id, f"Unsupported content type: {content_type}")
-            except Exception as e:
-                await add_log(task_id, f"Error fetching URL: {e}")
-                
-        elif mode == 'file_bytes':
-            # Create a bytes stream from the input data
-            await add_log(task_id, "Parsing uploaded PDF file...")
-            try:
-                # Convert bytes to stream
-                pdf_file = io.BytesIO(input_data)
-                reader = PdfReader(pdf_file)
-                found = set()
-                
-                # Check for encryption
-                if reader.is_encrypted:
-                     await add_log(task_id, "Warning: PDF is encrypted. Attempting to read...")
-                     try:
-                         reader.decrypt("")
-                     except:
-                         await add_log(task_id, "Error: Could not decrypt PDF.")
-                
-                page_count = len(reader.pages)
-                await add_log(task_id, f"PDF has {page_count} pages. Scanning...")
-
-                for i, page in enumerate(reader.pages):
-                    if "/Annots" in page:
-                        for annot in page["/Annots"]:
-                            obj = annot.get_object()
-                            if "/A" in obj and "/URI" in obj["/A"]:
-                                uri = obj["/A"]["/URI"]
-                                if uri.lower().endswith(".pdf"):
-                                    found.add(uri)
-                    if i > 0 and i % 10 == 0:
-                        print(f"Scanned {i} pages...") # Too noisy for stream?
-                        
-                pdf_links = list(found)
-                await add_log(task_id, f"Found {len(pdf_links)} links in file.")
-            except Exception as e:
-                await add_log(task_id, f"Error parsing PDF: {e}")
-                import traceback
-                traceback.print_exc()
-
-        # --- 2. Download Phase ---
-        if not pdf_links:
-            await add_log(task_id, "No PDFs found to download.")
+            await add_log(task_id, "Error: GCS_BUCKET_NAME not set.")
             await add_log(task_id, "DONE")
             return
-
-        await add_log(task_id, f"Starting download of {len(pdf_links)} files...")
-        
-        loop = asyncio.get_running_loop()
-        with ThreadPoolExecutor(max_workers=5) as executor:
-            # Helper to run inside thread
-            def _download_one(p_url):
-                 try:
-                    headers = {
-                        'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/91.0.4472.124 Safari/537.36'
-                    }
-                    res = requests.get(p_url, headers=headers, timeout=60)
-                    if res.status_code == 200:
-                        filename = p_url.split("/")[-1]
-                        filename = "".join(c for c in filename if c.isalnum() or c in "._-") # sanitize
-                        if not filename.lower().endswith(".pdf"): filename += ".pdf"
-                        
-                        blob = bucket.blob(f"consulting_raw/{filename}")
-                        blob.upload_from_string(res.content, content_type="application/pdf")
-                        return True, filename
-                    return False, f"Status {res.status_code}"
-                 except Exception as ex:
-                    return False, str(ex)
-
-            # Submit all
-            futures = [loop.run_in_executor(executor, _download_one, link) for link in pdf_links]
             
-            completed_count = 0
-            for f in asyncio.as_completed(futures):
-                success, msg = await f
-                if success:
-                    completed_count += 1
-                    await add_log(task_id, f"Saved: {msg}")
-                else:
-                    await add_log(task_id, f"Failed: {msg}")
-                    
-        await add_log(task_id, f"Process Complete. Collected {completed_count}/{len(pdf_links)} files.")
+        client = get_storage_client()
+        bucket = client.bucket(GCS_BUCKET_NAME)
+        blobs = list(bucket.list_blobs(prefix="consulting_raw/"))
+        await add_log(task_id, f"Found {len(blobs)} files in consulting_raw/.")
         
+        db = get_firestore_client()
+        collection = db.collection(FIRESTORE_COLLECTION_NAME)
+        
+        count = 0
+        loop = asyncio.get_running_loop()
+        
+        # We need to run Thread blocking I/O (embedding) in executor
+        with ThreadPoolExecutor(max_workers=3) as executor:
+            chunk_futures = []
+            
+            for blob in blobs:
+                if not (blob.name.lower().endswith(".png") or blob.name.lower().endswith(".jpg") or blob.name.lower().endswith(".jpeg")):
+                    continue
+                
+                # Define helper for single item processing
+                def process_one(b_name, b_data):
+                     try:
+                        emb = get_embedding(image_bytes=b_data)
+                        if emb:
+                            safe_id = "".join(c for c in b_name if c.isalnum() or c in "._-")
+                            return True, safe_id, emb, b_name
+                        return False, "No embedding", None, b_name
+                     except Exception as ex:
+                        return False, str(ex), None, b_name
+
+                # Download first (IO bound, can be async but blob.download_as_bytes is sync)
+                # To avoid blocking event loop, run download in executor too or assume it's fast enough for small concurrency
+                # For safety, let's run the whole process_one including download in executor? 
+                # passing blob object might be tricky across threads if not careful, but usually ok.
+                # Better: download in main loop (async-ish) or use executor.
+                
+                # Let's do a simpler sequential-ish pattern with ThreadPool for the heavy lifting
+                
+                # Download
+                try:
+                    b_data = blob.download_as_bytes()
+                    chunk_futures.append(loop.run_in_executor(executor, process_one, blob.name, b_data))
+                except Exception as e:
+                    await add_log(task_id, f"Error downloading {blob.name}: {e}")
+
+            await add_log(task_id, f"Processing {len(chunk_futures)} images...")
+            
+            for f in asyncio.as_completed(chunk_futures):
+                success, msg, emb, fname = await f
+                if success:
+                    # Write to Firestore (IO)
+                    try:
+                        doc_ref = collection.document(msg) # msg is safe_id
+                        doc_ref.set({
+                            "uri": f"gs://{GCS_BUCKET_NAME}/{fname}",
+                            "filename": fname,
+                            "embedding": Vector(emb),
+                            "created_at": firestore.SERVER_TIMESTAMP
+                        })
+                        count += 1
+                        await add_log(task_id, f"Indexed: {fname}")
+                    except Exception as db_e:
+                        await add_log(task_id, f"DB Error {fname}: {db_e}")
+                else:
+                    await add_log(task_id, f"Failed {fname}: {msg}")
+                    
+        await add_log(task_id, f"Ingestion Complete. Indexed {count} documents.")
+
     except Exception as e:
-        print(f"CRITICAL BACKGOUND EXCEPTION: {e}")
+        await add_log(task_id, f"Critical Error: {e}")
         import traceback
         traceback.print_exc()
-        await add_log(task_id, f"Critical Error: {e}")
     finally:
         await add_log(task_id, "DONE")
-        print(f"DEBUG: Task {task_id} finished block.")
+
+async def run_background_index_creation(task_id: str):
+    """Background worker for Index Creation."""
+    try:
+        await add_log(task_id, "Starting Index Creation...")
+        await add_log(task_id, "This triggers 'gcloud firestore indexes composite create' command.")
+        await add_log(task_id, "It may take a few minutes for the index to become active on Google Cloud side.")
+        
+        import subprocess
+        
+        cmd = [
+            "gcloud", "firestore", "indexes", "composite", "create",
+            "--project", PROJECT_ID,
+            "--collection-group", FIRESTORE_COLLECTION_NAME,
+            "--query-scope", "COLLECTION",
+            "--field-config", 'field-path=embedding,vector-config={"dimension":1408,"flat":{}}'
+        ]
+        
+        await add_log(task_id, f"Running: {' '.join(cmd)}")
+        
+        # Run subprocess
+        process = await asyncio.create_subprocess_exec(
+            *cmd,
+            stdout=asyncio.subprocess.PIPE,
+            stderr=asyncio.subprocess.PIPE
+        )
+        
+        stdout, stderr = await process.communicate()
+        
+        if stdout:
+            await add_log(task_id, f"STDOUT: {stdout.decode().strip()}")
+        if stderr:
+             # gcloud sends progress/info to stderr often
+            await add_log(task_id, f"STDERR: {stderr.decode().strip()}")
+            
+        if process.returncode == 0:
+             await add_log(task_id, "Command executed successfully.")
+             await add_log(task_id, "Please check GCP Console or wait a few minutes before searching.")
+        else:
+             await add_log(task_id, f"Command failed with return code {process.returncode}")
+
+    except Exception as e:
+        await add_log(task_id, f"Error: {e}")
+    finally:
+        await add_log(task_id, "DONE")
 
 # --- Endpoints ---
+
+@router.post("/consulting/ingest")
+async def trigger_ingest(background_tasks: BackgroundTasks):
+    """Triggers background ingestion."""
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {
+        "status": "running",
+        "queue": asyncio.Queue(),
+        "logs": []
+    }
+    background_tasks.add_task(run_background_ingest, task_id)
+    return {"task_id": task_id, "message": "Ingestion started"}
+
+@router.post("/consulting/index")
+async def trigger_index(background_tasks: BackgroundTasks):
+    """Triggers background index creation."""
+    task_id = str(uuid.uuid4())
+    tasks[task_id] = {
+        "status": "running",
+        "queue": asyncio.Queue(),
+        "logs": []
+    }
+    background_tasks.add_task(run_background_index_creation, task_id)
+    return {"task_id": task_id, "message": "Index creation started"}
 
 @router.get("/consulting/tasks/{task_id}/stream")
 async def stream_task_logs(task_id: str):
@@ -469,16 +479,9 @@ async def stream_task_logs(task_id: str):
         
     async def event_generator():
         q = tasks[task_id]["queue"]
-        
-        # Flush existing logs first? (Optional, but good if client re-connects)
-        # For simplicity, we assume one-time connection. 
-        # If we wanted re-connection support, we'd iterate tasks[task_id]['logs'] first.
-        
         while True:
             log_msg = await q.get()
-            # Send event
             yield f"data: {json.dumps({'message': log_msg})}\n\n"
-            
             if log_msg == "DONE" or "Critical Error" in log_msg:
                 break
     
@@ -486,6 +489,7 @@ async def stream_task_logs(task_id: str):
 
 @router.post("/consulting/collect")
 async def collect_data(req: CollectRequest, background_tasks: BackgroundTasks):
+# ... (rest of the file)
     """Starts async collection from URL."""
     task_id = str(uuid.uuid4())
     tasks[task_id] = {

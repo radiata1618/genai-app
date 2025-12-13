@@ -12,3 +12,6 @@ youtube-transcript-api
 requests
 beautifulsoup4
 pypdf
+langchain-google-firestore
+google-cloud-storage
+google-cloud-firestore>=2.19.0

@@ -7,6 +7,7 @@ export default function AdminPage() {
     const [loading, setLoading] = useState(false);
     const [selectedFiles, setSelectedFiles] = useState([]);
     const [uploading, setUploading] = useState(false);
+    const [searchTerm, setSearchTerm] = useState("");
 
     // Auto-refresh on mount
     useEffect(() => {
@@ -28,6 +29,61 @@ export default function AdminPage() {
         }
     };
 
+    const [taskModal, setTaskModal] = useState({ open: false, title: '', logs: [] });
+    // Keep track of active task ID to stream
+    const [activeTaskId, setActiveTaskId] = useState(null);
+
+    // Filter Files
+    const filteredFiles = files.filter(f =>
+        f.name.toLowerCase().includes(searchTerm.toLowerCase())
+    );
+
+    // --- Task Streaming Logic ---
+    useEffect(() => {
+        if (!activeTaskId) return;
+
+        console.log("Connecting to stream for", activeTaskId);
+        const eventSource = new EventSource(`/api/consulting/tasks/${activeTaskId}/stream`);
+
+        eventSource.onmessage = (event) => {
+            const data = JSON.parse(event.data);
+            setTaskModal(prev => ({ ...prev, logs: [...prev.logs, data.message] }));
+
+            if (data.message === "DONE" || data.message.includes("Critical Error")) {
+                eventSource.close();
+                setActiveTaskId(null);
+            }
+        };
+
+        eventSource.onerror = () => {
+            console.error("Stream error");
+            eventSource.close();
+            setActiveTaskId(null);
+        };
+
+        return () => {
+            eventSource.close();
+        };
+    }, [activeTaskId]);
+
+    const startTask = async (endpoint, title) => {
+        setLoading(true);
+        setTaskModal({ open: true, title, logs: ["Starting..."] });
+        try {
+            const res = await fetch(endpoint, { method: 'POST' });
+            const data = await res.json();
+            if (data.task_id) {
+                setActiveTaskId(data.task_id);
+            } else {
+                setTaskModal(prev => ({ ...prev, logs: [...prev.logs, "Failed to start: No Task ID"] }));
+            }
+        } catch (e) {
+            setTaskModal(prev => ({ ...prev, logs: [...prev.logs, "Error: " + e.message] }));
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleToggleSelect = (filename) => {
         setSelectedFiles(prev => {
             if (prev.includes(filename)) return prev.filter(f => f !== filename);
@@ -36,10 +92,14 @@ export default function AdminPage() {
     };
 
     const handleSelectAll = () => {
-        if (selectedFiles.length === files.length) {
-            setSelectedFiles([]);
+        const allFilteredSelected = filteredFiles.length > 0 && filteredFiles.every(f => selectedFiles.includes(f.name));
+
+        if (allFilteredSelected) {
+            const filteredNames = filteredFiles.map(f => f.name);
+            setSelectedFiles(prev => prev.filter(name => !filteredNames.includes(name)));
         } else {
-            setSelectedFiles(files.map(f => f.name));
+            const filteredNames = filteredFiles.map(f => f.name);
+            setSelectedFiles(prev => [...new Set([...prev, ...filteredNames])]);
         }
     };
 
@@ -110,36 +170,88 @@ export default function AdminPage() {
     };
 
     return (
-        <div className="flex-1 flex flex-col h-full bg-slate-50 font-sans text-slate-800 overflow-y-auto">
-            {/* Header */}
-            <div className="flex items-center gap-4 p-4 bg-white shadow-sm border-b border-slate-200">
-                <MobileMenuButton />
-                <h1 className="text-xl font-bold text-slate-800">Consulting Data Manager</h1>
+        <div className="flex-1 flex flex-col h-full bg-slate-50 font-sans text-slate-800 overflow-hidden relative">
+
+            {/* Task Monitor Modal */}
+            {taskModal.open && (
+                <div className="absolute inset-0 z-50 bg-black/50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-xl shadow-2xl w-full max-w-2xl max-h-[80vh] flex flex-col overflow-hidden animate-in fade-in zoom-in duration-200">
+                        <div className="p-4 border-b border-slate-200 flex justify-between items-center bg-slate-50">
+                            <h3 className="font-bold flex items-center gap-2">
+                                {activeTaskId && <span className="animate-spin">⏳</span>}
+                                {taskModal.title}
+                            </h3>
+                            <button
+                                onClick={() => setTaskModal(prev => ({ ...prev, open: false }))}
+                                className="text-slate-400 hover:text-slate-600"
+                            >
+                                ✕
+                            </button>
+                        </div>
+                        <div className="p-4 bg-slate-900 overflow-y-auto flex-1 font-mono text-xs text-green-400 space-y-1">
+                            {taskModal.logs.map((log, idx) => (
+                                <div key={idx} className="break-all">{log}</div>
+                            ))}
+                            <div ref={(el) => el?.scrollIntoView({ behavior: "smooth" })} />
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Header - Compact */}
+            <div className="flex-none bg-white shadow-sm border-b border-slate-200 z-20">
+                <div className="flex items-center gap-3 p-3">
+                    <MobileMenuButton />
+                    <h1 className="text-lg font-bold text-slate-800">Consulting Data Manager</h1>
+                </div>
             </div>
 
-            <div className="p-6 max-w-6xl mx-auto w-full space-y-6">
-
+            {/* Fixed Control Area (Notice + Toolbar) */}
+            <div className="flex-none p-4 max-w-6xl mx-auto w-full space-y-4">
                 {/* NOTICE BLOCK - Local App Instruction */}
-                <div className="bg-amber-50 border border-amber-200 rounded-lg p-4 text-sm text-amber-900">
-                    <div className="font-bold flex items-center gap-2 mb-2">
-                        <span>⚠️</span> Web Scraping / Data Collection
-                    </div>
-                    <p className="mb-2">
-                        To avoid blocking (Error 403), data collection must be performed using the <strong>Local App</strong>.
-                    </p>
-                    <div className="bg-white border border-amber-200 rounded p-2 font-mono text-xs">
-                        streamlit run backend/scripts/local_gui.py
+                <div className="bg-amber-50 border border-amber-200 rounded-lg p-3 text-sm text-amber-900 flex items-start gap-3">
+                    <span className="text-lg">⚠️</span>
+                    <div className="flex-1">
+                        <p className="font-bold mb-1">Web Scraping / Data Collection</p>
+                        <div className="flex flex-wrap items-center gap-2">
+                            <span>To avoid blocking (403), use Local App:</span>
+                            <code className="bg-white border text-xs px-1 rounded">backend/scripts/local_gui.py</code>
+                        </div>
                     </div>
                 </div>
 
                 {/* Toolbar */}
-                <div className="flex justify-between items-center bg-white p-4 rounded-lg shadow-sm border border-slate-200">
-                    <div className="flex items-center gap-4">
-                        <h2 className="font-bold text-lg">Stored Files (GCS)</h2>
-                        <span className="text-slate-400 text-sm">{files.length} files</span>
+                <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-lg shadow-sm border border-slate-200 gap-3">
+                    <div className="flex items-center gap-4 w-full sm:w-auto">
+                        <div className="flex gap-2 mr-4 border-r border-slate-200 pr-4">
+                            <button
+                                onClick={() => startTask('/api/consulting/ingest', 'Ingesting Slides...')}
+                                className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md hover:bg-indigo-100 transition-colors font-bold text-xs flex items-center gap-1"
+                            >
+                                <span>📥</span> Ingest to DB
+                            </button>
+                            <button
+                                onClick={() => startTask('/api/consulting/index', 'Creating Vector Index...')}
+                                className="bg-fuchsia-50 text-fuchsia-700 px-3 py-1.5 rounded-md hover:bg-fuchsia-100 transition-colors font-bold text-xs flex items-center gap-1"
+                            >
+                                <span>⚡</span> Create Index
+                            </button>
+                        </div>
+
+                        <div className="relative w-full sm:w-64">
+                            <span className="absolute left-3 top-1/2 -translate-y-1/2 text-slate-400">🔍</span>
+                            <input
+                                type="text"
+                                placeholder="Search files..."
+                                className="pl-9 pr-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-cyan-500 outline-none w-full"
+                                value={searchTerm}
+                                onChange={(e) => setSearchTerm(e.target.value)}
+                            />
+                        </div>
+                        <span className="text-slate-400 text-sm whitespace-nowrap">{filteredFiles.length} files</span>
                     </div>
-                    <div className="flex items-center gap-3">
-                        <label className={`cursor-pointer bg-cyan-600 text-white px-4 py-2 rounded-md hover:bg-cyan-700 transition-colors font-bold text-sm flex items-center gap-2 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
+                    <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        <label className={`cursor-pointer bg-cyan-600 text-white px-3 py-1.5 rounded-md hover:bg-cyan-700 transition-colors font-bold text-sm flex items-center gap-2 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <span>{uploading ? 'Uploading...' : 'Upload PDF'}</span>
                             <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
                         </label>
@@ -148,7 +260,7 @@ export default function AdminPage() {
                             <button
                                 onClick={handleDelete}
                                 disabled={loading}
-                                className="bg-red-50 text-red-600 border border-red-200 px-4 py-2 rounded-md hover:bg-red-100 transition-colors font-bold text-sm"
+                                className="bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded-md hover:bg-red-100 transition-colors font-bold text-sm"
                             >
                                 Delete ({selectedFiles.length})
                             </button>
@@ -156,75 +268,83 @@ export default function AdminPage() {
 
                         <button
                             onClick={fetchFiles}
-                            className="p-2 text-slate-500 hover:text-slate-800 transition-colors"
+                            className="p-1.5 text-slate-500 hover:text-slate-800 transition-colors"
                             title="Refresh"
                         >
                             🔄
                         </button>
                     </div>
                 </div>
+            </div>
 
-                {/* File Table */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-                    <table className="w-full text-sm text-left">
-                        <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-                            <tr>
-                                <th className="p-4 w-10">
-                                    <input
-                                        type="checkbox"
-                                        checked={files.length > 0 && selectedFiles.length === files.length}
-                                        onChange={handleSelectAll}
-                                        className="rounded border-slate-300 focus:ring-cyan-500"
-                                    />
-                                </th>
-                                <th className="p-4">Filename</th>
-                                <th className="p-4 w-32">Size</th>
-                                <th className="p-4 w-48">Uploaded</th>
-                                <th className="p-4 w-24 text-right">Action</th>
-                            </tr>
-                        </thead>
-                        <tbody className="divide-y divide-slate-100">
-                            {loading && files.length === 0 ? (
-                                <tr>
-                                    <td colSpan="5" className="p-8 text-center text-slate-400">Loading files...</td>
-                                </tr>
-                            ) : files.length === 0 ? (
-                                <tr>
-                                    <td colSpan="5" className="p-8 text-center text-slate-400">No files found.</td>
-                                </tr>
-                            ) : (
-                                files.map((file) => (
-                                    <tr key={file.name} className="hover:bg-slate-50 transition-colors group">
-                                        <td className="p-4">
+            {/* Scrollable File Table */}
+            <div className="flex-1 overflow-y-auto px-4 pb-4">
+                <div className="max-w-6xl mx-auto w-full h-full">
+                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 h-full flex flex-col">
+                        <div className="overflow-auto flex-1 rounded-lg">
+                            <table className="w-full text-sm text-left relative border-collapse">
+                                <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200 sticky top-0 z-10 shadow-sm">
+                                    <tr>
+                                        <th className="p-3 w-10 bg-slate-50">
                                             <input
                                                 type="checkbox"
-                                                checked={selectedFiles.includes(file.name)}
-                                                onChange={() => handleToggleSelect(file.name)}
+                                                checked={filteredFiles.length > 0 && filteredFiles.every(f => selectedFiles.includes(f.name))}
+                                                onChange={handleSelectAll}
                                                 className="rounded border-slate-300 focus:ring-cyan-500"
                                             />
-                                        </td>
-                                        <td className="p-4 font-medium text-slate-700">
-                                            <div className="flex items-center gap-2">
-                                                <span className="text-xl text-red-500">📄</span>
-                                                {file.basename}
-                                            </div>
-                                            <div className="text-xs text-slate-400 pl-7">{file.name}</div>
-                                        </td>
-                                        <td className="p-4 text-slate-500 font-mono text-xs">{formatSize(file.size)}</td>
-                                        <td className="p-4 text-slate-500">{new Date(file.updated).toLocaleString()}</td>
-                                        <td className="p-4 text-right">
-                                            <button
-                                                onClick={() => handleView(file.name)}
-                                                className="opacity-0 group-hover:opacity-100 text-cyan-600 font-bold hover:underline transition-opacity"
-                                            >
-                                                Open
-                                            </button>
-                                        </td>
+                                        </th>
+                                        <th className="p-3 bg-slate-50">Filename</th>
+                                        <th className="p-3 w-32 bg-slate-50">Size</th>
+                                        <th className="p-3 w-48 bg-slate-50">Uploaded</th>
+                                        <th className="p-3 w-24 text-right bg-slate-50">Action</th>
                                     </tr>
-                                ))
-                            )}
-                        </tbody>
-                    </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {loading && filteredFiles.length === 0 && files.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="5" className="p-8 text-center text-slate-400">Loading files...</td>
+                                        </tr>
+                                    ) : filteredFiles.length === 0 ? (
+                                        <tr>
+                                            <td colSpan="5" className="p-8 text-center text-slate-400">
+                                                {searchTerm ? "No matches found." : "No files found."}
+                                            </td>
+                                        </tr>
+                                    ) : (
+                                        filteredFiles.map((file) => (
+                                            <tr key={file.name} className="hover:bg-slate-50 transition-colors group">
+                                                <td className="p-3">
+                                                    <input
+                                                        type="checkbox"
+                                                        checked={selectedFiles.includes(file.name)}
+                                                        onChange={() => handleToggleSelect(file.name)}
+                                                        className="rounded border-slate-300 focus:ring-cyan-500"
+                                                    />
+                                                </td>
+                                                <td className="p-3 font-medium text-slate-700">
+                                                    <div className="flex items-center gap-2">
+                                                        <span className="text-xl text-red-500">📄</span>
+                                                        <span title={file.name}>{file.basename}</span>
+                                                    </div>
+                                                    {/* Optional: Show full path on hover or small text if needed, but basename is cleaner */}
+                                                </td>
+                                                <td className="p-3 text-slate-500 font-mono text-xs">{formatSize(file.size)}</td>
+                                                <td className="p-3 text-slate-500">{new Date(file.updated).toLocaleString()}</td>
+                                                <td className="p-3 text-right">
+                                                    <button
+                                                        onClick={() => handleView(file.name)}
+                                                        className="opacity-0 group-hover:opacity-100 text-cyan-600 font-bold hover:underline transition-opacity"
+                                                    >
+                                                        Open
+                                                    </button>
+                                                </td>
+                                            </tr>
+                                        ))
+                                    )}
+                                </tbody>
+                            </table>
+                        </div>
+                    </div>
                 </div>
             </div>
         </div>
