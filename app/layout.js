@@ -17,9 +17,9 @@ export const metadata = {
   description: "Multimodal GenAI Application",
   icons: {
     icon: '/favicon.ico',
-    apple: '/icons/icon-192x192.png',
+    apple: '/icons/icon-192-v3.png',
   },
-  manifest: '/manifest.json',
+  manifest: '/manifest.json?v=3',
 };
 
 export default function RootLayout({ children }) {
