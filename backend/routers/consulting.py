@@ -53,19 +53,28 @@ print(f"DEBUG: PROJECT_ID={PROJECT_ID}, BUCKET={GCS_BUCKET_NAME}, COLLECTION={FI
 
 # --- Clients ---
 # Initialize GenAI Client
-client = None
-if PROJECT_ID and LOCATION:
-    try:
-        api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
-        client = genai.Client(
-            vertexai=True,
-            project=PROJECT_ID,
-            location=LOCATION,
-            api_key=api_key,
-            http_options={'api_version': 'v1beta1'}
-        )
-    except Exception as e:
-        print(f"Error initializing GenAI Client: {e}")
+_genai_client = None
+
+def get_genai_client():
+    global _genai_client
+    if _genai_client:
+        return _genai_client
+    
+    if PROJECT_ID and LOCATION:
+        try:
+            api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
+            _genai_client = genai.Client(
+                vertexai=True,
+                project=PROJECT_ID,
+                location=LOCATION,
+                api_key=api_key,
+                http_options={'api_version': 'v1beta1'}
+            )
+            return _genai_client
+        except Exception as e:
+            print(f"Error initializing GenAI Client: {e}")
+            return None
+    return None
 
 def get_storage_client():
     return storage.Client(project=PROJECT_ID)
@@ -98,6 +107,7 @@ def generate_signed_url(gcs_uri: str) -> str:
 
 def get_embedding(text: str = None, image_bytes: bytes = None):
     """Generates embedding using the multimodal model via google.genai SDK."""
+    client = get_genai_client()
     if not client:
         print("GenAI client not initialized")
         return None
@@ -136,6 +146,7 @@ def get_embedding(text: str = None, image_bytes: bytes = None):
 
 def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
     """Analyzes a slide image using Gemini 1.5 Pro to extract structure and key message."""
+    client = get_genai_client()
     if not client:
         return {}
         
@@ -860,6 +871,7 @@ async def visual_search(req: VisualSearchRequest):
 async def slide_polisher(req: SlidePolisherRequest):
     """Generates a polished slide visual (HTML/React) using Gemini 3.0."""
     try:
+        client = get_genai_client()
         if not client:
              raise Exception("GenAI client not initialized")
 

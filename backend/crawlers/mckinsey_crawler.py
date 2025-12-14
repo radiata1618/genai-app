@@ -2,11 +2,13 @@ import time
 from .base_crawler import BaseCrawler
 
 class McKinseyCrawler(BaseCrawler):
-    BASE_URL = "https://www.mckinsey.com/featured-insights"
+    BASE_URL_EN = "https://www.mckinsey.com/featured-insights"
+    BASE_URL_JP = "https://www.mckinsey.com/jp/our-insights"
 
-    def _perform_crawl(self, page, limit):
-        self.log_func(f"Navigating to {self.BASE_URL}...")
-        page.goto(self.BASE_URL, timeout=60000)
+    def _perform_crawl(self, page, limit, locale):
+        base_url = self.BASE_URL_JP if locale == "jp" else self.BASE_URL_EN
+        self.log_func(f"Navigating to {base_url}...")
+        page.goto(base_url, timeout=60000, wait_until="domcontentloaded")
         
         # McKinsey's featured insights page uses "Load more" or infinite scroll often.
         # But actually, they have a search/archive page. 
@@ -34,8 +36,8 @@ class McKinseyCrawler(BaseCrawler):
         # 1. Get Article Links
         article_links = set()
         # Common selector for McKinsey article cards
-        # Look for links containing "/featured-insights/"
-        links = page.query_selector_all("a[href*='/featured-insights/']")
+        # Look for links containing "/featured-insights/", "/jp/our-insights/", OR direct PDF links in media
+        links = page.query_selector_all("a[href*='/featured-insights/'], a[href*='/jp/our-insights/'], a[href*='/media/'], a[href$='.pdf']")
         for l in links:
             href = l.get_attribute("href")
             if href:
@@ -43,12 +45,24 @@ class McKinseyCrawler(BaseCrawler):
                     href = "https://www.mckinsey.com" + href
                 article_links.add(href)
         
-        self.log_func(f"Found {len(article_links)} potential article links. Checking for PDFs...")
+        self.log_func(f"Found {len(article_links)} potential links. Scanning...")
         
         count = 0
         for link in article_links:
             if count >= limit: break
             
+            # CASE 1: Direct PDF Link
+            if link.lower().endswith(".pdf") or "/media/" in link:
+                 # It's likely a PDF or direct download. Check extension to be sure or just assume valid if it looks like a report.
+                 # Only add if it actually looks like a PDF url
+                 if ".pdf" in link.lower():
+                     title = link.split('/')[-1] # Fallback title
+                     results.append({'title': title, 'url': link, 'date': ''})
+                     self.log_func(f"  -> Found Direct PDF: {title}")
+                     count += 1
+                     continue
+
+            # CASE 2: Article Page
             try:
                 self.log_func(f"Checking article: {link}")
                 page.goto(link, timeout=30000)

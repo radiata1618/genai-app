@@ -2,11 +2,13 @@ import time
 from .base_crawler import BaseCrawler
 
 class BCGCrawler(BaseCrawler):
-    BASE_URL = "https://www.bcg.com/featured-insights"
+    BASE_URL_EN = "https://www.bcg.com/featured-insights"
+    BASE_URL_JP = "https://www.bcg.com/ja-jp/featured-insights"
 
-    def _perform_crawl(self, page, limit):
-        self.log_func(f"Navigating to {self.BASE_URL}...")
-        page.goto(self.BASE_URL, timeout=60000)
+    def _perform_crawl(self, page, limit, locale):
+        base_url = self.BASE_URL_JP if locale == "jp" else self.BASE_URL_EN
+        self.log_func(f"Navigating to {base_url}...")
+        page.goto(base_url, timeout=60000, wait_until="domcontentloaded")
         
         results = []
         

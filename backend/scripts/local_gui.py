@@ -90,13 +90,16 @@ if input_type == "Google Search (Web)":
 # Crawler Config UI
 crawler_target_firms = []
 crawler_limit = 10
+crawler_regions = []
 if input_type == "Site Crawler (Direct)":
     st.info("各社のサイトを直接巡回してPDFを収集します。処理に時間がかかりますが、網羅性が高いです。")
-    col1, col2 = st.columns([1, 1])
+    col1, col2, col3 = st.columns([1, 1, 1])
     with col1:
        crawler_target_firms = st.multiselect("巡回対象", ["McKinsey", "BCG"], default=["McKinsey"])
     with col2:
-       crawler_limit = st.number_input("1社あたりの最大収集数", min_value=1, max_value=500, value=10)
+       crawler_regions = st.multiselect("対象リージョン", ["Global (EN)", "Japan (JP)"], default=["Global (EN)"])
+    with col3:
+       crawler_limit = st.number_input("1社/地域あたりの最大数", min_value=1, max_value=500, value=10)
 
 # Run Button
 if st.button("実行 (Collect)", type="primary"):
@@ -106,8 +109,8 @@ if st.button("実行 (Collect)", type="primary"):
         st.warning("ファイルをアップロードしてください。")
     elif input_type == "Google Search (Web)" and (not target_keywords or not target_domains):
         st.warning("キーワードと対象ファームを選択してください。")
-    elif input_type == "Site Crawler (Direct)" and not crawler_target_firms:
-         st.warning("巡回対象を選択してください。")
+    elif input_type == "Site Crawler (Direct)" and (not crawler_target_firms or not crawler_regions):
+         st.warning("巡回対象とリージョンを選択してください。")
     else:
         # --- Execution Logic ---
         st.divider()
@@ -203,22 +206,32 @@ if st.button("実行 (Collect)", type="primary"):
             elif input_type == "Site Crawler (Direct)":
                 gui_log(f"[*] クローラーを開始します。対象: {crawler_target_firms}, Limit: {crawler_limit}")
                 
+                # Map UI selection to locale codes
+                target_locales = []
+                if "Global (EN)" in crawler_regions: target_locales.append("en")
+                if "Japan (JP)" in crawler_regions: target_locales.append("jp")
+
                 for firm in crawler_target_firms:
-                    gui_log(f"--- Crawling {firm} ---")
-                    try:
-                        crawler = None
-                        if firm == "McKinsey":
-                            crawler = McKinseyCrawler(log_func=gui_log)
-                        elif firm == "BCG":
-                            crawler = BCGCrawler(log_func=gui_log)
-                        
-                        if crawler:
-                            results = crawler.crawl(limit=crawler_limit)
-                            for res in results:
-                                title_clean = local_collector.clean_text(res['title'])
-                                all_targets.append((res['url'], title_clean))
-                    except Exception as e:
-                         gui_log(f"[Error] {firm} crawler failed: {e}")
+                    for locale in target_locales:
+                        locale_label = "Global" if locale == "en" else "Japan"
+                        gui_log(f"--- Crawling {firm} ({locale_label}) ---")
+                        try:
+                            crawler = None
+                            if firm == "McKinsey":
+                                crawler = McKinseyCrawler(log_func=gui_log)
+                            elif firm == "BCG":
+                                crawler = BCGCrawler(log_func=gui_log)
+                            
+                            if crawler:
+                                results = crawler.crawl(limit=crawler_limit, locale=locale)
+                                for res in results:
+                                    title_clean = local_collector.clean_text(res['title'])
+                                    # Append locale to title for clarity
+                                    if locale == "jp":
+                                        title_clean = f"[JP] {title_clean}"
+                                    all_targets.append((res['url'], title_clean))
+                        except Exception as e:
+                            gui_log(f"[Error] {firm} ({locale}) crawler failed: {e}")
 
 
             # 2. Results Processing
