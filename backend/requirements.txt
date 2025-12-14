@@ -11,5 +11,5 @@ requests
 beautifulsoup4
 pypdf
 langchain-google-firestore
-google-cloud-storage
-google-cloud-firestore>=2.19.0
+google-cloud-storage>=3.0.0
+google-cloud-firestore==2.21.0

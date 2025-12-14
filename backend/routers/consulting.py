@@ -28,7 +28,10 @@ router = APIRouter(
 
 # --- Configuration (Sharing some env vars with RAG) ---
 from google.cloud import firestore
-from google.cloud.firestore import Vector
+try:
+    from google.cloud.firestore import Vector
+except ImportError:
+    from google.cloud.firestore_v1.vector import Vector
 
 # --- Configuration (Sharing some env vars with RAG) ---
 # DEBUG: Print env vars on load
