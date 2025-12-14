@@ -17,8 +17,8 @@
     "googleapis": "^167.0.0",
     "next": "16.0.7",
     "next-auth": "^4.24.5",
-    "react": "19.2.0",
-    "react-dom": "19.2.0",
+    "react": "19.2.1",
+    "react-dom": "19.2.1",
     "react-markdown": "^9.0.3",
     "react-datepicker": "^7.5.0",
     "date-fns": "^4.1.0"

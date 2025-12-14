@@ -67,7 +67,6 @@ def get_genai_client():
                 vertexai=True,
                 project=PROJECT_ID,
                 location=LOCATION,
-                api_key=api_key,
                 http_options={'api_version': 'v1beta1'}
             )
             return _genai_client
