@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from 'react';
+import Link from 'next/link';
 import MobileMenuButton from '../../../components/MobileMenuButton';
 
 export default function AdminPage() {
@@ -138,6 +139,23 @@ export default function AdminPage() {
         }
     };
 
+    const handleIngest = async () => {
+        if (!confirm("Start new ingestion batch? This process runs in the background.")) return;
+        setLoading(true);
+        try {
+            const res = await fetch('/api/consulting/ingest', { method: 'POST' });
+            if (!res.ok) throw new Error("Failed to start batch");
+            const data = await res.json();
+            alert(`Batch started! ID: ${data.batch_id}\nCheck 'History' for progress.`);
+            // Optional: redirect to history?
+            // window.location.href = '/consulting/batches';
+        } catch (e) {
+            alert("Error: " + e.message);
+        } finally {
+            setLoading(false);
+        }
+    };
+
     const handleUpload = async (e) => {
         const file = e.target.files[0];
         if (!file) return;
@@ -225,11 +243,17 @@ export default function AdminPage() {
                     <div className="flex items-center gap-4 w-full sm:w-auto">
                         <div className="flex gap-2 mr-4 border-r border-slate-200 pr-4">
                             <button
-                                onClick={() => startTask('/api/consulting/ingest', 'Ingesting Slides...')}
+                                onClick={handleIngest}
                                 className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md hover:bg-indigo-100 transition-colors font-bold text-xs flex items-center gap-1"
                             >
                                 <span>📥</span> Ingest to DB
                             </button>
+                            <Link
+                                href="/consulting/batches"
+                                className="bg-slate-100 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-md hover:bg-slate-200 transition-colors font-bold text-xs flex items-center gap-1"
+                            >
+                                <span>📜</span> History
+                            </Link>
                             <button
                                 onClick={() => startTask('/api/consulting/index', 'Creating Vector Index...')}
                                 className="bg-fuchsia-50 text-fuchsia-700 px-3 py-1.5 rounded-md hover:bg-fuchsia-100 transition-colors font-bold text-xs flex items-center gap-1"
