@@ -2,7 +2,7 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
-import MobileMenuButton from '../../../components/MobileMenuButton';
+import MobileMenuButton from '@/components/MobileMenuButton';
 
 export default function BatchDetailPage() {
     const params = useParams();

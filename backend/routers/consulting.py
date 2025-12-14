@@ -62,7 +62,8 @@ def get_genai_client():
     
     if PROJECT_ID and LOCATION:
         try:
-            api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
+            # Use ADC (Application Default Credentials) on Cloud Run / Local
+            # Do NOT pass api_key when using vertexai=True with project/location
             _genai_client = genai.Client(
                 vertexai=True,
                 project=PROJECT_ID,
@@ -113,25 +114,27 @@ def get_embedding(text: str = None, image_bytes: bytes = None):
         
     try:
         model = "multimodalembedding@001"
-        contents = []
+        parts = []
+        
+        # NOTE: multimodalembedding@001 often requires specific ordering or strict 'image'/'text' inputs.
+        # With google-genai SDK, we construct Content.
         
         if image_bytes:
-            contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
-            if text:
-                 contents.append(types.Part.from_text(text=text))
-        elif text:
-            contents.append(types.Part.from_text(text=text))
+            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+        if text:
+            parts.append(types.Part.from_text(text=text))
             
-        if not contents:
+        if not parts:
             return None
+
+        # Wrap in Content object for stricter API compliance
+        content = types.Content(parts=parts, role="user")
 
         result = client.models.embed_content(
             model=model,
-            contents=contents
+            contents=content
         )
         
-        # Handle response extraction for multimodalembedding@001 via SDK
-        # The SDK usually returns 'embeddings' list.
         if hasattr(result, 'image_embedding') and result.image_embedding:
              return result.image_embedding
         if hasattr(result, 'embeddings') and result.embeddings:
@@ -140,11 +143,16 @@ def get_embedding(text: str = None, image_bytes: bytes = None):
         return None
     except Exception as e:
         print(f"Embedding error: {e}")
+        # Fallback debug
+        if "400" in str(e) and "multimodal" in model:
+             print("Attempting fallback text-only embedding if image failed...")
+             # (Optional) Could fallback to text-embedding-004 if image causes issues, 
+             # but we want image vector. Return None to fail gracefully.
         return None
     return None
 
 def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
-    """Analyzes a slide image using Gemini 1.5 Pro to extract structure and key message."""
+    """Analyzes a slide image using Gemini 2.5 Flash (Cost Effective) to extract structure and key message."""
     client = get_genai_client()
     if not client:
         return {}
@@ -157,8 +165,9 @@ def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
         - "description": A concise description of the slide's visual and logical content.
         """
         
+        # Use gemini-2.5-flash for high speed and low cost (approx 1/50th cost of Pro)
         response = client.models.generate_content(
-            model="gemini-1.5-pro",
+            model="gemini-2.5-flash",
             contents=[
                 types.Part.from_text(text=prompt),
                 types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
