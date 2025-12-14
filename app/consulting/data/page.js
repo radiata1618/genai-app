@@ -10,18 +10,33 @@ export default function AdminPage() {
     const [uploading, setUploading] = useState(false);
     const [searchTerm, setSearchTerm] = useState("");
 
+    // Pagination State
+    const [pageToken, setPageToken] = useState(null); // Current token used to fetch this page
+    const [nextPageToken, setNextPageToken] = useState(null);
+    const [tokenHistory, setTokenHistory] = useState([]); // Stack of previous tokens
+
     // Auto-refresh on mount
     useEffect(() => {
         fetchFiles();
     }, []);
 
-    const fetchFiles = async () => {
+    const fetchFiles = async (token = null) => {
         setLoading(true);
         try {
-            const res = await fetch('/api/consulting/files');
+            // Construct URL
+            let url = '/api/consulting/files?max_results=100';
+            if (token) {
+                url += `&page_token=${encodeURIComponent(token)}`;
+            }
+
+            const res = await fetch(url);
             const data = await res.json();
             if (data.files) {
                 setFiles(data.files);
+                setNextPageToken(data.next_page_token || null);
+                setPageToken(token);
+                // Clear selection on page change
+                setSelectedFiles([]);
             }
         } catch (e) {
             console.error("Failed to fetch files", e);
@@ -29,6 +44,22 @@ export default function AdminPage() {
             setLoading(false);
         }
     };
+
+    const handleNextPage = () => {
+        if (nextPageToken) {
+            setTokenHistory(prev => [...prev, pageToken]);
+            fetchFiles(nextPageToken);
+        }
+    };
+
+    const handlePrevPage = () => {
+        if (tokenHistory.length > 0) {
+            const prevToken = tokenHistory[tokenHistory.length - 1];
+            setTokenHistory(prev => prev.slice(0, -1));
+            fetchFiles(prevToken);
+        }
+    };
+
 
     const [taskModal, setTaskModal] = useState({ open: false, title: '', logs: [] });
     // Keep track of active task ID to stream
@@ -275,6 +306,25 @@ export default function AdminPage() {
                         <span className="text-slate-400 text-sm whitespace-nowrap">{filteredFiles.length} files</span>
                     </div>
                     <div className="flex items-center gap-2 w-full sm:w-auto justify-end">
+                        {/* Pagination Controls */}
+                        <div className="flex items-center gap-1 mr-2 bg-slate-100 rounded px-1">
+                            <button
+                                onClick={handlePrevPage}
+                                disabled={tokenHistory.length === 0 || loading}
+                                className="p-1 px-2 text-xs font-bold text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                ◀ Prev
+                            </button>
+                            <span className="text-xs text-slate-400">|</span>
+                            <button
+                                onClick={handleNextPage}
+                                disabled={!nextPageToken || loading}
+                                className="p-1 px-2 text-xs font-bold text-slate-600 hover:text-slate-900 disabled:opacity-30 disabled:cursor-not-allowed"
+                            >
+                                Next ▶
+                            </button>
+                        </div>
+
                         <label className={`cursor-pointer bg-cyan-600 text-white px-3 py-1.5 rounded-md hover:bg-cyan-700 transition-colors font-bold text-sm flex items-center gap-2 ${uploading ? 'opacity-50 cursor-not-allowed' : ''}`}>
                             <span>{uploading ? 'Uploading...' : 'Upload PDF'}</span>
                             <input type="file" accept=".pdf" className="hidden" onChange={handleUpload} disabled={uploading} />
@@ -291,7 +341,7 @@ export default function AdminPage() {
                         )}
 
                         <button
-                            onClick={fetchFiles}
+                            onClick={() => fetchFiles(pageToken)}
                             className="p-1.5 text-slate-500 hover:text-slate-800 transition-colors"
                             title="Refresh"
                         >
@@ -357,9 +407,12 @@ export default function AdminPage() {
                                                 <td className="p-3 text-right">
                                                     <button
                                                         onClick={() => handleView(file.name)}
-                                                        className="opacity-0 group-hover:opacity-100 text-cyan-600 font-bold hover:underline transition-opacity"
+                                                        className="text-slate-400 hover:text-cyan-600 transition-colors p-2 rounded-full hover:bg-slate-100"
+                                                        title="Open"
                                                     >
-                                                        Open
+                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
+                                                        </svg>
                                                     </button>
                                                 </td>
                                             </tr>

@@ -156,7 +156,12 @@ export default function BatchDetailPage() {
                                     <tr key={item.filename} className="hover:bg-slate-50 group">
                                         <td className="p-3 text-slate-400 text-xs">{idx + 1}</td>
                                         <td className="p-3 font-medium text-slate-700 break-all">
-                                            {item.filename}
+                                            <Link
+                                                href={`/consulting/files/${encodeURIComponent(item.filename)}`}
+                                                className="text-indigo-600 hover:text-indigo-900 hover:underline"
+                                            >
+                                                {item.filename}
+                                            </Link>
                                             {item.pages_processed ? <span className="ml-2 text-xs text-green-600">({item.pages_processed} pages)</span> : null}
                                         </td>
                                         <td className="p-3">

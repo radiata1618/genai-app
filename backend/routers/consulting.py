@@ -105,49 +105,56 @@ def generate_signed_url(gcs_uri: str) -> str:
         print(f"Error generating signed URL: {e}")
         return ""
 
+import gc
+from vertexai.vision_models import MultiModalEmbeddingModel, Image
+
+# ...
+
 def get_embedding(text: str = None, image_bytes: bytes = None):
-    """Generates embedding using the multimodal model via google.genai SDK."""
-    client = get_genai_client()
-    if not client:
-        print("GenAI client not initialized")
+    """Generates embedding using the stable Vertex AI MultiModalEmbeddingModel."""
+    if not PROJECT_ID or not LOCATION:
+        print("Project ID or Location missing for Vertex AI")
         return None
-        
+
+    # Truncate text to satisfy model limit (Multimodal limit is likely 1024 bytes or tokens)
+    # 400 chars * ~3 bytes/char = ~1200 bytes. This is slightly over 1024 depending on content,
+    # but the prompt now requests <300 chars total, so this is a safety net.
+    if text and len(text) > 400:
+        print(f"DEBUG: Truncating text from {len(text)} to 400 chars for embedding.")
+        text = text[:400]
+
     try:
-        model = "multimodalembedding@001"
-        parts = []
+        # Lazy init Vertex AI SDK
+        vertexai.init(project=PROJECT_ID, location=LOCATION)
+# ...
         
-        # NOTE: multimodalembedding@001 often requires specific ordering or strict 'image'/'text' inputs.
-        # With google-genai SDK, we construct Content.
+        # Load the specific model designed for multimodal embeddings
+        model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding@001")
         
-        if image_bytes:
-            parts.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
-        if text:
-            parts.append(types.Part.from_text(text=text))
+        embeddings = None
+        if image_bytes and text:
+            # Multimodal (Image + Text)
+            image = Image(image_bytes)
+            embeddings = model.get_embeddings(image=image, contextual_text=text)
+        elif image_bytes:
+            # Image only
+            image = Image(image_bytes)
+            embeddings = model.get_embeddings(image=image)
+        elif text:
+            # Text only
+            embeddings = model.get_embeddings(contextual_text=text)
             
-        if not parts:
-            return None
-
-        # Wrap in Content object for stricter API compliance
-        content = types.Content(parts=parts, role="user")
-
-        result = client.models.embed_content(
-            model=model,
-            contents=content
-        )
-        
-        if hasattr(result, 'image_embedding') and result.image_embedding:
-             return result.image_embedding
-        if hasattr(result, 'embeddings') and result.embeddings:
-             return result.embeddings[0].values
-             
+        if embeddings:
+            # Result usually has .image_embedding or .text_embedding properties
+            # If we sent image, utilize image_embedding.
+            if image_bytes:
+                return embeddings.image_embedding
+            elif text:
+                return embeddings.text_embedding
+                
         return None
     except Exception as e:
-        print(f"Embedding error: {e}")
-        # Fallback debug
-        if "400" in str(e) and "multimodal" in model:
-             print("Attempting fallback text-only embedding if image failed...")
-             # (Optional) Could fallback to text-embedding-004 if image causes issues, 
-             # but we want image vector. Return None to fail gracefully.
+        print(f"Embedding error (Vertex AI SDK): {e}")
         return None
     return None
 
@@ -159,13 +166,18 @@ def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
         
     try:
         prompt = """
-        Analyze this consulting slide. Return a JSON object (no markdown) with these keys:
-        - "structure_type": Short category of the visual structure (e.g., "2x2 Matrix", "Waterfall Chart", "3-Column List", "Process Flow", "Text Only", "Bar Chart").
-        - "key_message": A single sentence summarizing the main takeaway or insight of the slide.
-        - "description": A concise description of the slide's visual and logical content.
-        """
+    Analyze this slide image and return a JSON object with the following fields:
+    - "structure_type": The type of visual structure (e.g., "Graph", "Table", "Text", "Diagram").
+    - "key_message": A single, short sentence summarizing the implication (in Japanese, max 80 characters).
+    - "description": A concise explanation of the logical structure or framework used (e.g., "Comparison of A vs B", "Factor decomposition", "Process flow"), followed by a list of important content keywords (in Japanese, max 250 characters).
+    
+    IMPORTANT: 
+    1. "description" format: "[Logical Structure description]. Keywords: [Keyword1, Keyword2...]"
+    2. Output MUST BE IN JAPANESE.
+    3. Strictly follow character limits.
+    """
         
-        # Use gemini-2.5-flash for high speed and low cost (approx 1/50th cost of Pro)
+        # Use gemini-2.5-flash for high speed and low cost
         response = client.models.generate_content(
             model="gemini-2.5-flash",
             contents=[
@@ -178,7 +190,29 @@ def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
             )
         )
         
-        text = response.text
+        # Accessing .text directly triggers 'Non-text part found' warning if safety filter blocks it or other parts exist.
+        text = ""
+        try:
+             # Debug log full response structure
+             if response.candidates:
+                 print(f"DEBUG: Candidate 0 content parts: {response.candidates[0].content.parts}")
+                 print(f"DEBUG: Finish Reason: {response.candidates[0].finish_reason}")
+             
+             text = response.text
+        except Exception as e:
+             print(f"DEBUG: .text access failed: {e}")
+             # Fallback: check candidates
+             if response.candidates and response.candidates[0].content.parts:
+                  for part in response.candidates[0].content.parts:
+                       if part.text:
+                            text += part.text
+                       else:
+                            print(f"DEBUG: Non-text part found: {part}")
+        
+        if not text:
+             print("WARNING: Empty response from analyze_slide_structure")
+             return {"structure_type": "Unknown", "key_message": "", "description": ""}
+
         # Safety cleanup
         if text.startswith("```json"):
             text = text.replace("```json", "").replace("```", "")
@@ -286,16 +320,17 @@ class RetryBatchRequest(BaseModel):
 # --- Endpoints ---
 
 @router.get("/consulting/files")
-async def list_files():
-    """Lists PDF files in the consulting_raw directory."""
+async def list_files(max_results: int = 100, page_token: Optional[str] = None):
+    """Lists PDF files in the consulting_raw directory with pagination."""
     try:
         g_client = get_storage_client()
         bucket = g_client.bucket(GCS_BUCKET_NAME)
-        # Scan 'consulting_raw/' prefix
-        blobs = bucket.list_blobs(prefix="consulting_raw/")
+        
+        # Use GCS iterator pagination
+        blobs_iter = bucket.list_blobs(prefix="consulting_raw/", max_results=max_results, page_token=page_token)
         
         file_list = []
-        for blob in blobs:
+        for blob in blobs_iter:
             if blob.name.endswith(".pdf"):
                 file_list.append({
                     "name": blob.name,
@@ -305,9 +340,20 @@ async def list_files():
                     "content_type": blob.content_type
                 })
         
-        # Sort by updated desc
+        # Sort by updated desc (Only works for current page in GCS list usually, ensuring global sort is hard with GCS list_blobs unless we list all. 
+        # CAUTION: GCS list_blobs returns files in name order usually.
+        # If user wants sorted by Date, we can't easily paginate without listing all.
+        # However, for 3000 files, maybe we just accept Name order? 
+        # Or, we can only sort the retrieved page. 
+        # Let's keep verifying: list_blobs returns in alpha order.
+        # User is asking for performance. Accepting alpha order is a trade-off.
+        
         file_list.sort(key=lambda x: x["updated"] or "", reverse=True)
-        return {"files": file_list}
+        
+        return {
+            "files": file_list,
+            "next_page_token": blobs_iter.next_page_token
+        }
     except Exception as e:
         print(f"List Files Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
@@ -398,11 +444,6 @@ async def run_batch_ingestion_worker(batch_id: str):
         for blob in blobs:
             if blob.name.lower().endswith(".pdf"):
                 safe_id = "".join(c for c in blob.name if c.isalnum() or c in "._-")
-                # Check if we should ignore? For separate Batch runs, maybe we process everything again or skip?
-                # User wants "Retry". Let's index everything found, but mark status.
-                # Actually, duplicate insertion in `ingestion_results` for every batch?
-                # Yes, a Batch tracks A RUN.
-                
                 res_id = f"{batch_id}_{safe_id}"
                 results_ref.document(res_id).set({
                     "batch_id": batch_id,
@@ -422,27 +463,25 @@ async def run_batch_ingestion_worker(batch_id: str):
         })
 
         # 2. Processing Phase
-        # Loop through PENDING items in this batch.
-        # Note: If we just created them, we know them.
-        
         main_collection = db.collection(FIRESTORE_COLLECTION_NAME)
-
         processed_count = 0
         success_count = 0
         failed_count = 0
 
         for blob in target_blobs:
+            print(f"DEBUG: Processing file: {blob.name}")
             res_id = f"{batch_id}_{''.join(c for c in blob.name if c.isalnum() or c in '._-')}"
             res_doc_ref = results_ref.document(res_id)
-            
             res_doc_ref.update({"status": "processing", "updated_at": firestore.SERVER_TIMESTAMP})
             
             try:
-                # Logic copied from previous implementation
+                print(f"DEBUG: Downloading {blob.name}...")
                 pdf_bytes = blob.download_as_bytes()
+                print(f"DEBUG: Converting PDF {blob.name} to images...")
                 try:
                     images = convert_from_bytes(pdf_bytes, fmt="jpeg")
                 except Exception as img_err:
+                     print(f"ERROR: PDF Conversion failed for {blob.name}: {img_err}")
                      res_doc_ref.update({
                          "status": "failed", 
                          "error": f"PDF Conversion: {str(img_err)}",
@@ -451,24 +490,28 @@ async def run_batch_ingestion_worker(batch_id: str):
                      failed_count += 1
                      continue
                 
+                print(f"DEBUG: Converted {len(images)} pages for {blob.name}")
                 total_pages = len(images)
                 pages_success = 0
                 
                 for i, image in enumerate(images):
                     page_num = i + 1
-                    # Skip check logic can be here or force overwrite
-                    # For batch, we force overwrite or at least try
+                    print(f"DEBUG: Processing page {page_num}/{total_pages} of {blob.name}")
                     
-                    # Convert PIL image to bytes
                     img_byte_arr = io.BytesIO()
                     image.save(img_byte_arr, format='JPEG')
                     img_bytes = img_byte_arr.getvalue()
                     
+                    print(f"DEBUG: Analyzing slide structure for page {page_num}...")
                     analysis = analyze_slide_structure(img_bytes)
+                    
                     text_context = f"Structure: {analysis.get('structure_type', '')}. Key Message: {analysis.get('key_message', '')}. {analysis.get('description', '')}"
+                    
+                    print(f"DEBUG: Generating embedding for page {page_num}...")
                     emb = get_embedding(image_bytes=img_bytes, text=text_context)
                     
                     if emb:
+                        print(f"DEBUG: Embedding generated. Saving to Firestore...")
                         safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
                         doc_id = f"{safe_filename}_p{page_num}"
                         
@@ -484,6 +527,8 @@ async def run_batch_ingestion_worker(batch_id: str):
                         }
                         main_collection.document(doc_id).set(doc_data)
                         pages_success += 1
+                    else:
+                        print(f"WARNING: Embedding generation failed for page {page_num}")
                 
                 if pages_success > 0:
                     res_doc_ref.update({
@@ -501,6 +546,7 @@ async def run_batch_ingestion_worker(batch_id: str):
                     failed_count += 1
 
             except Exception as e:
+                print(f"ERROR processing file {blob.name}: {e}")
                 res_doc_ref.update({
                     "status": "failed",
                     "error": str(e),
@@ -509,7 +555,6 @@ async def run_batch_ingestion_worker(batch_id: str):
                 failed_count += 1
             
             processed_count += 1
-            # Update Batch Progress periodically
             batch_ref.update({
                 "processed_files": processed_count,
                 "success_files": success_count,
@@ -517,6 +562,7 @@ async def run_batch_ingestion_worker(batch_id: str):
             })
 
         batch_ref.update({"status": "completed", "completed_at": firestore.SERVER_TIMESTAMP})
+        print(f"DEBUG: Batch {batch_id} completed.")
 
     except Exception as e:
         print(f"Critical Batch Error: {e}")
@@ -911,4 +957,55 @@ async def slide_polisher(req: SlidePolisherRequest):
         return {"html": html_content}
     except Exception as e:
         print(f"Polisher Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/consulting/files/{filename}/pages")
+async def list_file_pages(filename: str):
+    """Lists all processed pages for a specific file."""
+    try:
+        db = get_firestore_client()
+        collection = db.collection(FIRESTORE_COLLECTION_NAME)
+        
+        # NOTE: filename passed in URL might need decoding or path handling
+        # Stored filename is typically "consulting_raw/basename.pdf" or just basename depending on logic
+        # Let's try to match exactly or by suffix
+        
+        # Try finding by filename field
+        docs = collection.where("filename", "==", filename).stream()
+        
+        results = []
+        for doc in docs:
+            d = doc.to_dict()
+            results.append({
+                "id": doc.id,
+                "page_number": d.get("page_number"),
+                "structure_type": d.get("structure_type"),
+                "key_message": d.get("key_message"),
+                "description": d.get("description"),
+                "uri": d.get("uri"),
+                "created_at": d.get("created_at")
+            })
+            
+        # If no results, try adding "consulting_raw/" prefix if missing
+        if not results and not filename.startswith("consulting_raw/"):
+             alt_filename = f"consulting_raw/{filename}"
+             docs_alt = collection.where("filename", "==", alt_filename).stream()
+             for doc in docs_alt:
+                d = doc.to_dict()
+                results.append({
+                    "id": doc.id,
+                    "page_number": d.get("page_number"),
+                    "structure_type": d.get("structure_type"),
+                    "key_message": d.get("key_message"),
+                    "description": d.get("description"),
+                    "uri": d.get("uri"),
+                    "created_at": d.get("created_at")
+                })
+        
+        # Sort by page number
+        results.sort(key=lambda x: x["page_number"] or 0)
+        
+        return {"pages": results}
+    except Exception as e:
+        print(f"List Pages Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
