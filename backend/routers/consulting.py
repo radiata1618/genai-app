@@ -21,6 +21,13 @@ from bs4 import BeautifulSoup
 from urllib.parse import urljoin
 from pypdf import PdfReader
 import io
+import time
+
+# Import poppler wrapper
+try:
+    from pdf2image import convert_from_bytes
+except ImportError:
+    print("WARNING: pdf2image not installed. PDF ingestion will fail.")
 
 router = APIRouter(
     tags=["consulting"],
@@ -44,13 +51,20 @@ FIRESTORE_COLLECTION_NAME = os.getenv("FIRESTORE_COLLECTION_NAME", "consulting_s
 print(f"DEBUG: PROJECT_ID={PROJECT_ID}, BUCKET={GCS_BUCKET_NAME}, COLLECTION={FIRESTORE_COLLECTION_NAME}")
 
 # --- Clients ---
-_vertexai_initialized = False
-def _ensure_vertexai_init():
-    global _vertexai_initialized
-    if not _vertexai_initialized:
-        if PROJECT_ID and LOCATION:
-            vertexai.init(project=PROJECT_ID, location=LOCATION)
-            _vertexai_initialized = True
+# Initialize GenAI Client
+client = None
+if PROJECT_ID and LOCATION:
+    try:
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
+        client = genai.Client(
+            vertexai=True,
+            project=PROJECT_ID,
+            location=LOCATION,
+            api_key=api_key,
+            http_options={'api_version': 'v1beta1'}
+        )
+    except Exception as e:
+        print(f"Error initializing GenAI Client: {e}")
 
 def get_storage_client():
     return storage.Client(project=PROJECT_ID)
@@ -69,8 +83,8 @@ def generate_signed_url(gcs_uri: str) -> str:
         if len(parts) != 2:
             return ""
         bucket_name, blob_name = parts
-        client = get_storage_client()
-        bucket = client.bucket(bucket_name)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(bucket_name)
         blob = bucket.blob(blob_name)
         return blob.generate_signed_url(
             version="v4",
@@ -82,20 +96,79 @@ def generate_signed_url(gcs_uri: str) -> str:
         return ""
 
 def get_embedding(text: str = None, image_bytes: bytes = None):
-    _ensure_vertexai_init()
+    """Generates embedding using the multimodal model via google.genai SDK."""
+    if not client:
+        print("GenAI client not initialized")
+        return None
+        
     try:
-        model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding@001")
+        model = "multimodalembedding@001"
+        contents = []
+        
         if image_bytes:
-            image = Image(image_bytes)
-            embeddings = model.get_embeddings(image=image, contextual_text=text)
-            return embeddings.image_embedding
+            contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
+            if text:
+                 contents.append(types.Part.from_text(text=text))
         elif text:
-            embeddings = model.get_embeddings(contextual_text=text)
-            return embeddings.text_embedding
+            contents.append(types.Part.from_text(text=text))
+            
+        if not contents:
+            return None
+
+        result = client.models.embed_content(
+            model=model,
+            contents=contents
+        )
+        
+        # Handle response extraction for multimodalembedding@001 via SDK
+        # The SDK usually returns 'embeddings' list.
+        if hasattr(result, 'image_embedding') and result.image_embedding:
+             return result.image_embedding
+        if hasattr(result, 'embeddings') and result.embeddings:
+             return result.embeddings[0].values
+             
+        return None
     except Exception as e:
         print(f"Embedding error: {e}")
         return None
     return None
+
+def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
+    """Analyzes a slide image using Gemini 1.5 Pro to extract structure and key message."""
+    if not client:
+        return {}
+        
+    try:
+        prompt = """
+        Analyze this consulting slide. Return a JSON object (no markdown) with these keys:
+        - "structure_type": Short category of the visual structure (e.g., "2x2 Matrix", "Waterfall Chart", "3-Column List", "Process Flow", "Text Only", "Bar Chart").
+        - "key_message": A single sentence summarizing the main takeaway or insight of the slide.
+        - "description": A concise description of the slide's visual and logical content.
+        """
+        
+        response = client.models.generate_content(
+            model="gemini-1.5-pro",
+            contents=[
+                types.Part.from_text(text=prompt),
+                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
+            ],
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.2
+            )
+        )
+        
+        text = response.text
+        # Safety cleanup
+        if text.startswith("```json"):
+            text = text.replace("```json", "").replace("```", "")
+        elif text.startswith("```"):
+            text = text.replace("```", "")
+            
+        return json.loads(text)
+    except Exception as e:
+        print(f"Slide Analysis Error: {e}")
+        return {"structure_type": "Unknown", "key_message": "", "description": ""}
 
 def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
     """Searches Firestore using Vector Search."""
@@ -103,14 +176,10 @@ def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]
         db = get_firestore_client()
         collection = db.collection(FIRESTORE_COLLECTION_NAME)
         
-        # Firestore Vector Search
-        # Requires 'embedding' field to be a Vector type
-        # We need to find_nearest
-        
         vector_query = collection.find_nearest(
             vector_field="embedding",
             query_vector=Vector(vector),
-            distance_measure=firestore.VectorQuery.DistanceMeasure.COSINE, # or DOT_PRODUCT
+            distance_measure=firestore.VectorQuery.DistanceMeasure.COSINE,
             limit=top_k
         )
         
@@ -119,14 +188,15 @@ def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]
         results = []
         for doc in docs:
             data = doc.to_dict()
-            # Calculate a dummy distance/score if not provided directly or use metadata
-            # find_nearest results are ordered by distance.
-            # Currently python SDK might not expose distance directly in the doc snapshot without some trick,
-            # but usually it's close enough for ranking.
-            
             results.append({
                 "id": data.get("uri"), # GCS URI
-                "distance": 0.0 # Placeholder as distance isn't easily accessible in simple get(), but order is correct
+                "score": 0.0, # Placeholder
+                "metadata": {
+                    "structure_type": data.get("structure_type"),
+                    "key_message": data.get("key_message"),
+                    "description": data.get("description"),
+                    "page_number": data.get("page_number")
+                }
             })
         return results
     except Exception as e:
@@ -138,29 +208,17 @@ def download_and_upload_worker(pdf_url: str):
     try:
         headers = {
             'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36',
-            'Accept': 'text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7',
-            'Accept-Language': 'ja,en-US;q=0.9,en;q=0.8',
-            'Accept-Encoding': 'gzip, deflate, br',
-            'Connection': 'keep-alive',
-            'Upgrade-Insecure-Requests': '1',
-            'Sec-Fetch-Dest': 'document',
-            'Sec-Fetch-Mode': 'navigate',
-            'Sec-Fetch-Site': 'none',
-            'Sec-Fetch-User': '?1',
         }
-        # Sometimes referer helps if it is a known domain, but for general PDF links usually no referer is safer unless we know the parent
-        # If headers are stricter, we might need a Session
         
         pdf_res = requests.get(pdf_url, headers=headers, timeout=30)
         
         if pdf_res.status_code == 200:
             filename = pdf_url.split("/")[-1]
-            # basic sanitization
             filename = "".join(c for c in filename if c.isalnum() or c in "._-")
             if not filename.lower().endswith(".pdf"): filename += ".pdf"
             
-            client = get_storage_client()
-            bucket = client.bucket(GCS_BUCKET_NAME)
+            g_client = get_storage_client()
+            bucket = g_client.bucket(GCS_BUCKET_NAME)
             blob = bucket.blob(f"consulting_raw/{filename}")
             blob.upload_from_string(pdf_res.content, content_type="application/pdf")
             print(f"Collected: {filename}")
@@ -196,10 +254,6 @@ class SlidePolisherRequest(BaseModel):
     text: Optional[str] = None
     image: Optional[str] = None # base64
 
-class SlidePolisherRequest(BaseModel):
-    text: Optional[str] = None
-    image: Optional[str] = None # base64
-
 class DeleteFilesRequest(BaseModel):
     filenames: List[str]
 
@@ -212,8 +266,8 @@ class GenerateSignedUrlRequest(BaseModel):
 async def list_files():
     """Lists PDF files in the consulting_raw directory."""
     try:
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
         # Scan 'consulting_raw/' prefix
         blobs = bucket.list_blobs(prefix="consulting_raw/")
         
@@ -239,8 +293,8 @@ async def list_files():
 async def delete_files(req: DeleteFilesRequest):
     """Deletes specified files."""
     try:
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
         
         deleted_count = 0
         errors = []
@@ -264,8 +318,8 @@ async def get_file_signed_url(req: GenerateSignedUrlRequest):
     try:
         # Re-use helper
         # Helper expects gs://URI, but we can just use blob logic directly if we have bucket/blob
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
         blob = bucket.blob(req.filename)
         
         url = blob.generate_signed_url(
@@ -290,8 +344,8 @@ async def simple_upload_file(file: UploadFile = File(...)):
         filename = "".join(c for c in filename if c.isalnum() or c in "._-")
         if not filename.lower().endswith(".pdf"): filename += ".pdf"
         
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
         blob = bucket.blob(f"consulting_raw/{filename}")
         blob.upload_from_string(content, content_type="application/pdf")
         
@@ -318,18 +372,18 @@ async def add_log(task_id: str, message: str):
         print(f"TASK[{task_id}]: {message}")
 
 async def run_background_ingest(task_id: str):
-    """Background worker for Firestore Ingestion."""
+    """Background worker for AI-Enhanced Ingestion (PDF -> Image -> Analysis -> Embedding -> DB)."""
     print(f"DEBUG: Starting background ingest {task_id}")
     try:
-        await add_log(task_id, "Starting Ingestion...")
+        await add_log(task_id, "Starting AI-Enhanced Ingestion...")
         
         if not GCS_BUCKET_NAME:
             await add_log(task_id, "Error: GCS_BUCKET_NAME not set.")
             await add_log(task_id, "DONE")
             return
             
-        client = get_storage_client()
-        bucket = client.bucket(GCS_BUCKET_NAME)
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
         blobs = list(bucket.list_blobs(prefix="consulting_raw/"))
         await add_log(task_id, f"Found {len(blobs)} files in consulting_raw/.")
         
@@ -337,64 +391,80 @@ async def run_background_ingest(task_id: str):
         collection = db.collection(FIRESTORE_COLLECTION_NAME)
         
         count = 0
-        loop = asyncio.get_running_loop()
         
-        # We need to run Thread blocking I/O (embedding) in executor
-        with ThreadPoolExecutor(max_workers=3) as executor:
-            chunk_futures = []
-            
-            for blob in blobs:
-                if not (blob.name.lower().endswith(".png") or blob.name.lower().endswith(".jpg") or blob.name.lower().endswith(".jpeg")):
-                    continue
-                
-                # Define helper for single item processing
-                def process_one(b_name, b_data):
-                     try:
-                        emb = get_embedding(image_bytes=b_data)
-                        if emb:
-                            safe_id = "".join(c for c in b_name if c.isalnum() or c in "._-")
-                            return True, safe_id, emb, b_name
-                        return False, "No embedding", None, b_name
-                     except Exception as ex:
-                        return False, str(ex), None, b_name
+        for blob in blobs:
+            if not blob.name.lower().endswith(".pdf"):
+                continue
 
-                # Download first (IO bound, can be async but blob.download_as_bytes is sync)
-                # To avoid blocking event loop, run download in executor too or assume it's fast enough for small concurrency
-                # For safety, let's run the whole process_one including download in executor? 
-                # passing blob object might be tricky across threads if not careful, but usually ok.
-                # Better: download in main loop (async-ish) or use executor.
+            await add_log(task_id, f"Processing PDF: {blob.name}")
+            
+            try:
+                # 1. Download PDF
+                pdf_bytes = blob.download_as_bytes()
                 
-                # Let's do a simpler sequential-ish pattern with ThreadPool for the heavy lifting
-                
-                # Download
+                # 2. Convert to Images (per page)
                 try:
-                    b_data = blob.download_as_bytes()
-                    chunk_futures.append(loop.run_in_executor(executor, process_one, blob.name, b_data))
-                except Exception as e:
-                    await add_log(task_id, f"Error downloading {blob.name}: {e}")
+                    images = convert_from_bytes(pdf_bytes, fmt="jpeg") # Returns list of PIL images
+                except Exception as img_err:
+                    await add_log(task_id, f"PDF Conversion Failed for {blob.name}: {img_err}")
+                    continue
 
-            await add_log(task_id, f"Processing {len(chunk_futures)} images...")
-            
-            for f in asyncio.as_completed(chunk_futures):
-                success, msg, emb, fname = await f
-                if success:
-                    # Write to Firestore (IO)
-                    try:
-                        doc_ref = collection.document(msg) # msg is safe_id
-                        doc_ref.set({
-                            "uri": f"gs://{GCS_BUCKET_NAME}/{fname}",
-                            "filename": fname,
+                total_pages = len(images)
+                await add_log(task_id, f"  > Found {total_pages} pages in {blob.name}")
+
+                for i, image in enumerate(images):
+                    page_num = i + 1
+                    
+                    # 3. Resume Check (Check if page already indexed)
+                    # ID format: raw_filename_p{page_num}
+                    # Sanitize filename for ID
+                    safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+                    doc_id = f"{safe_filename}_p{page_num}"
+                    
+                    doc_snapshot = collection.document(doc_id).get()
+                    if doc_snapshot.exists:
+                        # Optional: skip log to reduce noise if many
+                        # await add_log(task_id, f"    Skipping p{page_num} (Already indexed)")
+                        continue
+                    
+                    await add_log(task_id, f"    Analyzing p{page_num}/{total_pages}...")
+
+                    # Convert PIL image to bytes
+                    img_byte_arr = io.BytesIO()
+                    image.save(img_byte_arr, format='JPEG')
+                    img_bytes = img_byte_arr.getvalue()
+
+                    # 4. AI Analysis (Structure & Key Message)
+                    analysis = analyze_slide_structure(img_bytes)
+                    
+                    # 5. Embedding (Image + AI Description)
+                    # Use description in text part for better retrieval
+                    text_context = f"Structure: {analysis.get('structure_type', '')}. Key Message: {analysis.get('key_message', '')}. {analysis.get('description', '')}"
+                    
+                    emb = get_embedding(image_bytes=img_bytes, text=text_context)
+                    
+                    if emb:
+                        # 6. Save to Firestore
+                        doc_data = {
+                            "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}", # Link to original PDF
+                            "filename": blob.name,
+                            "page_number": page_num,
+                            "structure_type": analysis.get("structure_type"),
+                            "key_message": analysis.get("key_message"),
+                            "description": analysis.get("description"),
                             "embedding": Vector(emb),
                             "created_at": firestore.SERVER_TIMESTAMP
-                        })
+                        }
+                        collection.document(doc_id).set(doc_data)
                         count += 1
-                        await add_log(task_id, f"Indexed: {fname}")
-                    except Exception as db_e:
-                        await add_log(task_id, f"DB Error {fname}: {db_e}")
-                else:
-                    await add_log(task_id, f"Failed {fname}: {msg}")
-                    
-        await add_log(task_id, f"Ingestion Complete. Indexed {count} documents.")
+                        await add_log(task_id, f"    Indexed p{page_num}. Structure: {analysis.get('structure_type')}")
+                    else:
+                        await add_log(task_id, f"    Failed to embed p{page_num}")
+                
+            except Exception as f_err:
+                await add_log(task_id, f"Error processing file {blob.name}: {f_err}")
+
+        await add_log(task_id, f"Ingestion Complete. Indexed {count} new pages.")
 
     except Exception as e:
         await add_log(task_id, f"Critical Error: {e}")
@@ -408,7 +478,6 @@ async def run_background_index_creation(task_id: str):
     try:
         await add_log(task_id, "Starting Index Creation...")
         await add_log(task_id, "This triggers 'gcloud firestore indexes composite create' command.")
-        await add_log(task_id, "It may take a few minutes for the index to become active on Google Cloud side.")
         
         import subprocess
         
@@ -431,15 +500,11 @@ async def run_background_index_creation(task_id: str):
         
         stdout, stderr = await process.communicate()
         
-        if stdout:
-            await add_log(task_id, f"STDOUT: {stdout.decode().strip()}")
-        if stderr:
-             # gcloud sends progress/info to stderr often
-            await add_log(task_id, f"STDERR: {stderr.decode().strip()}")
+        if stdout: await add_log(task_id, f"STDOUT: {stdout.decode().strip()}")
+        if stderr: await add_log(task_id, f"STDERR: {stderr.decode().strip()}")
             
         if process.returncode == 0:
              await add_log(task_id, "Command executed successfully.")
-             await add_log(task_id, "Please check GCP Console or wait a few minutes before searching.")
         else:
              await add_log(task_id, f"Command failed with return code {process.returncode}")
 
@@ -534,13 +599,7 @@ async def logic_mapper(req: LogicMapperRequest):
         
         vector = get_embedding(text=req.query)
         if not vector:
-             # Fallback: Mock results for PoC if embedding fails
-            return {
-                "results": [
-                    {"url": "https://placehold.co/600x400/EEE/31343C?text=Structure+A", "title": "Example Structure A"},
-                    {"url": "https://placehold.co/600x400/EEE/31343C?text=Structure+B", "title": "Example Structure B"}
-                ]
-            }
+            return {"results": []}
 
         neighbors = search_vector_db(vector)
         
@@ -548,15 +607,12 @@ async def logic_mapper(req: LogicMapperRequest):
         for n in neighbors:
             uri = n['id']
             url = generate_signed_url(uri)
-            results.append({"url": url, "uri": uri, "score": n['distance']})
-            
-        if not results:
-             # Mock if no results
-            return {
-                "results": [
-                    {"url": "https://placehold.co/600x400/EEE/31343C?text=No+Match+Found", "title": "No Direct Match"}
-                ]
-            }
+            results.append({
+                "url": url, 
+                "uri": uri, 
+                "score": n['score'],
+                "metadata": n['metadata']
+            })
             
         return {"results": results}
     except Exception as e:
@@ -578,7 +634,12 @@ async def visual_search(req: VisualSearchRequest):
         for n in neighbors:
             uri = n['id']
             url = generate_signed_url(uri)
-            results.append({"url": url, "uri": uri, "score": n['distance']})
+            results.append({
+                "url": url, 
+                "uri": uri, 
+                "score": n['score'],
+                "metadata": n['metadata']
+            })
             
         return {"results": results}
     except Exception as e:
@@ -588,9 +649,9 @@ async def visual_search(req: VisualSearchRequest):
 async def slide_polisher(req: SlidePolisherRequest):
     """Generates a polished slide visual (HTML/React) using Gemini 3.0."""
     try:
-        api_key = os.getenv("GOOGLE_CLOUD_API_KEY", "").strip()
-        client = genai.Client(vertexai=True, api_key=api_key, http_options={'api_version': 'v1beta1'})
-        
+        if not client:
+             raise Exception("GenAI client not initialized")
+
         contents = []
         contents.append("You are an expert McKinsey/BCG consultant slide designer.")
         contents.append("Your task is to take the user's content and generate a beautiful, modern, professional HTML/Tailwind slide representation.")
@@ -603,7 +664,7 @@ async def slide_polisher(req: SlidePolisherRequest):
              image_bytes = base64.b64decode(req.image)
              contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
              contents.append("Refine the layout of this slide sketch/draft.")
-
+        
         response = client.models.generate_content(
             model="gemini-3-pro-preview",
             contents=contents
@@ -613,6 +674,8 @@ async def slide_polisher(req: SlidePolisherRequest):
         # Cleanup markdown code blocks if present
         if html_content.startswith("```html"):
             html_content = html_content.replace("```html", "").replace("```", "")
+        elif html_content.startswith("```"):
+            html_content = html_content.replace("```", "")
         
         return {"html": html_content}
     except Exception as e:

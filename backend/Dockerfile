@@ -4,7 +4,7 @@ WORKDIR /app
 
 # Install system dependencies if needed (e.g. for some python packages)
 # Install system dependencies
-RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg && rm -rf /var/lib/apt/lists/*
+RUN apt-get update && apt-get install -y --no-install-recommends gcc ffmpeg poppler-utils && rm -rf /var/lib/apt/lists/*
 
 
 COPY requirements.txt .

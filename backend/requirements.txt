@@ -13,3 +13,4 @@ pypdf
 langchain-google-firestore
 google-cloud-storage>=3.0.0
 google-cloud-firestore==2.21.0
+pdf2image
