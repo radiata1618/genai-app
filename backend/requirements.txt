@@ -3,9 +3,7 @@ uvicorn
 google-cloud-aiplatform>=1.60.0
 python-dotenv
 google-genai>=0.4.0
-google-cloud-storage
 python-multipart
-google-cloud-firestore
 google-api-python-client
 moviepy
 youtube-transcript-api
