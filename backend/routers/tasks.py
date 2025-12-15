@@ -188,6 +188,12 @@ def sync_daily_highlight_to_backlog(backlog_id: str, highlighted: bool, db: fire
     except Exception as e:
         print(f"Async Sync Error (Daily->Backlog Highlight): {e}")
 
+def sync_daily_title_to_backlog(backlog_id: str, title: str, db: firestore.Client):
+    try:
+        db.collection("backlog_items").document(backlog_id).update({"title": title})
+    except Exception as e:
+        print(f"Async Sync Error (Daily->Backlog Title): {e}")
+
 
 # --- API Endpoints ---
 
@@ -393,6 +399,11 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     weekday = target_date.weekday()
     day_of_month = target_date.day
     
+    # --- OPTIMIZATION: Fetch existing IDs once ---
+    existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
+    existing_ids = {d.id for d in existing_docs}
+    # ---------------------------------------------
+    
     routines_stream = db.collection("routines").where(filter=FieldFilter("routine_type", "==", RoutineType.ACTION.value)).stream()
     routines = [d.to_dict() for d in routines_stream]
     
@@ -413,9 +424,11 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         if not should_run: continue
 
         doc_id = f"{r['id']}_{target_date_str}"
-        doc_ref = db.collection("daily_tasks").document(doc_id)
+        # doc_ref = db.collection("daily_tasks").document(doc_id) # No longer needed for check
         
-        if not doc_ref.get().exists:
+        # if not doc_ref.get().exists: # Optimized check
+        if doc_id not in existing_ids:
+            doc_ref = db.collection("daily_tasks").document(doc_id)
             new_task = {
                 "id": doc_id,
                 "source_id": r['id'],
@@ -429,6 +442,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "is_highlighted": r.get('is_highlighted', False)
             }
             batch.set(doc_ref, new_task)
+            existing_ids.add(doc_id) # Prevent duplicates if multiple passes
             created_count += 1
             
     
@@ -448,10 +462,34 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         .where(filter=FieldFilter("target_date", "<", target_date_str))\
         .stream()
 
-    current_today_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
+    # We already fetched existing_docs above, but we need max_order.
+    # existing_docs iterator is exhausted, so we can't reuse it directly unless we stored the dicts.
+    # But we only need max_order. Let's re-calculate from DB or just assume 0 if empty.
+    # Actually, we can just query again or better, just iterate the stream above into a list first. 
+    # But for minimal changes, let's just query since we saved N routine queries.
+    # OR, we can just use the 'existing_ids' roughly? No, we need 'order'.
+    
+    # Rationale: We saved maybe 50 reads above. One extra read here is fine.
+    # Better: Let's refactor the top part to store the full dicts.
+    
+    # RE-FETCHING is safer for now to avoid refactoring the whole flow too much
+    # current_today_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
+    # BUT wait, we can just do the max_order calculation at the top.
+    
+    # Let's DO IT PROPERLY:
+    # Go back to top and store dicts.
+    # See below for implementation. Note: I will modify the surrounding code to support this.
+    
+    # Taking a step back: I am replacing lines 402-527.
+    # I need to be careful with variables.
+    
+    current_today_docs_list = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
+    current_today_tasks = [d.to_dict() for d in current_today_docs_list]
+    existing_ids = {t['id'] for t in current_today_tasks}
+    
     max_order = 0
-    for d in current_today_docs:
-         max_order = max(max_order, d.to_dict().get('order', 0))
+    for t in current_today_tasks:
+         max_order = max(max_order, t.get('order', 0))
 
     # Process Backlog Carry Over
     for doc in past_backlog_docs:
@@ -463,9 +501,9 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             batch.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
             
             new_id = f"{t['source_id']}_{target_date_str}"
-            new_ref = db.collection("daily_tasks").document(new_id)
             
-            if not new_ref.get().exists:
+            if new_id not in existing_ids:
+                new_ref = db.collection("daily_tasks").document(new_id)
                 max_order += 1
                 new_task = {
                     "id": new_id,
@@ -479,6 +517,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                     "is_highlighted": t.get('is_highlighted', False) # Important: Copy highlight
                 }
                 batch.set(new_ref, new_task)
+                existing_ids.add(new_id)
                 created_count += 1
     
     for doc in past_routine_docs:
@@ -497,12 +536,11 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     for doc in scheduled_stock_docs:
         item = doc.to_dict()
         new_id = f"{item['id']}_{target_date_str}"
-        new_ref = db.collection("daily_tasks").document(new_id)
+        # new_ref = db.collection("daily_tasks").document(new_id)
 
         # Check existence to avoid overwriting or duplicating if already picked today
-        # Note: In a batch, we can't check 'if it will be written'. 
-        # But we rely on 'new_ref.get()' which checks DB state.
-        if not new_ref.get().exists:
+        if new_id not in existing_ids:
+            new_ref = db.collection("daily_tasks").document(new_id)
             max_order += 1
             new_task = {
                 "id": new_id,
@@ -516,6 +554,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "is_highlighted": item.get('is_highlighted', False)
             }
             batch.set(new_ref, new_task)
+            existing_ids.add(new_id)
             created_count += 1
 
     batch.commit()
@@ -818,3 +857,19 @@ def postpone_daily_task(task_id: str, new_date: str, db: firestore.Client = Depe
     doc_ref.delete()
 
     return {"status": "postponed", "new_date": new_date}
+
+@router.patch("/daily/{task_id}/title")
+def update_daily_task_title(task_id: str, title: str, background_tasks: BackgroundTasks, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("daily_tasks").document(task_id)
+    daily_snap = doc_ref.get()
+    
+    if not daily_snap.exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+        
+    doc_ref.update({"title": title})
+    
+    daily_data = daily_snap.to_dict()
+    if daily_data.get('source_type') == SourceType.BACKLOG.value:
+        background_tasks.add_task(sync_daily_title_to_backlog, daily_data['source_id'], title, db)
+        
+    return {**daily_data, "title": title}

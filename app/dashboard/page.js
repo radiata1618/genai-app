@@ -169,7 +169,7 @@ function DashboardContent() {
             // 1. Create in Backlog
             const createdItem = await api.addBacklogItem({
                 title: newTaskTitle,
-                category: 'Research', // Default category
+                category: 'Other', // Default category updated to Other
                 priority: 'Medium',  // Default priority
                 deadline: todayStr,
                 scheduled_date: todayStr
@@ -196,11 +196,11 @@ function DashboardContent() {
 
     const visibleTasks = showCompleted ? tasks : tasks.filter(t => t.status !== 'DONE' && t.status !== 'SKIPPED');
 
-    const [openMenuId, setOpenMenuId] = useState(null);
+
 
     const handleSkip = async (id, e) => {
         e.stopPropagation();
-        setOpenMenuId(null);
+
         // Optimistic update
         const updatedTasks = tasks.map(t => t.id === id ? { ...t, status: 'SKIPPED' } : t);
         setTasks(updatedTasks);
@@ -215,7 +215,7 @@ function DashboardContent() {
 
     const openPostponeModal = (task, e) => {
         e.stopPropagation();
-        setOpenMenuId(null);
+
         setTaskToPostpone(task);
         const tomorrow = new Date();
         tomorrow.setDate(tomorrow.getDate() + 1);
@@ -245,7 +245,7 @@ function DashboardContent() {
 
     const handleHighlight = async (id, currentStatus, e) => {
         e.stopPropagation();
-        setOpenMenuId(null);
+
         const newStatus = !currentStatus;
         // Optimistic update
         const updatedTasks = tasks.map(t => t.id === id ? { ...t, is_highlighted: newStatus } : t);
@@ -333,7 +333,7 @@ function DashboardContent() {
 
                     {/* Header */}
                     <div className="flex-none flex flex-col md:flex-row md:items-end justify-between gap-2">
-                        <div onClick={() => setOpenMenuId(null)} className="flex-1 flex items-center gap-2">
+                        <div className="flex-1 flex items-center gap-2">
                             <MobileMenuButton />
                             <div>
                                 <h1 className="text-xl font-black text-slate-800 tracking-tight">Today's Focus</h1>
@@ -368,7 +368,7 @@ function DashboardContent() {
                     </div>
 
                     {/* Tasks List - Scrollable Area */}
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setOpenMenuId(null); setReorderMenuId(null); }}>
+                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setReorderMenuId(null); }}>
                         <div className="h-1 bg-indigo-500 w-full flex-shrink-0" />
 
                         <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar pb-20 md:pb-1">
@@ -405,7 +405,7 @@ function DashboardContent() {
                                             onClick={(e) => {
                                                 e.stopPropagation();
                                                 setReorderMenuId(reorderMenuId === t.id ? null : t.id);
-                                                setOpenMenuId(null); // Close other menu
+
                                             }}
                                         >
                                             <div className="flex gap-0.5">
@@ -454,56 +454,69 @@ function DashboardContent() {
                                             {t.status === 'SKIPPED' && <span className="text-[8px]">⏭️</span>}
                                         </div>
                                         <div className="flex-1 min-w-0 flex items-center justify-between">
-                                            <div className={`font-semibold text-sm truncate ${t.status === 'DONE' || t.status === 'SKIPPED' ? 'line-through text-slate-400' : 'text-slate-700'}`}>
-                                                {t.title || 'Unknown Task'}
-                                            </div>
+                                            {t.source_type === 'BACKLOG' ? (
+                                                <input
+                                                    type="text"
+                                                    value={t.title}
+                                                    onChange={(e) => {
+                                                        const val = e.target.value;
+                                                        setTasks(prev => prev.map(task => task.id === t.id ? { ...task, title: val } : task));
+                                                    }}
+                                                    onBlur={async (e) => {
+                                                        const val = e.target.value;
+                                                        try {
+                                                            await api.updateTaskTitle(t.id, val);
+                                                            saveCache(tasks.map(task => task.id === t.id ? { ...task, title: val } : task));
+                                                        } catch (err) {
+                                                            console.error("Failed to update title", err);
+                                                            // Revert? For now just log. Optimisitc update is already done.
+                                                        }
+                                                    }}
+                                                    className={`font-semibold text-sm truncate bg-transparent border-none p-0 focus:ring-0 w-full outline-none
+                                                            ${t.status === 'DONE' || t.status === 'SKIPPED' ? 'line-through text-slate-400' : 'text-slate-700'}`}
+                                                />
+                                            ) : (
+                                                <div className={`font-semibold text-sm truncate ${t.status === 'DONE' || t.status === 'SKIPPED' ? 'line-through text-slate-400' : 'text-slate-700'}`}>
+                                                    {t.title || 'Unknown Task'}
+                                                </div>
+                                            )}
                                             <div className="flex gap-2 text-[9px] items-center">
+                                                <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
+                                                    {t.source_type}
+                                                </span>
                                                 {t.current_goal_progress && (
                                                     <span className={`px-1.5 py-0.5 rounded font-mono font-bold ${t.status === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                                                         {t.current_goal_progress}
                                                     </span>
                                                 )}
-                                                <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
-                                                    {t.source_type}
-                                                </span>
-                                                {/* Menu Trigger */}
-                                                <button
-                                                    onClick={(e) => {
-                                                        e.stopPropagation();
-                                                        setOpenMenuId(openMenuId === t.id ? null : t.id);
-                                                    }}
-                                                    className="p-1 hover:bg-slate-200 rounded-full text-slate-400 opacity-0 group-hover:opacity-100 transition-opacity"
-                                                >
-                                                    <svg className="w-4 h-4" fill="currentColor" viewBox="0 0 20 20">
-                                                        <path d="M10 6a2 2 0 110-4 2 2 0 010 4zM10 12a2 2 0 110-4 2 2 0 010 4zM10 18a2 2 0 110-4 2 2 0 010 4z" />
-                                                    </svg>
-                                                </button>
+                                                {/* Action Buttons */}
+                                                <div className="flex items-center gap-1 transition-opacity">
+                                                    <button
+                                                        onClick={(e) => handleSkip(t.id, e)}
+                                                        className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
+                                                        title="Skip"
+                                                    >
+                                                        ⏭️
+                                                    </button>
 
-                                                {/* Menu Dropdown */}
-                                                {openMenuId === t.id && (
-                                                    <div className="absolute right-0 top-6 w-32 bg-white border border-slate-200 shadow-xl rounded-lg z-50 overflow-hidden animate-in fade-in zoom-in duration-100">
+                                                    <button
+                                                        onClick={(e) => handleHighlight(t.id, t.is_highlighted, e)}
+                                                        className={`p-1.5 rounded-md transition-colors ${t.is_highlighted ? 'text-pink-500 bg-pink-50 hover:bg-pink-100' : 'text-slate-400 hover:text-pink-400 hover:bg-pink-50'}`}
+                                                        title={t.is_highlighted ? "Unhighlight" : "Highlight"}
+                                                    >
+                                                        {t.is_highlighted ? '⭐' : '☆'}
+                                                    </button>
+
+                                                    {t.source_type === 'BACKLOG' && (
                                                         <button
-                                                            onClick={(e) => handleSkip(t.id, e)}
-                                                            className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
+                                                            onClick={(e) => openPostponeModal(t, e)}
+                                                            className="p-1.5 rounded-md text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 transition-colors"
+                                                            title="Reschedule"
                                                         >
-                                                            <span>⏭️</span> Skip
+                                                            📅
                                                         </button>
-                                                        <button
-                                                            onClick={(e) => handleHighlight(t.id, t.is_highlighted, e)}
-                                                            className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                                        >
-                                                            <span>{t.is_highlighted ? '⭐' : '🌟'}</span> {t.is_highlighted ? 'Unhighlight' : 'Highlight'}
-                                                        </button>
-                                                        {t.source_type === 'BACKLOG' && (
-                                                            <button
-                                                                onClick={(e) => openPostponeModal(t, e)}
-                                                                className="w-full text-left px-3 py-2 text-xs text-slate-700 hover:bg-slate-50 flex items-center gap-2"
-                                                            >
-                                                                <span>📅</span> Reschedule
-                                                            </button>
-                                                        )}
-                                                    </div>
-                                                )}
+                                                    )}
+                                                </div>
                                             </div>
                                         </div>
                                     </div>

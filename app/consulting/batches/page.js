@@ -26,6 +26,17 @@ export default function BatchHistoryPage() {
         }
     };
 
+    const handleCancel = async (batchId) => {
+        if (!confirm("Are you sure you want to stop this batch? It may take a moment to halt.")) return;
+        try {
+            await fetch(`/api/consulting/batches/${batchId}/cancel`, { method: 'POST' });
+            alert("Cancellation requested. Please refresh in a moment.");
+            fetchBatches();
+        } catch (e) {
+            alert("Failed to cancel: " + e.message);
+        }
+    };
+
     const getStatusColor = (status) => {
         switch (status) {
             case 'completed': return 'bg-green-100 text-green-800';
@@ -33,6 +44,8 @@ export default function BatchHistoryPage() {
             case 'processing': return 'bg-blue-100 text-blue-800';
             case 'pending': return 'bg-gray-100 text-gray-800';
             case 'discovering': return 'bg-yellow-100 text-yellow-800';
+            case 'cancelling': return 'bg-orange-100 text-orange-800';
+            case 'cancelled': return 'bg-gray-200 text-gray-600';
             default: return 'bg-gray-100 text-gray-800';
         }
     };
@@ -105,12 +118,22 @@ export default function BatchHistoryPage() {
                                                 {batch.created_at ? new Date(batch.created_at).toLocaleString() : "-"}
                                             </td>
                                             <td className="p-3 text-right">
-                                                <Link
-                                                    href={`/consulting/batches/${batch.id}`}
-                                                    className="px-3 py-1.5 bg-white border border-slate-300 rounded text-slate-600 hover:bg-slate-50 hover:text-cyan-600 font-medium shadow-sm transition-colors"
-                                                >
-                                                    View Details
-                                                </Link>
+                                                <div className="flex justify-end gap-2">
+                                                    {(batch.status === 'processing' || batch.status === 'discovering' || batch.status === 'pending') && (
+                                                        <button
+                                                            onClick={() => handleCancel(batch.id)}
+                                                            className="px-3 py-1.5 bg-red-50 border border-red-200 rounded text-red-600 hover:bg-red-100 font-medium shadow-sm transition-colors text-xs"
+                                                        >
+                                                            Stop
+                                                        </button>
+                                                    )}
+                                                    <Link
+                                                        href={`/consulting/batches/${batch.id}`}
+                                                        className="px-3 py-1.5 bg-white border border-slate-300 rounded text-slate-600 hover:bg-slate-50 hover:text-cyan-600 font-medium shadow-sm transition-colors"
+                                                    >
+                                                        Details
+                                                    </Link>
+                                                </div>
                                             </td>
                                         </tr>
                                     ))

@@ -367,20 +367,22 @@ export default function AdminPage() {
                                                 className="rounded border-slate-300 focus:ring-cyan-500"
                                             />
                                         </th>
+                                        <th className="p-3 w-24 bg-slate-50">Status</th>
                                         <th className="p-3 bg-slate-50">Filename</th>
-                                        <th className="p-3 w-32 bg-slate-50">Size</th>
-                                        <th className="p-3 w-48 bg-slate-50">Uploaded</th>
+                                        <th className="p-3 w-48 bg-slate-50">Analysis</th>
+                                        <th className="p-3 w-24 bg-slate-50">Size</th>
+                                        <th className="p-3 w-32 bg-slate-50">Uploaded</th>
                                         <th className="p-3 w-24 text-right bg-slate-50">Action</th>
                                     </tr>
                                 </thead>
                                 <tbody className="divide-y divide-slate-100">
                                     {loading && filteredFiles.length === 0 && files.length === 0 ? (
                                         <tr>
-                                            <td colSpan="5" className="p-8 text-center text-slate-400">Loading files...</td>
+                                            <td colSpan="7" className="p-8 text-center text-slate-400">Loading files...</td>
                                         </tr>
                                     ) : filteredFiles.length === 0 ? (
                                         <tr>
-                                            <td colSpan="5" className="p-8 text-center text-slate-400">
+                                            <td colSpan="7" className="p-8 text-center text-slate-400">
                                                 {searchTerm ? "No matches found." : "No files found."}
                                             </td>
                                         </tr>
@@ -395,35 +397,57 @@ export default function AdminPage() {
                                                         className="rounded border-slate-300 focus:ring-cyan-500"
                                                     />
                                                 </td>
-                                                <td className="p-3 font-medium text-slate-700">
+                                                <td className="p-3">
+                                                    {file.status === 'success' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-green-100 text-green-800">Success</span>}
+                                                    {file.status === 'skipped' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-gray-100 text-gray-800">Skipped</span>}
+                                                    {file.status === 'failed' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-red-100 text-red-800">Failed</span>}
+                                                    {file.status === 'processing' && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-blue-100 text-blue-800 animate-pulse">Running</span>}
+                                                    {(!file.status || file.status === 'pending') && <span className="inline-flex items-center px-2 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-500">Pending</span>}
+                                                </td>
+                                                <td className="p-3 font-medium text-slate-700 max-w-xs truncate" title={file.basename}>
                                                     <div className="flex items-center gap-2">
                                                         <span className="text-xl text-red-500">📄</span>
-                                                        <span title={file.name}>{file.basename}</span>
+                                                        <span className="truncate">{file.basename}</span>
                                                     </div>
-                                                    {/* Optional: Show full path on hover or small text if needed, but basename is cleaner */}
                                                 </td>
-                                                <td className="p-3 text-slate-500 font-mono text-xs">{formatSize(file.size)}</td>
-                                                <td className="p-3 text-slate-500">{new Date(file.updated).toLocaleString()}</td>
+                                                <td className="p-3 text-xs">
+                                                    <div className="flex flex-col gap-1">
+                                                        {file.filter_reason && (
+                                                            <span className="text-slate-500 truncate max-w-[200px]" title={file.filter_reason}>
+                                                                {file.filter_reason}
+                                                            </span>
+                                                        )}
+                                                        {file.firm_name && (
+                                                            <span className="font-semibold text-indigo-600 truncate max-w-[200px]">{file.firm_name}</span>
+                                                        )}
+                                                        <div className="flex gap-2 text-slate-400">
+                                                            {file.page_count && <span>{file.page_count}p</span>}
+                                                            {file.design_rating && <span>Design: {file.design_rating}</span>}
+                                                        </div>
+                                                    </div>
+                                                </td>
+                                                <td className="p-3 text-slate-500 whitespace-nowrap">{formatSize(file.size)}</td>
+                                                <td className="p-3 text-slate-500 whitespace-nowrap">{file.updated ? new Date(file.updated).toLocaleDateString() : '-'}</td>
                                                 <td className="p-3 text-right">
-                                                    <button
-                                                        onClick={() => handleView(file.name)}
-                                                        className="text-slate-400 hover:text-cyan-600 transition-colors p-2 rounded-full hover:bg-slate-100"
-                                                        title="Open"
-                                                    >
-                                                        <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-5 h-5">
-                                                            <path strokeLinecap="round" strokeLinejoin="round" d="M13.5 6H5.25A2.25 2.25 0 0 0 3 8.25v10.5A2.25 2.25 0 0 0 5.25 21h10.5A2.25 2.25 0 0 0 18 18.75V10.5m-10.5 6L21 3m0 0h-5.25M21 3v5.25" />
-                                                        </svg>
-                                                    </button>
+                                                    <div className="flex justify-end gap-2 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                        <button
+                                                            onClick={() => handleView(file.name)}
+                                                            className="text-cyan-600 hover:text-cyan-800 font-medium text-xs bg-cyan-50 px-2 py-1 rounded"
+                                                        >
+                                                            View
+                                                        </button>
+                                                    </div>
                                                 </td>
                                             </tr>
                                         ))
                                     )}
                                 </tbody>
+
                             </table>
-                        </div>
-                    </div>
-                </div>
-            </div>
-        </div>
+                        </div >
+                    </div >
+                </div >
+            </div >
+        </div >
     );
 }

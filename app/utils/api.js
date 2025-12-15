@@ -210,5 +210,13 @@ export const api = {
         });
         if (!res.ok) throw new Error('Failed to postpone task');
         return res.json();
+    },
+
+    updateTaskTitle: async (id, title) => {
+        const res = await fetch(`${API_BASE}/daily/${id}/title?title=${encodeURIComponent(title)}`, {
+            method: 'PATCH',
+        });
+        if (!res.ok) throw new Error('Failed to update task title');
+        return res.json();
     }
 };

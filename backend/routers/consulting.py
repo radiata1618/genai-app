@@ -10,6 +10,12 @@ import asyncio
 import uuid
 import json
 import time
+import warnings
+
+# Suppress Vertex AI SDK deprecation warning (active since June 2025)
+# This is safe to suppress as we will migrate to google-genai SDK before June 2026.
+warnings.filterwarnings("ignore", category=UserWarning, module="vertexai._model_garden._model_garden_models")
+
 from google.cloud import storage
 from google.cloud import aiplatform
 from fastapi.responses import StreamingResponse
@@ -198,31 +204,119 @@ def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
                  print(f"DEBUG: Candidate 0 content parts: {response.candidates[0].content.parts}")
                  print(f"DEBUG: Finish Reason: {response.candidates[0].finish_reason}")
              
-             text = response.text
-        except Exception as e:
-             print(f"DEBUG: .text access failed: {e}")
-             # Fallback: check candidates
-             if response.candidates and response.candidates[0].content.parts:
-                  for part in response.candidates[0].content.parts:
-                       if part.text:
-                            text += part.text
-                       else:
-                            print(f"DEBUG: Non-text part found: {part}")
+             if response.text:
+                 text = response.text
+             else:
+                 # Fallback: sometimes model returns parts but no 'text' shortcut if multiple parts
+                 # Just concate all text parts
+                 text = " ".join([p.text for p in response.candidates[0].content.parts if p.text])
+                 
+             clean_text = text.strip()
+             if clean_text.startswith("```json"):
+                 clean_text = clean_text[7:]
+             if clean_text.endswith("```"):
+                 clean_text = clean_text[:-3]
+             return json.loads(clean_text)
+        except Exception as json_err:
+             print(f"JSON Parse Error for Analysis: {json_err}, Raw: {text}")
+             return {
+                 "structure_type": "Unknown", 
+                 "key_message": "Analysis failed",
+                 "description": "Could not parse AI response."
+             }
         
-        if not text:
-             print("WARNING: Empty response from analyze_slide_structure")
-             return {"structure_type": "Unknown", "key_message": "", "description": ""}
-
-        # Safety cleanup
-        if text.startswith("```json"):
-            text = text.replace("```json", "").replace("```", "")
-        elif text.startswith("```"):
-            text = text.replace("```", "")
-            
-        return json.loads(text)
     except Exception as e:
-        print(f"Slide Analysis Error: {e}")
-        return {"structure_type": "Unknown", "key_message": "", "description": ""}
+        print(f"Analysis error: {e}")
+        return {}
+
+def evaluate_document_quality(images_bytes: List[bytes]) -> Dict[str, Any]:
+    """
+    Evaluates the document (based on first few pages) for:
+    1. Creating Company (Major Firm Check)
+    2. Design Quality (if not Major Firm)
+    Returns a dict with 'decision' ('accept'/'skip'), 'reason', 'firm_name', 'design_rating'.
+    """
+    client = get_genai_client()
+    if not client:
+        return {"decision": "skip", "reason": "AI Client Unavailable"}
+
+    try:
+        # Prompt for Quality Evaluation
+        prompt = """
+        You are an expert consultant evaluating a slide deck for a "Slide Database".
+        Analyze the provided images (the first few pages of a document) to make a GO/NO-GO decision for ingestion.
+
+        **Step 1: Identify the Creating Company**
+        Look for logos, copyright notices, or template styles of the following Major Consulting Firms:
+        - **MBB**: McKinsey, BCG (Boston Consulting Group), Bain & Company.
+        - **Strategy Firms**: Arthur D. Little (ADL), Roland Berger, Strategy&, Kearney, L.E.K. Consulting, and other reputable strategy consulting firms.
+        - **Big4 (Group-wide & Japanese Entities)**: 
+            - **Deloitte**: Deloitte Tohmatsu Consulting (DTC), Deloitte Tohmatsu Financial Advisory (DTFA), Deloitte Touche Tohmatsu LLC (有限責任監査法人トーマツ), and all other Deloitte Tohmatsu Group entities.
+            - **PwC**: PwC Consulting, PwC Advisory, PwC Japan LLC (PwC Japan有限責任監査法人), PwC Arata (PwCあらた), and all other PwC Japan Group entities.
+            - **KPMG**: KPMG Consulting, KPMG FAS, KPMG AZSA LLC (有限責任あずさ監査法人), and all other KPMG Japan Group entities.
+            - **EY**: EY Strategy and Consulting, EY ShinNihon LLC (EY新日本有限責任監査法人), and all other EY Japan Group entities.
+        - **Accenture**: Including Accenture Japan.
+        - **Abeam Consulting**
+        
+        If ANY of these firms (or their specific Japanese entities/subsidiaries) are identified:
+        - **Decision**: ACCEPT
+        - **Reason**: "Major Firm: [Company Name]"
+
+        **Step 2: Evaluate Design Quality (Only if Major Firm is NOT identified)**
+        If the company is NOT one of the above, evaluate the "Design Quality" for slide creation reference.
+        - **High Quality**: Professional layout, clear use of frameworks/charts, high-end visualization, consistent formatting. Suitable for consultants to mimic.
+        - **Low Quality**: Wall of text, basic Word-like layout, amateurish design, or just a plain report/whitepaper without visual structure.
+        
+        If High Quality:
+        - **Decision**: ACCEPT
+        - **Reason**: "High Design Quality"
+        
+        If Low Quality:
+        - **Decision**: SKIP
+        - **Reason**: "Low Design Quality / Not a slide deck"
+
+        **Output Format**:
+        Return a JSON object:
+        {
+            "decision": "ACCEPT" or "SKIP",
+            "reason": "String explaining the reason (e.g. 'Major Firm: Deloitte Tohmatsu Financial Advisory' or 'Low Design Quality')",
+            "firm_name": "Detected Name or None",
+            "design_rating": "High" or "Low"
+        }
+        """
+
+        contents = [types.Part.from_text(text=prompt)]
+        for img_data in images_bytes:
+            contents.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
+
+        response = client.models.generate_content(
+            model="gemini-2.5-flash",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                temperature=0.0
+            )
+        )
+
+        text = ""
+        if response.text:
+            text = response.text
+        else:
+            if response.candidates and response.candidates[0].content.parts:
+                text = " ".join([p.text for p in response.candidates[0].content.parts if p.text])
+        
+        clean_text = text.strip()
+        if clean_text.startswith("```json"):
+            clean_text = clean_text[7:]
+        if clean_text.endswith("```"):
+            clean_text = clean_text[:-3]
+            
+        return json.loads(clean_text)
+
+    except Exception as e:
+        print(f"Quality Evaluation Error: {e}")
+        # Default to skipping if uncertain.
+        return {"decision": "SKIP", "reason": f"AI Evaluation Error: {str(e)}"}
 
 def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]]:
     """Searches Firestore using Vector Search."""
@@ -330,15 +424,58 @@ async def list_files(max_results: int = 100, page_token: Optional[str] = None):
         blobs_iter = bucket.list_blobs(prefix="consulting_raw/", max_results=max_results, page_token=page_token)
         
         file_list = []
+        
+        # Batch Fetch Metadata from Firestore
+        db = get_firestore_client()
+        summary_collection = db.collection("ingestion_file_summaries")
+        
+        doc_refs = []
+        # Map safe_filename -> list of items (in case of collision, though unlikely)
+        # Actually safe_filename is unique per blob usually.
+        file_map = {} 
+        
         for blob in blobs_iter:
             if blob.name.endswith(".pdf"):
-                file_list.append({
+                # Logic must match run_batch_ingestion_worker
+                # blob.name includes prefix e.g 'consulting_raw/file.pdf'
+                # safe_filename strips non-alnum except ._-
+                safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+                
+                item = {
                     "name": blob.name,
                     "basename": blob.name.split("/")[-1],
                     "size": blob.size,
                     "updated": blob.updated.isoformat() if blob.updated else None,
-                    "content_type": blob.content_type
-                })
+                    "content_type": blob.content_type,
+                    "status": "pending", # Default
+                    "filter_reason": None,
+                    "firm_name": None,
+                    "page_count": None,
+                    "design_rating": None
+                }
+                file_list.append(item)
+                file_map[safe_filename] = item
+                doc_refs.append(summary_collection.document(safe_filename))
+        
+        if doc_refs:
+            # getAll supports up to 100? Firestore limits might apply to 'in' query but get_all(refs) is usually robust or batched by client.
+            # Python SDK 'get_all'
+            docs = db.get_all(doc_refs)
+            for doc in docs:
+                if doc.exists:
+                    data = doc.to_dict()
+                    safe_fname = doc.id
+                    if safe_fname in file_map:
+                        item = file_map[safe_fname]
+                        item["status"] = data.get("status", "pending")
+                        # Combine errors or reasons
+                        reason = data.get("filter_reason")
+                        if not reason and data.get("error"):
+                            reason = data.get("error")
+                        item["filter_reason"] = reason
+                        item["firm_name"] = data.get("firm_name")
+                        item["page_count"] = data.get("page_count")
+                        item["design_rating"] = data.get("design_rating")
         
         # Sort by updated desc (Only works for current page in GCS list usually, ensuring global sort is hard with GCS list_blobs unless we list all. 
         # CAUTION: GCS list_blobs returns files in name order usually.
@@ -468,90 +605,247 @@ async def run_batch_ingestion_worker(batch_id: str):
         success_count = 0
         failed_count = 0
 
+        summary_collection = db.collection("ingestion_file_summaries")
+
         for blob in target_blobs:
+            # Check for cancellation
+            current_batch = batch_ref.get().to_dict()
+            if current_batch.get("status") == "cancelling":
+                print(f"DEBUG: Batch {batch_id} cancelled by user.")
+                batch_ref.update({"status": "cancelled", "completed_at": firestore.SERVER_TIMESTAMP})
+                break
+
             print(f"DEBUG: Processing file: {blob.name}")
-            res_id = f"{batch_id}_{''.join(c for c in blob.name if c.isalnum() or c in '._-')}"
+            safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+            res_id = f"{batch_id}_{safe_filename}"
             res_doc_ref = results_ref.document(res_id)
-            res_doc_ref.update({"status": "processing", "updated_at": firestore.SERVER_TIMESTAMP})
+            summary_ref = summary_collection.document(safe_filename)
+            
+            init_data = {"status": "processing", "updated_at": firestore.SERVER_TIMESTAMP, "batch_id": batch_id, "filename": blob.name}
+            res_doc_ref.update(init_data)
+            summary_ref.set(init_data, merge=True)
             
             try:
                 print(f"DEBUG: Downloading {blob.name}...")
                 pdf_bytes = blob.download_as_bytes()
-                print(f"DEBUG: Converting PDF {blob.name} to images...")
+                
+                # OPTIMIZATION: Process in chunks to avoid OOM
+                import tempfile
+                from pdf2image import pdfinfo_from_path, convert_from_path
+                
+                with tempfile.NamedTemporaryFile(suffix=".pdf", delete=False) as tmp_pdf:
+                    tmp_pdf.write(pdf_bytes)
+                    tmp_pdf_path = tmp_pdf.name
+                
+                # Free memory immediately after writing to disk
+                del pdf_bytes
+                import gc
+                gc.collect()
+                
                 try:
-                    images = convert_from_bytes(pdf_bytes, fmt="jpeg")
-                except Exception as img_err:
-                     print(f"ERROR: PDF Conversion failed for {blob.name}: {img_err}")
-                     res_doc_ref.update({
-                         "status": "failed", 
-                         "error": f"PDF Conversion: {str(img_err)}",
-                         "updated_at": firestore.SERVER_TIMESTAMP
-                     })
-                     failed_count += 1
-                     continue
-                
-                print(f"DEBUG: Converted {len(images)} pages for {blob.name}")
-                total_pages = len(images)
-                pages_success = 0
-                
-                for i, image in enumerate(images):
-                    page_num = i + 1
-                    print(f"DEBUG: Processing page {page_num}/{total_pages} of {blob.name}")
-                    
-                    img_byte_arr = io.BytesIO()
-                    image.save(img_byte_arr, format='JPEG')
-                    img_bytes = img_byte_arr.getvalue()
-                    
-                    print(f"DEBUG: Analyzing slide structure for page {page_num}...")
-                    analysis = analyze_slide_structure(img_bytes)
-                    
-                    text_context = f"Structure: {analysis.get('structure_type', '')}. Key Message: {analysis.get('key_message', '')}. {analysis.get('description', '')}"
-                    
-                    print(f"DEBUG: Generating embedding for page {page_num}...")
-                    emb = get_embedding(image_bytes=img_bytes, text=text_context)
-                    
-                    if emb:
-                        print(f"DEBUG: Embedding generated. Saving to Firestore...")
-                        safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
-                        doc_id = f"{safe_filename}_p{page_num}"
-                        
-                        doc_data = {
-                            "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}",
-                            "filename": blob.name,
-                            "page_number": page_num,
-                            "structure_type": analysis.get("structure_type"),
-                            "key_message": analysis.get("key_message"),
-                            "description": analysis.get("description"),
-                            "embedding": Vector(emb),
-                            "created_at": firestore.SERVER_TIMESTAMP
+                    # Get info first
+                    try:
+                        info = pdfinfo_from_path(tmp_pdf_path)
+                        total_pages = info["Pages"]
+                    except Exception:
+                        # Fallback if pdfinfo fails (rare), load all (risky but fallback)
+                        # Or assume a large number and break on empty list
+                        print("WARNING: Could not get PDF info, defaulting to chunked read until empty.")
+                        total_pages = 9999 
+
+                    # ASPECT RATIO CHECK (Portrait vs Landscape)
+                    # Load just the first page to check dimensions
+                    should_process = True
+                    try:
+                        first_page_img = convert_from_path(tmp_pdf_path, first_page=1, last_page=1, fmt="jpeg")
+                        if first_page_img:
+                            w, h = first_page_img[0].size
+                            if h > w:
+                                print(f"DEBUG: Detected Portrait orientation ({w}x{h}). Skipping {blob.name} (likely report).")
+                                skip_report_data = {
+                                    "status": "skipped",
+                                    "error": "Skipped: Portrait orientation (likely report/document)",
+                                    "filter_reason": "Portrait orientation",
+                                    "updated_at": firestore.SERVER_TIMESTAMP
+                                }
+                                res_doc_ref.update(skip_report_data)
+                                summary_ref.set(skip_report_data, merge=True)
+                                should_process = False
+                            else:
+                                print(f"DEBUG: Detected Landscape orientation ({w}x{h}). Processing...")
+                            del first_page_img
+                    except Exception as e:
+                        print(f"WARNING: Could not check aspect ratio for {blob.name}: {e}. Proceeding.")
+
+                    # PAGE COUNT CHECK
+                    if should_process and total_pages > 150:
+                        print(f"DEBUG: Skipping {blob.name} due to page count {total_pages} > 150.")
+                        skip_page_data = {
+                            "status": "skipped",
+                            "error": f"Skipped: Page count {total_pages} > 150",
+                            "filter_reason": f"Page count {total_pages} > 150",
+                            "page_count": total_pages,
+                            "updated_at": firestore.SERVER_TIMESTAMP
                         }
-                        main_collection.document(doc_id).set(doc_data)
-                        pages_success += 1
-                    else:
-                        print(f"WARNING: Embedding generation failed for page {page_num}")
+                        res_doc_ref.update(skip_page_data)
+                        summary_ref.set(skip_page_data, merge=True)
+                        should_process = False
+
+                    # AI QUALITY CHECK (Major Firm / Design)
+                    if should_process:
+                        try:
+                            eval_pages_num = min(total_pages, 7)
+                            print(f"DEBUG: Analyzing first {eval_pages_num} pages for Quality Evaluation...")
+                            
+                            # Convert first few pages for analysis
+                            eval_images = convert_from_path(tmp_pdf_path, first_page=1, last_page=eval_pages_num, fmt="jpeg")
+                            
+                            eval_images_bytes = []
+                            for img in eval_images:
+                                buf = io.BytesIO()
+                                img.save(buf, format='JPEG')
+                                eval_images_bytes.append(buf.getvalue())
+                                
+                            del eval_images
+                            gc.collect()
+
+                            if eval_images_bytes:
+                                decision_data = evaluate_document_quality(eval_images_bytes)
+                                print(f"DEBUG: Quality Evaluation Result: {decision_data}")
+                                
+                                update_data = {
+                                    "firm_name": decision_data.get("firm_name"),
+                                    "design_rating": decision_data.get("design_rating"),
+                                    "filter_reason": decision_data.get("reason"),
+                                    "page_count": total_pages,
+                                    "updated_at": firestore.SERVER_TIMESTAMP
+                                }
+                                
+                                if decision_data.get("decision") == "SKIP":
+                                    update_data["status"] = "skipped"
+                                    update_data["error"] = f"Skipped: {decision_data.get('reason')}"
+                                    should_process = False
+                                    print(f"DEBUG: AI decided to SKIP {blob.name}.")
+                                else:
+                                    print(f"DEBUG: AI decided to ACCEPT {blob.name}.")
+                                
+                                res_doc_ref.update(update_data)
+                                summary_ref.set(update_data, merge=True)
+                                
+                        except Exception as eval_e:
+                            print(f"WARNING: Quality Evaluation Failed for {blob.name}: {eval_e}. Proceeding.")
+
+
+                    if should_process:
+                        print(f"DEBUG: Total pages estimated: {total_pages}. Processing in chunks...")
+                        pages_success = 0
+                        
+                        CHUNK_SIZE = 3 # Reduced chunk size for safety
+                        for start_page in range(1, total_pages + 1, CHUNK_SIZE):
+                            end_page = min(start_page + CHUNK_SIZE - 1, total_pages)
+                            print(f"DEBUG: Loading pages {start_page} to {end_page}...")
+                            
+                            try:
+                                # convert_from_path is 1-indexed for first_page/last_page
+                                chunk_images = convert_from_path(tmp_pdf_path, first_page=start_page, last_page=end_page, fmt="jpeg")
+                            
+                                if not chunk_images:
+                                    break # End of file if total_pages was wrong
+                                    
+                                for i, image in enumerate(chunk_images):
+                                    page_num = start_page + i
+                                    print(f"DEBUG: Processing page {page_num} of {blob.name}")
+                                    
+                                    # ... Processing Logic ...
+                                    img_byte_arr = io.BytesIO()
+                                    image.save(img_byte_arr, format='JPEG')
+                                    img_bytes = img_byte_arr.getvalue()
+                                    
+                                    print(f"DEBUG: Analyzing slide structure for page {page_num}...")
+                                    analysis = analyze_slide_structure(img_bytes)
+                                    
+                                    text_context = f"{analysis.get('structure_type', '')}. {analysis.get('key_message', '')}. {analysis.get('description', '')}"
+                                    
+                                    # RESTORED TRUNCATION LOGIC
+                                    if text_context and len(text_context) > 400:
+                                        print(f"DEBUG: Truncating text from {len(text_context)} to 400 chars for embedding.")
+                                        text_context = text_context[:400]
+                                    
+                                    print(f"DEBUG: Generating embedding for page {page_num}...")
+                                    emb = get_embedding(image_bytes=img_bytes, text=text_context)
+                                    
+                                    if emb:
+                                        print(f"DEBUG: Embedding generated. Saving to Firestore...")
+                                        safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+                                        doc_id = f"{safe_filename}_p{page_num}"
+                                        
+                                        doc_data = {
+                                            "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}",
+                                            "filename": blob.name,
+                                            "page_number": page_num,
+                                            "structure_type": analysis.get("structure_type"),
+                                            "key_message": analysis.get("key_message"),
+                                            "description": analysis.get("description"),
+                                            "embedding": Vector(emb),
+                                            "created_at": firestore.SERVER_TIMESTAMP
+                                        }
+                                        main_collection.document(doc_id).set(doc_data)
+                                        pages_success += 1
+                                    else:
+                                        print(f"WARNING: Embedding generation failed for page {page_num}")
+                                
+                                # Cleanup chunk
+                                del chunk_images
+                                gc.collect()
+                                
+                            except Exception as chunk_err:
+                                print(f"ERROR processing chunk {start_page}-{end_page}: {chunk_err}")
+                                # Continue to next chunk or abort file? usually better to continue?
+                                # But if conversion failed, maybe next chunk fails too.
+                                # Let's log and continue best effort.
+                                pass
+                            
+                finally:
+                    # Clean up temp file
+                    import os
+                    if os.path.exists(tmp_pdf_path):
+                        os.remove(tmp_pdf_path)
+                    # pdf_bytes already deleted above
+                    gc.collect()
+
                 
-                if pages_success > 0:
-                    res_doc_ref.update({
-                        "status": "success",
-                        "pages_processed": pages_success,
-                        "updated_at": firestore.SERVER_TIMESTAMP
-                    })
-                    success_count += 1
+                if should_process:
+                    if pages_success > 0:
+                        success_data = {
+                            "status": "success",
+                            "pages_processed": pages_success,
+                            "updated_at": firestore.SERVER_TIMESTAMP
+                        }
+                        res_doc_ref.update(success_data)
+                        summary_ref.set(success_data, merge=True)
+                        success_count += 1
+                    else:
+                        fail_data = {
+                            "status": "failed",
+                            "error": "No pages processed successfully",
+                            "updated_at": firestore.SERVER_TIMESTAMP
+                        }
+                        res_doc_ref.update(fail_data)
+                        summary_ref.set(fail_data, merge=True)
+                        failed_count += 1
                 else:
-                    res_doc_ref.update({
-                        "status": "failed",
-                        "error": "No pages processed successfully",
-                        "updated_at": firestore.SERVER_TIMESTAMP
-                    })
-                    failed_count += 1
+                    # Skipped files logic already updated summary_ref
+                    pass
 
             except Exception as e:
                 print(f"ERROR processing file {blob.name}: {e}")
-                res_doc_ref.update({
+                err_data = {
                     "status": "failed",
                     "error": str(e),
                     "updated_at": firestore.SERVER_TIMESTAMP
-                })
+                }
+                res_doc_ref.update(err_data)
+                summary_ref.set(err_data, merge=True)
                 failed_count += 1
             
             processed_count += 1
@@ -703,6 +997,18 @@ async def retry_batch(batch_id: str, req: RetryBatchRequest, background_tasks: B
     """Retries failed items in a batch."""
     background_tasks.add_task(retry_batch_worker, batch_id, req.item_ids)
     return {"message": "Retry started"}
+
+@router.post("/consulting/batches/{batch_id}/cancel")
+async def cancel_batch(batch_id: str):
+    """Cancels a running batch."""
+    try:
+        db = get_firestore_client()
+        batch_ref = db.collection(BATCH_COLLECTION_NAME).document(batch_id)
+        # We just set the status to 'cancelling'. The worker will pick this up and stop.
+        batch_ref.update({"status": "cancelling"})
+        return {"message": "Cancellation requested"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/consulting/index")
 async def trigger_index(background_tasks: BackgroundTasks):
