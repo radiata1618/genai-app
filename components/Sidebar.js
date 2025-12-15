@@ -16,20 +16,6 @@ const navItems = [
         ],
     },
     {
-        category: "Car Quiz",
-        items: [
-            { name: "Admin Dashboard", icon: "🛠️", href: "/car-quiz/admin" },
-            { name: "Play Quiz", icon: "🚗", href: "/car-quiz" },
-        ],
-    },
-    {
-        category: "AI PoC",
-        items: [
-            { name: "Multimodalテスト", icon: "📝", href: "/multimodal" },
-            { name: "ファイル管理", icon: "📂", href: "/files" },
-        ],
-    },
-    {
         category: "English",
         items: [
             { name: "Preparation", icon: "📚", href: "/english/preparation" },
@@ -41,9 +27,23 @@ const navItems = [
         category: "Consulting Support",
         items: [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
-            { name: "Visual Search", icon: "👁️", href: "/consulting/visual-search" },
-            { name: "Slide Polisher", icon: "✨", href: "/consulting/slide-polisher" },
-            { name: "Admin (Data)", icon: "⚙️", href: "/consulting/data" },
+            { name: "Visual Search（未）", icon: "👁️", href: "/consulting/visual-search" },
+            { name: "Slide Polisher（未）", icon: "✨", href: "/consulting/slide-polisher" },
+            { name: "Data Admin", icon: "⚙️", href: "/consulting/data" },
+        ],
+    },
+    {
+        category: "Car Quiz（未）",
+        items: [
+            { name: "Admin（未）", icon: "🛠️", href: "/car-quiz/admin" },
+            { name: "Play Quiz", icon: "🚗", href: "/car-quiz" },
+        ],
+    },
+    {
+        category: "AI PoC（テ）",
+        items: [
+            { name: "Multimodal（テ）", icon: "📝", href: "/multimodal" },
+            { name: "ファイル管理（テ）", icon: "📂", href: "/files" },
         ],
     },
 ];

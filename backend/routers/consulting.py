@@ -15,6 +15,7 @@ import warnings
 # Suppress Vertex AI SDK deprecation warning (active since June 2025)
 # This is safe to suppress as we will migrate to google-genai SDK before June 2026.
 warnings.filterwarnings("ignore", category=UserWarning, module="vertexai._model_garden._model_garden_models")
+warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_models._vision_models")
 
 from google.cloud import storage
 from google.cloud import aiplatform
@@ -740,7 +741,7 @@ async def run_batch_ingestion_worker(batch_id: str):
                         print(f"DEBUG: Total pages estimated: {total_pages}. Processing in chunks...")
                         pages_success = 0
                         
-                        CHUNK_SIZE = 3 # Reduced chunk size for safety
+                        CHUNK_SIZE = 1 # Process 1 page at a time for maximum stability against OOM
                         for start_page in range(1, total_pages + 1, CHUNK_SIZE):
                             end_page = min(start_page + CHUNK_SIZE - 1, total_pages)
                             print(f"DEBUG: Loading pages {start_page} to {end_page}...")

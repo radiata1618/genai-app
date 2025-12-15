@@ -492,16 +492,16 @@ function DashboardContent() {
                                                 </div>
                                             )}
                                             <div className="flex gap-2 text-[9px] items-center">
-                                                <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
-                                                    {t.source_type}
-                                                </span>
                                                 {t.current_goal_progress && (
                                                     <span className={`px-1.5 py-0.5 rounded font-mono font-bold ${t.status === 'DONE' ? 'bg-green-100 text-green-700' : 'bg-slate-100 text-slate-500'}`}>
                                                         {t.current_goal_progress}
                                                     </span>
                                                 )}
-                                                {/* Action Buttons */}
-                                                <div className="flex items-center gap-1 transition-opacity">
+                                                <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
+                                                    {t.source_type}
+                                                </span>
+                                                {/* Action Buttons - Fixed Width for Alignment */}
+                                                <div className="flex items-center gap-1 transition-opacity w-[88px] flex-none justify-start">
                                                     <button
                                                         onClick={(e) => handleSkip(t.id, e)}
                                                         className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"

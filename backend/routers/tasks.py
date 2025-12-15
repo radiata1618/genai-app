@@ -694,11 +694,6 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "source_id": backlog_id,
         "source_type": SourceType.BACKLOG.value,
         "target_date": target_date_str,
-    new_task = {
-        "id": doc_id,
-        "source_id": backlog_id,
-        "source_type": SourceType.BACKLOG.value,
-        "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
         "order": 0, # Default, will update below
