@@ -176,13 +176,24 @@ function DashboardContent() {
             });
 
             // 2. Pick for Today
-            await api.pickFromBacklog(createdItem.id);
+            const pickedTask = await api.pickFromBacklog(createdItem.id);
 
             // 3. Clear Input
             setNewTaskTitle('');
 
-            // 4. Refresh & Cache
-            await init(); // This will update state and cache
+            // 4. Update State Directly (No Refresh!)
+            // We need to match the structure of tasks in state.
+            // pickedTask should match the structure returned by pickFromBacklog
+            // ensure it has checked 'source_type' etc which are in the response.
+
+            setTasks(prev => {
+                const newTasks = [...prev, pickedTask];
+                saveCache(newTasks);
+                return newTasks;
+            });
+
+            // Note: We skip init() to avoid heavy reload
+            // await init();
 
         } catch (e) {
             console.error(e);

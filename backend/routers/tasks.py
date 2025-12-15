@@ -226,6 +226,7 @@ def reorder_backlog_items(request: BacklogReorderRequest, db: firestore.Client =
 
 @router.post("/backlog", response_model=BacklogItemResponse)
 def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(get_db)):
+    start_time_total = time.time()
     try:
         doc_ref = db.collection("backlog_items").document()
         data = item.dict()
@@ -241,6 +242,14 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
             "is_archived": False
         })
         doc_ref.set(data)
+        
+        end_time = time.time()
+        print(json.dumps({
+            "type": "perf_metric",
+            "operation": "create_backlog_item",
+            "duration_ms": (end_time - start_time_total) * 1000
+        }))
+        
         return data
     except Exception as e:
         import traceback
@@ -662,6 +671,7 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
 
 @router.post("/daily/pick")
 def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
+    start_time_total = time.time()
     if target_date is None:
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
@@ -678,14 +688,12 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
     
     if doc_ref.get().exists:
          return {"message": "Already picked"}
-
-    existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
-    max_order = -1
-    for d in existing_docs:
-        d_dict = d.to_dict()
-        o = d_dict.get('order', 0)
-        if o > max_order: max_order = o
     
+    new_task = {
+        "id": doc_id,
+        "source_id": backlog_id,
+        "source_type": SourceType.BACKLOG.value,
+        "target_date": target_date_str,
     new_task = {
         "id": doc_id,
         "source_id": backlog_id,
@@ -693,11 +701,47 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "target_date": target_date_str,
         "status": TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
-        "order": max_order + 1,
+        "order": 0, # Default, will update below
         "title": item_data.get('title', 'Untitled'), # Copied Title
         "is_highlighted": item_data.get('is_highlighted', False) # Copied Highlight
     }
+    
+    # OPTIMIZATION: Query only the last ordered item instead of all items
+    # Note: access requires composite index on (target_date ASC, order DESC)
+    try:
+        max_order_docs = db.collection("daily_tasks")\
+            .where(filter=FieldFilter("target_date", "==", target_date_str))\
+            .order_by("order", direction=firestore.Query.DESCENDING)\
+            .limit(1)\
+            .stream()
+        
+        max_order = 0
+        for d in max_order_docs:
+            d_dict = d.to_dict()
+            max_order = d_dict.get('order', 0)
+            
+        new_task['order'] = max_order + 1
+        
+    except Exception as e:
+        # Fallback if index missing or other error: Scan all (slower but safe)
+        print(f"Optimization warning (Index might be missing): {e}")
+        existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
+        max_order = -1
+        for d in existing_docs:
+            d_dict = d.to_dict()
+            o = d_dict.get('order', 0)
+            if o > max_order: max_order = o
+        new_task['order'] = max_order + 1
+
     doc_ref.set(new_task)
+    
+    end_time = time.time()
+    print(json.dumps({
+        "type": "perf_metric",
+        "operation": "pick_from_backlog",
+        "duration_ms": (end_time - start_time_total) * 1000
+    }))
+    
     return new_task
 
 
