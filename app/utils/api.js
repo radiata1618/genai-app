@@ -20,7 +20,10 @@ export const api = {
             let msg = `Error ${res.status}: ${res.statusText}`;
             try {
                 const err = await res.json();
-                if (err.detail) msg += ` - ${err.detail}`;
+                if (err.detail) {
+                    const detailStr = typeof err.detail === 'string' ? err.detail : JSON.stringify(err.detail);
+                    msg += ` - ${detailStr}`;
+                }
             } catch (e) { /* ignore */ }
             throw new Error(msg);
         }
