@@ -191,12 +191,13 @@ function DashboardContent() {
 
         // 2. Background API Call
         try {
+            const apiDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
             const createdItem = await api.addBacklogItem({
                 title: titleVal,
                 category: 'Other',
                 priority: 'Medium',
-                deadline: todayStr,
-                scheduled_date: todayStr
+                deadline: apiDate,
+                scheduled_date: apiDate
             });
 
             const pickedTask = await api.pickFromBacklog(createdItem.id);
