@@ -21,10 +21,9 @@ warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_
 from fastapi.responses import StreamingResponse
 from google.genai import types
 from google.cloud import firestore
-from google.cloud.firestore import Vector
 
 # --- Import from Services ---
-from backend.services.ai_shared import (
+from services.ai_shared import (
     get_genai_client,
     get_storage_client,
     get_firestore_client,
@@ -35,12 +34,13 @@ from backend.services.ai_shared import (
     GCS_BUCKET_NAME,
     FIRESTORE_COLLECTION_NAME,
     BATCH_COLLECTION_NAME,
-    RESULT_COLLECTION_NAME
+    RESULT_COLLECTION_NAME,
+    Vector
 )
-from backend.services.ai_analysis import analyze_slide_structure
+from services.ai_analysis import analyze_slide_structure
 
 # Import the service logic for local fallback
-from backend.services.ingestion import run_batch_ingestion
+from services.ingestion import run_batch_ingestion
 
 router = APIRouter(
     tags=["consulting"],

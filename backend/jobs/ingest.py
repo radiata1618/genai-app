@@ -3,9 +3,9 @@ import sys
 import os
 
 # Ensure backend module is in path if running as script
-sys.path.append(os.path.join(os.path.dirname(__file__), '..', '..'))
+sys.path.append(os.path.join(os.path.dirname(__file__), '..'))
 
-from backend.services.ingestion import run_batch_ingestion
+from services.ingestion import run_batch_ingestion
 
 if __name__ == "__main__":
     parser = argparse.ArgumentParser(description='Run Batch Ingestion Worker')

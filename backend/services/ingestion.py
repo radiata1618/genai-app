@@ -5,9 +5,9 @@ import tempfile
 import datetime
 from pdf2image import convert_from_path, pdfinfo_from_path
 from google.cloud import firestore
-from google.cloud.firestore import Vector
 
-from backend.services.ai_shared import (
+
+from services.ai_shared import (
     get_firestore_client,
     get_storage_client,
     get_embedding,
@@ -15,9 +15,11 @@ from backend.services.ai_shared import (
     GCS_BUCKET_NAME,
     BATCH_COLLECTION_NAME,
     RESULT_COLLECTION_NAME,
-    FIRESTORE_COLLECTION_NAME
+    RESULT_COLLECTION_NAME,
+    FIRESTORE_COLLECTION_NAME,
+    Vector
 )
-from backend.services.ai_analysis import (
+from services.ai_analysis import (
     analyze_slide_structure,
     evaluate_document_quality
 )

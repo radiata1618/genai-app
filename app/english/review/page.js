@@ -31,7 +31,7 @@ export default function ReviewPage() {
         fetchTasks();
 
         const handleResize = () => {
-            if (window.innerWidth < 768) {
+            if (window.innerWidth < 1024) { // Changed to lg breakpoint
                 setIsSidebarOpen(false);
             } else {
                 setIsSidebarOpen(true);
@@ -154,43 +154,53 @@ export default function ReviewPage() {
 
     return (
         <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
+            {/* Mobile Sidebar Backdrop */}
+            {isSidebarOpen && (
+                <div
+                    className="fixed inset-0 bg-black/50 z-30 lg:hidden"
+                    onClick={() => setIsSidebarOpen(false)}
+                />
+            )}
+
             {/* Left Sidebar */}
             <div className={`
-                ${isSidebarOpen ? "w-80 border-r" : "w-0 border-none"} 
-                transition-all duration-300 ease-in-out
-                bg-white flex flex-col overflow-hidden border-gray-200
-                flex-shrink-0
+                fixed inset-y-0 left-0 z-40 bg-white h-full transform transition-all duration-300 ease-in-out shadow-2xl lg:shadow-none
+                lg:relative lg:translate-x-0
+                ${isSidebarOpen ? "translate-x-0 w-80 border-r" : "-translate-x-full lg:w-0 lg:border-none"} 
+                border-gray-200 flex flex-col overflow-hidden flex-shrink-0
             `}>
-                <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center w-80">
-                    <h2 className="text-lg font-bold text-slate-700">Review History</h2>
-                    <button
-                        onClick={() => setIsCreating(true)}
-                        className="bg-cyan-600 hover:bg-cyan-700 text-white p-2 rounded-full shadow-md transition-colors"
-                    >
-                        + New
-                    </button>
-                </div>
-                <div className="flex-1 overflow-y-auto w-80">
-                    {tasks.map((task) => (
-                        <div
-                            key={task.id}
-                            onClick={() => handleSelectTask(task)}
-                            className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-cyan-50 transition-colors group relative
-                                ${selectedTask?.id === task.id ? "bg-cyan-100 border-l-4 border-cyan-500" : ""}
-                            `}
+                <div className="w-80 flex flex-col h-full">
+                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
+                        <h2 className="text-lg font-bold text-slate-700">Review History</h2>
+                        <button
+                            onClick={() => setIsCreating(true)}
+                            className="bg-cyan-600 hover:bg-cyan-700 text-white p-2 rounded-full shadow-md transition-colors"
                         >
-                            <div className="flex justify-between items-start">
-                                <h3 className="font-semibold text-slate-800 line-clamp-1">{task.video_filename}</h3>
-                                <button
-                                    onClick={(e) => handleDelete(task.id, e)}
-                                    className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
-                                >
-                                    ×
-                                </button>
+                            + New
+                        </button>
+                    </div>
+                    <div className="flex-1 overflow-y-auto">
+                        {tasks.map((task) => (
+                            <div
+                                key={task.id}
+                                onClick={() => handleSelectTask(task)}
+                                className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-cyan-50 transition-colors group relative
+                                    ${selectedTask?.id === task.id ? "bg-cyan-100 border-l-4 border-cyan-500" : ""}
+                                `}
+                            >
+                                <div className="flex justify-between items-start">
+                                    <h3 className="font-semibold text-slate-800 line-clamp-1">{task.video_filename}</h3>
+                                    <button
+                                        onClick={(e) => handleDelete(task.id, e)}
+                                        className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity ml-2"
+                                    >
+                                        ×
+                                    </button>
+                                </div>
+                                <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</p>
                             </div>
-                            <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</p>
-                        </div>
-                    ))}
+                        ))}
+                    </div>
                 </div>
             </div>
 
@@ -199,9 +209,10 @@ export default function ReviewPage() {
                 {/* Header / Sidebar Toggle */}
                 <div className="flex items-center p-2 border-b border-gray-100 lg:border-none gap-2">
                     <MobileMenuButton />
+                    {/* Desktop Toggle */}
                     <button
                         onClick={() => setIsSidebarOpen(!isSidebarOpen)}
-                        className="p-2 rounded-md hover:bg-gray-100 text-gray-500"
+                        className="hidden lg:block p-2 rounded-md hover:bg-gray-100 text-gray-500"
                         title={isSidebarOpen ? "Close Sidebar" : "Open Sidebar"}
                     >
                         {isSidebarOpen ? "◀" : "▶"}
@@ -210,6 +221,14 @@ export default function ReviewPage() {
                         {isCreating ? "New Review" : selectedTask ? selectedTask.video_filename : "Review"}
                     </span>
                 </div>
+
+                {/* Mobile FAB */}
+                <button
+                    onClick={() => setIsSidebarOpen(true)}
+                    className={`lg:hidden fixed bottom-6 left-6 z-50 p-3 bg-cyan-600 text-white rounded-full shadow-lg hover:bg-cyan-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
+                >
+                    <span className="text-xl">☰</span>
+                </button>
 
                 {isCreating ? (
                     <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">

@@ -1,7 +1,7 @@
 import json
 from typing import Dict, List, Any
 from google.genai import types
-from backend.services.ai_shared import get_genai_client, trace
+from services.ai_shared import get_genai_client, trace
 
 def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
     """Analyzes a slide image using Gemini 2.5 Flash (Cost Effective) to extract structure and key message."""

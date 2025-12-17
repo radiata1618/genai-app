@@ -6,6 +6,11 @@ from google import genai
 import vertexai
 from vertexai.vision_models import MultiModalEmbeddingModel, Image
 
+try:
+    from google.cloud.firestore import Vector
+except ImportError:
+    from google.cloud.firestore_v1.vector import Vector
+
 # --- Configuration ---
 PROJECT_ID = os.getenv("PROJECT_ID")
 LOCATION = os.getenv("LOCATION")
