@@ -146,12 +146,6 @@ export default function YouTubePrepPage() {
                     <div className="p-4 border-b border-gray-100 bg-gray-50 w-80 flex-shrink-0">
                         <div className="flex justify-between items-center mb-4">
                             <h2 className="text-lg font-bold text-slate-700">YouTube Prep</h2>
-                            <button
-                                onClick={() => setIsCreating(true)}
-                                className="bg-red-600 hover:bg-red-700 text-white p-2 rounded-full shadow-md transition-colors"
-                            >
-                                + New
-                            </button>
                         </div>
                         <div className="flex items-center space-x-2 text-sm text-slate-500">
                             <label className="flex items-center cursor-pointer">
@@ -212,6 +206,14 @@ export default function YouTubePrepPage() {
                     >
                         {isSidebarOpen ? "◀" : "▶"}
                     </button>
+
+                    <button
+                        onClick={() => setIsCreating(true)}
+                        className="flex items-center space-x-1 bg-red-600 hover:bg-red-700 text-white font-medium px-3 py-1.5 rounded-full shadow-sm transition-colors text-sm"
+                    >
+                        <span>+ New Video</span>
+                    </button>
+
                     <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
                         {isCreating ? "New Video" : selectedTask ? (selectedTask.topic || "Video") : "YouTube Prep"}
                     </span>
@@ -220,7 +222,7 @@ export default function YouTubePrepPage() {
                 {/* Mobile FAB */}
                 <button
                     onClick={() => setIsSidebarOpen(true)}
-                    className={`lg:hidden fixed bottom-6 left-6 z-50 p-3 bg-red-600 text-white rounded-full shadow-lg hover:bg-red-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
+                    className={`lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-red-600 text-white rounded-full shadow-lg hover:bg-red-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
                 >
                     <span className="text-xl">☰</span>
                 </button>
