@@ -9,8 +9,8 @@ from google.cloud import aiplatform
 from google.cloud import storage
 from google.genai import types
 from google import genai
-import vertexai
-from vertexai.vision_models import MultiModalEmbeddingModel, Image
+# import vertexai
+# from vertexai.vision_models import MultiModalEmbeddingModel, Image
 
 # Initialize Router
 router = APIRouter(
@@ -39,11 +39,13 @@ def _ensure_vertexai_init():
         if not PROJECT_ID or not LOCATION:
             print("Warning: PROJECT_ID or LOCATION not set for Vertex AI init")
         else:
+            import vertexai
             vertexai.init(project=PROJECT_ID, location=LOCATION)
             _vertexai_initialized = True
 
 def get_embedding(text: str = None, image_bytes: bytes = None):
     _ensure_vertexai_init()
+    from vertexai.vision_models import MultiModalEmbeddingModel, Image
     model = MultiModalEmbeddingModel.from_pretrained("multimodalembedding@001")
     if image_bytes:
         image = Image(image_bytes)
