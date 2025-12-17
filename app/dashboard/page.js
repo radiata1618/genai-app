@@ -101,7 +101,12 @@ function DashboardContent() {
         }
     };
 
+    const initialized = useRef(false);
+
     useEffect(() => {
+        if (initialized.current) return;
+        initialized.current = true;
+
         setTodayStr(formatDate(new Date()));
         loadCache(); // Load cache first
         init(); // Then fetch fresh

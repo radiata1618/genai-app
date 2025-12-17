@@ -471,26 +471,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         .where(filter=FieldFilter("target_date", "<", target_date_str))\
         .stream()
 
-    # We already fetched existing_docs above, but we need max_order.
-    # existing_docs iterator is exhausted, so we can't reuse it directly unless we stored the dicts.
-    # But we only need max_order. Let's re-calculate from DB or just assume 0 if empty.
-    # Actually, we can just query again or better, just iterate the stream above into a list first. 
-    # But for minimal changes, let's just query since we saved N routine queries.
-    # OR, we can just use the 'existing_ids' roughly? No, we need 'order'.
-    
-    # Rationale: We saved maybe 50 reads above. One extra read here is fine.
-    # Better: Let's refactor the top part to store the full dicts.
-    
-    # RE-FETCHING is safer for now to avoid refactoring the whole flow too much
-    # current_today_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
-    # BUT wait, we can just do the max_order calculation at the top.
-    
-    # Let's DO IT PROPERLY:
-    # Go back to top and store dicts.
-    # See below for implementation. Note: I will modify the surrounding code to support this.
-    
-    # Taking a step back: I am replacing lines 402-527.
-    # I need to be careful with variables.
+    # Fetch current tasks to check duplicates and determine max_order
     
     current_today_docs_list = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     current_today_tasks = [d.to_dict() for d in current_today_docs_list]
@@ -586,9 +567,7 @@ def get_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = D
         target_date = datetime.now(JST).date()
     target_date_str = target_date.isoformat()
     
-    # ---------------------------------------------------------
-    # OPTIMIZATION: Removed N+1 queries.
-    # ---------------------------------------------------------
+    # Fetch daily tasks for the target date
     docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     
     tasks = []
