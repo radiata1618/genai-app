@@ -172,12 +172,6 @@ export default function ReviewPage() {
                 <div className="w-80 flex flex-col h-full">
                     <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
                         <h2 className="text-lg font-bold text-slate-700">Review History</h2>
-                        <button
-                            onClick={() => setIsCreating(true)}
-                            className="bg-cyan-600 hover:bg-cyan-700 text-white p-2 rounded-full shadow-md transition-colors"
-                        >
-                            + New
-                        </button>
                     </div>
                     <div className="flex-1 overflow-y-auto">
                         {tasks.map((task) => (
@@ -217,6 +211,14 @@ export default function ReviewPage() {
                     >
                         {isSidebarOpen ? "◀" : "▶"}
                     </button>
+
+                    <button
+                        onClick={() => setIsCreating(true)}
+                        className="flex items-center space-x-1 bg-cyan-600 hover:bg-cyan-700 text-white font-medium px-3 py-1.5 rounded-full shadow-sm transition-colors text-sm"
+                    >
+                        <span>+ New Review</span>
+                    </button>
+
                     <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
                         {isCreating ? "New Review" : selectedTask ? selectedTask.video_filename : "Review"}
                     </span>
@@ -225,7 +227,7 @@ export default function ReviewPage() {
                 {/* Mobile FAB */}
                 <button
                     onClick={() => setIsSidebarOpen(true)}
-                    className={`lg:hidden fixed bottom-6 left-6 z-50 p-3 bg-cyan-600 text-white rounded-full shadow-lg hover:bg-cyan-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
+                    className={`lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-cyan-600 text-white rounded-full shadow-lg hover:bg-cyan-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
                 >
                     <span className="text-xl">☰</span>
                 </button>
