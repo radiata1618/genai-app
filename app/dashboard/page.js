@@ -161,52 +161,62 @@ function DashboardContent() {
 
     const handleQuickAdd = async (e) => {
         e.preventDefault();
-        if (!newTaskTitle.trim()) return;
+        const titleVal = newTaskTitle.trim();
+        if (!titleVal) return;
 
-        setIsSubmitting(true);
+        // 1. Optimistic UI Update
+        const tempId = `temp_${Date.now()}`;
+        const optimisticTask = {
+            id: tempId,
+            title: titleVal,
+            status: 'TODO',
+            source_type: 'BACKLOG',
+            source_id: 'temp',
+            target_date: todayStr,
+            created_at: new Date().toISOString(),
+            order: 99999, // Put at end
+            is_highlighted: false,
+            current_goal_progress: null
+        };
+
+        setTasks(prev => {
+            const newTasks = [...prev, optimisticTask];
+            saveCache(newTasks);
+            return newTasks;
+        });
+
+        setNewTaskTitle('');
+        // Keep focus
+        inputRef.current?.focus();
+
+        // 2. Background API Call
         try {
-            const todayStr = new Date().toISOString().split('T')[0];
-
-            // Optimistic UI: Add a fake task temporarily (optional, but good for speed feel)
-            // For now, we'll wait for the API because we need the real ID for subsequent actions.
-            // Or we could rely on the refresh. Let's just do the API calls.
-
-            // 1. Create in Backlog
             const createdItem = await api.addBacklogItem({
-                title: newTaskTitle,
-                category: 'Other', // Default category updated to Other
-                priority: 'Medium',  // Default priority
+                title: titleVal,
+                category: 'Other',
+                priority: 'Medium',
                 deadline: todayStr,
                 scheduled_date: todayStr
             });
 
-            // 2. Pick for Today
             const pickedTask = await api.pickFromBacklog(createdItem.id);
 
-            // 3. Clear Input
-            setNewTaskTitle('');
-
-            // 4. Update State Directly (No Refresh!)
-            // We need to match the structure of tasks in state.
-            // pickedTask should match the structure returned by pickFromBacklog
-            // ensure it has checked 'source_type' etc which are in the response.
-
+            // 3. Swap Temp ID with Real ID
             setTasks(prev => {
-                const newTasks = [...prev, pickedTask];
+                const newTasks = prev.map(t => t.id === tempId ? pickedTask : t);
                 saveCache(newTasks);
                 return newTasks;
             });
 
-            // Note: We skip init() to avoid heavy reload
-            // await init();
-
         } catch (e) {
             console.error(e);
+            // Rollback on error
+            setTasks(prev => {
+                const newTasks = prev.filter(t => t.id !== tempId);
+                saveCache(newTasks);
+                return newTasks;
+            });
             alert('Failed to add task');
-        } finally {
-            setIsSubmitting(false);
-            // Keep focus for rapid entry? Or dismiss?
-            // inputRef.current?.focus(); // Uncomment to keep focus
         }
     };
 
@@ -407,7 +417,8 @@ function DashboardContent() {
                                         onDragEnd={onDragEnd}
 
                                         className={`group cursor-default p-1.5 rounded-md border transition-all duration-200 flex items-center gap-2 select-none relative
-                                             ${t.status === 'DONE' || t.status === 'SKIPPED'
+                                              ${t.id.toString().startsWith('temp_') ? 'bg-slate-50 border-slate-100' : ''}
+                                              ${t.status === 'DONE' || t.status === 'SKIPPED'
                                                 ? 'bg-slate-50 border-slate-50 opacity-50'
                                                 : t.is_highlighted
                                                     ? 'bg-pink-50 border-pink-100 hover:border-pink-200 shadow-sm'
@@ -458,10 +469,12 @@ function DashboardContent() {
 
                                         <div
                                             onClick={(e) => {
+                                                if (t.id.toString().startsWith('temp_')) return;
                                                 e.stopPropagation();
                                                 handleToggle(t.id, t.status);
                                             }}
                                             className={`w-4 h-4 rounded flex-shrink-0 border flex items-center justify-center transition-colors cursor-pointer hover:ring-2 hover:ring-indigo-100
+                                           ${t.id.toString().startsWith('temp_') ? 'opacity-50 cursor-wait' : ''}
                                            ${t.status === 'DONE' ? 'bg-indigo-500 border-indigo-500' :
                                                     t.status === 'SKIPPED' ? 'bg-slate-200 border-slate-200' :
                                                         'border-slate-300 bg-white group-hover:border-indigo-400'}

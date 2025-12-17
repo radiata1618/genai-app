@@ -3,8 +3,13 @@ import datetime
 from google.cloud import storage
 from google.cloud import firestore
 from google import genai
-import vertexai
-from vertexai.vision_models import MultiModalEmbeddingModel, Image
+from google.cloud import storage
+from google.cloud import firestore
+from google import genai
+
+# Lazy import for vertexai
+# import vertexai
+# from vertexai.vision_models import MultiModalEmbeddingModel, Image
 
 try:
     from google.cloud.firestore import Vector
@@ -65,6 +70,9 @@ def get_embedding(text: str = None, image_bytes: bytes = None):
 
     try:
         # Lazy init Vertex AI SDK
+        import vertexai
+        from vertexai.vision_models import MultiModalEmbeddingModel, Image
+
         vertexai.init(project=PROJECT_ID, location=LOCATION)
         
         # Load the specific model designed for multimodal embeddings

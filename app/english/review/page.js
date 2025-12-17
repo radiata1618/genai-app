@@ -59,10 +59,10 @@ export default function ReviewPage() {
         e.preventDefault();
         setIsDragging(false);
         const file = e.dataTransfer.files?.[0];
-        if (file && file.type.startsWith("video/")) {
+        if (file && (file.type.startsWith("video/") || file.type.startsWith("audio/"))) {
             handleFileUpload({ target: { files: [file] } });
         } else {
-            alert("Please drop a valid video file.");
+            alert("Please drop a valid video or audio file.");
         }
     };
 
@@ -249,9 +249,9 @@ export default function ReviewPage() {
                                         <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4-4-4 4h3v3h2v-3z" />
                                     </svg>
                                     <span className="mt-2 text-base leading-normal text-slate-600">
-                                        {isDragging ? "Drop video here" : "Select or Drop a video file"}
+                                        {isDragging ? "Drop video/audio here" : "Select or Drop a video/audio file"}
                                     </span>
-                                    <input type='file' accept="video/*" className="hidden" onChange={handleFileUpload} />
+                                    <input type='file' accept="video/*,audio/*" className="hidden" onChange={handleFileUpload} />
                                 </label>
                             </div>
                             {isLoading && (

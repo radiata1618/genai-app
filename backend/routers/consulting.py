@@ -37,10 +37,8 @@ from services.ai_shared import (
     RESULT_COLLECTION_NAME,
     Vector
 )
-from services.ai_analysis import analyze_slide_structure
-
-# Import the service logic for local fallback
-from services.ingestion import run_batch_ingestion
+# from services.ai_analysis import analyze_slide_structure
+# from services.ingestion import run_batch_ingestion
 
 router = APIRouter(
     tags=["consulting"],
@@ -100,7 +98,7 @@ def download_and_upload_worker(pdf_url: str):
     return None
 
 import io
-from pdf2image import convert_from_bytes # Used in retry_batch_worker (legacy)
+# from pdf2image import convert_from_bytes # Used in retry_batch_worker (legacy)
 
 async def run_batch_ingestion_worker(batch_id: str):
     """
@@ -111,6 +109,7 @@ async def run_batch_ingestion_worker(batch_id: str):
         # In a real async environment, we might run this in a thread pool executor
         # if the service function is blocking (it is).
         loop = asyncio.get_event_loop()
+        from services.ingestion import run_batch_ingestion
         await loop.run_in_executor(None, run_batch_ingestion, batch_id)
     except Exception as e:
         print(f"Worker Wrapper Error: {e}")
@@ -157,6 +156,8 @@ async def retry_batch_worker(batch_id: str, item_ids: List[str] = None):
                     image.save(img_byte_arr, format='JPEG')
                     img_bytes = img_byte_arr.getvalue()
                     
+                    
+                    from services.ai_analysis import analyze_slide_structure
                     analysis = analyze_slide_structure(img_bytes)
                     text_context = f"Structure: {analysis.get('structure_type', '')}. Key Message: {analysis.get('key_message', '')}. {analysis.get('description', '')}"
                     emb = get_embedding(image_bytes=img_bytes, text=text_context)

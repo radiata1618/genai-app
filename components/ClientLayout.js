@@ -9,7 +9,7 @@ function ClientLayoutContent({ children }) {
 
 
     return (
-        <div className="flex h-screen bg-gray-50 overflow-hidden">
+        <div className="flex h-[100dvh] bg-gray-50 overflow-hidden">
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
                 <div

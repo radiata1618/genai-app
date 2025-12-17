@@ -57,6 +57,22 @@ app.add_middleware(PerformanceMiddleware)
 app.add_middleware(APIKeyMiddleware)
 # ---------------------------
 
+@app.on_event("startup")
+async def startup_event():
+    # Trigger background loading of heavy libraries to fix cold start
+    try:
+        from services.background_loader import BackgroundLoader
+        loader = BackgroundLoader.get_instance()
+        loader.start_loading([
+            "vertexai",
+            "pdf2image",
+            "google.cloud.aiplatform",
+            "services.ai_analysis", 
+            "services.ingestion"
+        ])
+        print("Application startup complete. Background loading initiated.")
+    except Exception as e:
+        print(f"Background Loader Init Failed: {e}")
 
 # Include routers
 app.include_router(generate.router, prefix="/api", tags=["generate"])

@@ -340,6 +340,14 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
              mime_type = "video/quicktime"
         elif req.video_filename.lower().endswith(".webm"):
              mime_type = "video/webm"
+        elif req.video_filename.lower().endswith(".mp3"):
+             mime_type = "audio/mpeg"
+        elif req.video_filename.lower().endswith(".wav"):
+             mime_type = "audio/wav"
+        elif req.video_filename.lower().endswith(".m4a"):
+             mime_type = "audio/mp4"
+        elif req.video_filename.lower().endswith(".aac"):
+             mime_type = "audio/aac"
         
         part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
 
