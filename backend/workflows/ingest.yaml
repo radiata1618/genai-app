@@ -1,0 +1,42 @@
+main:
+    params: [input]
+    steps:
+    - init:
+        assign:
+            - project: ${sys.get_env("GCP_PROJECT_ID")}
+            - location: "asia-northeast1"
+            - job_name: "ingestion-worker"
+            - batch_id: ${uuid.generate()}
+            - firestore_db: "(default)"
+    
+    - create_batch_recording:
+        call: googleapis.firestore.v1.projects.databases.documents.createDocument
+        args:
+            collectionId: "ingestion_batches"
+            parent: ${"projects/" + project + "/databases/" + firestore_db + "/documents"}
+            documentId: ${batch_id}
+            body:
+                fields:
+                    id:
+                        stringValue: ${batch_id}
+                    status:
+                        stringValue: "pending"
+                    summary:
+                        stringValue: "Triggered via Cloud Workflows"
+                    created_at:
+                        timestampValue: ${time.format(sys.now())}
+    
+    - run_ingestion_job:
+        call: googleapis.run.v1.namespaces.jobs.run
+        args:
+            name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job_name}
+            body:
+                overrides:
+                    containerOverrides:
+                        - args: ["--batch_id", "${batch_id}"]
+        result: job_execution
+    
+    - return_result:
+        return:
+            batch_id: ${batch_id}
+            job_execution: ${job_execution}

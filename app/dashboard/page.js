@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { api } from '../utils/api';
+import { getDailyTasks, addQuickTask } from '../actions/dashboard';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -16,7 +17,7 @@ const CATEGORIES = {
     'Dog': { label: '犬', icon: '🐕' },
     'Outing': { label: 'お出かけ', icon: '🏞️' },
     'Chores': { label: '雑務', icon: '🧹' },
-    'Shopping': { label: '買い物', icon: '🛒' },
+    'Shopping': { label: '買い物', 'icon': '🛒' },
     'Book': { label: '本', icon: '📚' },
     'Other': { label: 'その他', icon: '📦' },
 };
@@ -71,24 +72,15 @@ function DashboardContent() {
         }
     };
 
-    const init = async () => {
+    const init = async (currentTodayStr) => {
         // Don't set loading=true here if we already have cache, to avoid flickering
         // Instead, we just fetch and update.
 
         try {
-            // Plan B: Run generation in parallel (background)
-            api.generateDailyTasks().then(async (res) => {
-                if (res && res.message && !res.message.includes("Generated 0 tasks")) {
-                    const t = await api.getDaily();
-                    setTasks(t);
-                    saveCache(t); // Update cache with fresh data
-                }
-            }).catch(err => console.error("Background generation failed", err));
-
             // Fetch data in parallel for Main View
             const [r, t] = await Promise.all([
                 api.getRoutines(),
-                api.getDaily()
+                getDailyTasks(currentTodayStr)
             ]);
 
             setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
@@ -107,9 +99,10 @@ function DashboardContent() {
         if (initialized.current) return;
         initialized.current = true;
 
-        setTodayStr(formatDate(new Date()));
+        const currentTodayStr = formatDate(new Date());
+        setTodayStr(currentTodayStr);
         loadCache(); // Load cache first
-        init(); // Then fetch fresh
+        init(currentTodayStr); // Then fetch fresh
 
         // Check for focus param (from shortcut)
         if (searchParams.get('focus') === 'input') {
@@ -181,34 +174,20 @@ function DashboardContent() {
 
         setTasks(prev => {
             const newTasks = [...prev, optimisticTask];
-            saveCache(newTasks);
             return newTasks;
         });
-
         setNewTaskTitle('');
         // Keep focus
         inputRef.current?.focus();
 
-        // 2. Background API Call
+        // 2. Background API Call (Server Action)
         try {
-            const apiDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-            const createdItem = await api.addBacklogItem({
-                title: titleVal,
-                category: 'Other',
-                priority: 'Medium',
-                deadline: apiDate,
-                scheduled_date: apiDate
-            });
+            await addQuickTask(titleVal, todayStr);
 
-            const pickedTask = await api.pickFromBacklog(createdItem.id);
-
-            // 3. Swap Temp ID with Real ID
-            setTasks(prev => {
-                const newTasks = prev.map(t => t.id === tempId ? pickedTask : t);
-                saveCache(newTasks);
-                return newTasks;
-            });
-
+            // Refresh in background to get real ID
+            const t = await getDailyTasks(todayStr);
+            setTasks(t);
+            saveCache(t);
         } catch (e) {
             console.error(e);
             // Rollback on error

@@ -353,12 +353,17 @@ export default function ActionsPage() {
                                     </div>
                                     <div className="w-28 space-y-1">
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time</label>
-                                        <input
-                                            type="time"
+                                        <select
                                             value={scheduledTime}
                                             onChange={e => setScheduledTime(e.target.value)}
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all text-center"
-                                        />
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all text-center appearance-none"
+                                        >
+                                            {Array.from({ length: 24 }).map((_, i) => {
+                                                const h = i.toString().padStart(2, '0');
+                                                const timeVal = `${h}:00`;
+                                                return <option key={timeVal} value={timeVal}>{timeVal}</option>;
+                                            })}
+                                        </select>
                                     </div>
                                 </div>
 
