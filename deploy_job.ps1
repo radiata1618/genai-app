@@ -11,12 +11,12 @@ gcloud run jobs deploy $JOB_NAME `
     --image $IMAGE_NAME `
     --region $REGION `
     --command "python" `
-    --args="-m,backend.jobs.ingest" `
+    --args="-m,jobs.ingest" `
     --memory 2Gi `
     --cpu 1 `
     --task-timeout 3600s `
     --max-retries 0 `
-    --set-env-vars PROJECT_ID=$PROJECT_ID, LOCATION=$REGION, GCS_BUCKET_NAME_FOR_CONSUL_DOC="documents-for-consulting-work"
+    --set-env-vars "PROJECT_ID=$PROJECT_ID,LOCATION=$REGION,GCS_BUCKET_NAME_FOR_CONSUL_DOC=documents-for-consulting-work"
 
 Write-Host "Job deployed."
 Read-Host "Press Enter to exit..."

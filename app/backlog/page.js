@@ -1,7 +1,8 @@
 "use client";
 
 import React, { useState, useEffect, useRef } from 'react';
-import { api } from '../utils/api';
+import { getBacklogItems, addBacklogItem, updateBacklogItem, deleteBacklogItem, reorderBacklogItems } from '../actions/backlog';
+import { pickFromBacklog } from '../actions/daily';
 
 import { formatDate } from '../utils/date';
 import CustomDatePicker from '../../components/CustomDatePicker';
@@ -67,7 +68,7 @@ export default function BacklogPage() {
 
     const fetchTasks = async () => {
         try {
-            const data = await api.getBacklog();
+            const data = await getBacklogItems();
             setTasks(data);
         } catch (e) {
             console.error(e);
@@ -94,7 +95,7 @@ export default function BacklogPage() {
 
         setIsSubmitting(true);
         try {
-            await api.addBacklogItem({
+            await addBacklogItem({
                 ...form,
                 deadline: form.deadline || null,
                 scheduled_date: form.scheduled_date || null,
@@ -115,7 +116,7 @@ export default function BacklogPage() {
     const handleDelete = async (id) => {
         if (!confirm('本当に削除しますか？')) return;
         try {
-            await api.deleteBacklogItem(id);
+            await deleteBacklogItem(id);
             setTasks(prev => prev.filter(t => t.id !== id));
         } catch (e) {
             alert('Failed to delete task');
@@ -126,7 +127,7 @@ export default function BacklogPage() {
     const handleMoveToToday = async (id) => {
         if (!confirm('今日やりますか？')) return;
         try {
-            await api.pickFromBacklog(id);
+            await pickFromBacklog(id);
             alert('Added to Today!');
         } catch (e) {
             alert(e.message === 'Already picked' ? '既に今日のタスクにあります' : 'Failed to pick task');
@@ -145,7 +146,7 @@ export default function BacklogPage() {
     const saveEdit = async (e) => {
         e.preventDefault();
         try {
-            const updated = await api.updateBacklogItem(editingTask.id, {
+            const updated = await updateBacklogItem(editingTask.id, {
                 ...editingTask,
                 deadline: editingTask.deadline || null,
                 scheduled_date: editingTask.scheduled_date || null
@@ -164,7 +165,7 @@ export default function BacklogPage() {
 
         try {
             const task = tasks.find(t => t.id === id);
-            await api.updateBacklogItem(id, { ...task, [field]: value });
+            await updateBacklogItem(id, { ...task, [field]: value });
         } catch (e) {
             console.error('Failed to update task field', e);
             // Revert on failure (simple fetch for now)
@@ -179,7 +180,7 @@ export default function BacklogPage() {
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, is_highlighted: newStatus } : t));
 
         try {
-            await api.updateBacklogItem(task.id, { ...task, is_highlighted: newStatus });
+            await updateBacklogItem(task.id, { ...task, is_highlighted: newStatus });
         } catch (e) {
             console.error('Failed to highlight task', e);
             fetchTasks();
@@ -194,7 +195,7 @@ export default function BacklogPage() {
         setTasks(prev => prev.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
 
         try {
-            await api.updateBacklogItem(task.id, { ...task, status: newStatus });
+            await updateBacklogItem(task.id, { ...task, status: newStatus });
         } catch (e) {
             console.error('Failed to toggle done', e);
             fetchTasks();
@@ -232,7 +233,7 @@ export default function BacklogPage() {
         setDraggedItem(null);
         // Persist order
         try {
-            await api.reorderBacklogItems(tasks.map(t => t.id));
+            await reorderBacklogItems(tasks.map(t => t.id));
         } catch (e) {
             console.error('Failed to save order', e);
         }

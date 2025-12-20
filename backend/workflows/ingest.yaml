@@ -29,11 +29,12 @@ main:
     - run_ingestion_job:
         call: googleapis.run.v1.namespaces.jobs.run
         args:
-            name: ${"projects/" + project + "/locations/" + location + "/jobs/" + job_name}
+            name: ${"namespaces/" + project + "/jobs/" + job_name}
+            location: ${location}
             body:
                 overrides:
                     containerOverrides:
-                        - args: ["--batch_id", "${batch_id}"]
+                        - args: ["-m", "jobs.ingest", "--batch_id", "${batch_id}"]
         result: job_execution
     
     - return_result:

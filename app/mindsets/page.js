@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import { getRoutines, addRoutine, updateRoutine, deleteRoutine, reorderRoutines } from '../actions/routines';
 import MobileMenuButton from '../../components/MobileMenuButton';
 
 export default function MindsetsPage() {
@@ -21,7 +22,7 @@ export default function MindsetsPage() {
 
     const fetchMindsets = async () => {
         try {
-            const data = await api.getRoutines('MINDSET');
+            const data = await getRoutines('MINDSET');
             const sorted = data.sort((a, b) => (a.order || 0) - (b.order || 0));
             setMindsets(sorted);
         } catch (e) {
@@ -54,9 +55,9 @@ export default function MindsetsPage() {
         if (!title) return;
         try {
             if (editingId) {
-                await api.updateRoutine(editingId, title, 'MINDSET', null, icon);
+                await updateRoutine(editingId, { title, routine_type: 'MINDSET', icon });
             } else {
-                await api.addRoutine(title, 'MINDSET', null, icon);
+                await addRoutine({ title, routine_type: 'MINDSET', icon });
             }
             setIsModalOpen(false);
             fetchMindsets();
@@ -68,7 +69,7 @@ export default function MindsetsPage() {
     const handleDelete = async (id) => {
         if (!confirm('Are you sure you want to delete this rule?')) return;
         try {
-            await api.deleteRoutine(id);
+            await deleteRoutine(id);
             fetchMindsets();
         } catch (e) {
             alert('Failed to delete mindset');
@@ -98,7 +99,7 @@ export default function MindsetsPage() {
         setDraggedItem(null);
         const ids = mindsets.map(m => m.id);
         try {
-            await api.reorderRoutines(ids);
+            await reorderRoutines(ids);
         } catch (e) {
             console.error("Failed to reorder", e);
             fetchMindsets();

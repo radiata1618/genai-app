@@ -3,6 +3,7 @@
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { api } from '../utils/api';
 import { getDailyTasks, addQuickTask } from '../actions/dashboard';
+import { toggleTaskComplete, skipTask, highlightTask, updateTaskTitle, reorderDailyTasks, postponeTask } from '../actions/daily';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -126,7 +127,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.toggleComplete(id, isDone);
+            await toggleTaskComplete(id, isDone);
         } catch (e) {
             console.error("Failed to toggle", e);
             // Revert included in optimistic update logic implicitly if needed, but for now we trust optimistic
@@ -146,7 +147,7 @@ function DashboardContent() {
 
         try {
             const isDone = lastAction.status === 'DONE';
-            await api.toggleComplete(lastAction.id, isDone);
+            await toggleTaskComplete(lastAction.id, isDone);
         } catch (e) {
             console.error("Failed to undo", e);
         }
@@ -213,7 +214,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.skipTask(id);
+            await skipTask(id);
         } catch (e) {
             console.error("Failed to skip", e);
         }
@@ -241,11 +242,11 @@ function DashboardContent() {
         setPostponeModalOpen(false);
 
         try {
-            await api.postponeTask(taskToPostpone.id, dateStr);
+            await postponeTask(taskToPostpone.id, dateStr);
         } catch (e) {
             console.error("Failed to postpone", e);
             alert("Failed to postpone task");
-            init();
+            init(); // Re-fetch to sync state if postpone failed or ID changed unexpectedly
         }
     };
 
@@ -259,7 +260,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.highlightTask(id, newStatus);
+            await highlightTask(id, newStatus);
         } catch (e) {
             console.error("Failed to highlight", e);
         }
@@ -294,7 +295,7 @@ function DashboardContent() {
 
         const ids = tasks.map(t => t.id);
         try {
-            await api.reorderDaily(ids);
+            await reorderDailyTasks(ids);
         } catch (e) {
             console.error("Failed to reorder", e);
         }
@@ -325,7 +326,7 @@ function DashboardContent() {
 
         const ids = newTasks.map(t => t.id);
         try {
-            await api.reorderDaily(ids);
+            await reorderDailyTasks(ids);
         } catch (e) {
             console.error("Failed to reorder manually", e);
         }
@@ -474,7 +475,7 @@ function DashboardContent() {
                                                     onBlur={async (e) => {
                                                         const val = e.target.value;
                                                         try {
-                                                            await api.updateTaskTitle(t.id, val);
+                                                            await updateTaskTitle(t.id, val);
                                                             saveCache(tasks.map(task => task.id === t.id ? { ...task, title: val } : task));
                                                         } catch (err) {
                                                             console.error("Failed to update title", err);

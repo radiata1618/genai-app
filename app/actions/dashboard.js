@@ -70,18 +70,33 @@ export async function getDailyTasks(dateStr) {
 }
 
 function serialize(obj) {
-    if (!obj) return obj;
-    const newObj = { ...obj };
-    // Convert known Timestamp fields or any object with toDate
-    for (const key in newObj) {
-        const val = newObj[key];
-        if (val && typeof val.toDate === 'function') {
-            newObj[key] = val.toDate().toISOString();
-        } else if (val instanceof Date) {
-            newObj[key] = val.toISOString();
-        }
+    if (obj === null || obj === undefined) return obj;
+
+    // Handle Firestore Timestamp
+    if (obj && typeof obj.toDate === 'function') {
+        return obj.toDate().toISOString();
     }
-    return newObj;
+
+    // Handle Date
+    if (obj instanceof Date) {
+        return obj.toISOString();
+    }
+
+    // Handle Array
+    if (Array.isArray(obj)) {
+        return obj.map(item => serialize(item));
+    }
+
+    // Handle Object
+    if (typeof obj === 'object') {
+        const newObj = {};
+        for (const key in obj) {
+            newObj[key] = serialize(obj[key]);
+        }
+        return newObj;
+    }
+
+    return obj;
 }
 
 export async function addQuickTask(title, dateStr) {
