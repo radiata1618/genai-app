@@ -101,6 +101,7 @@ def run_batch_ingestion(batch_id: str):
                 break
 
             trace(f"Processing file: {blob.name}")
+            success_data = False # Default to False (failed or skipped)
             safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
             res_id = f"{batch_id}_{safe_filename}"
             res_doc_ref = results_ref.document(res_id)
