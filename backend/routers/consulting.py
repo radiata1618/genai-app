@@ -249,12 +249,30 @@ class RetryBatchRequest(BaseModel):
 # --- Endpoints ---
 
 @router.get("/consulting/files")
-async def list_files(max_results: int = 100, page_token: Optional[str] = None):
-    """Lists PDF files in the consulting_raw directory with pagination."""
+async def list_files(max_results: int = 100, page_token: Optional[str] = None, search: Optional[str] = None):
+    """Lists PDF files in the consulting_raw directory with pagination and optional search."""
     try:
         g_client = get_storage_client()
         bucket = g_client.bucket(GCS_BUCKET_NAME)
-        blobs_iter = bucket.list_blobs(prefix="consulting_raw/", max_results=max_results, page_token=page_token)
+        
+        prefix = "consulting_raw/"
+        match_glob = None
+        
+        if search:
+            # Note: GCS match_glob works relative to the bucket root, but we want to search INSIDE the prefix
+            # However, list_blobs with both prefix and match_glob can be tricky or supported depending on lib version.
+            # Best practice: use match_glob for the full pattern.
+            # Pattern: consulting_raw/*{search}*
+            # We must be careful about case sensitivity (GCS is case sensitive).
+            # match_glob does not support insensitive search natively. 
+            # We will accept exact case or try to match loosely if possible, but standard glob is case sensitive.
+            # For now, we implement simple glob matching.
+            match_glob = f"consulting_raw/*{search}*"
+            # When match_glob is used, prefix is often ignored or used as a filter. 
+            # We'll use match_glob primarily.
+            blobs_iter = bucket.list_blobs(match_glob=match_glob, max_results=max_results, page_token=page_token)
+        else:
+            blobs_iter = bucket.list_blobs(prefix=prefix, max_results=max_results, page_token=page_token)
         
         file_list = []
         db = get_firestore_client()
