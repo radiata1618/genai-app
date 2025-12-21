@@ -15,6 +15,7 @@ gcloud run jobs deploy $JOB_NAME `
     --memory 2Gi `
     --cpu 1 `
     --task-timeout 3600s `
+    --tasks 20 `
     --max-retries 0 `
     --set-env-vars "PROJECT_ID=$PROJECT_ID,LOCATION=$REGION,GCS_BUCKET_NAME_FOR_CONSUL_DOC=documents-for-consulting-work"
 

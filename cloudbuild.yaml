@@ -22,6 +22,8 @@ steps:
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
+      - '--min-instances'
+      - '1'
       - '--service-account'
       - 'app-account@trial-project-ushikoshi.iam.gserviceaccount.com'
       - '--set-env-vars'
