@@ -74,6 +74,7 @@ export default function BatchDetailPage() {
             failed: 'bg-red-100 text-red-800',
             processing: 'bg-blue-100 text-blue-800',
             pending: 'bg-gray-100 text-gray-800',
+            skipped: 'bg-yellow-100 text-yellow-800',
         };
         return (
             <span className={`px-2 py-0.5 rounded text-xs font-bold uppercase ${colors[status] || 'bg-gray-100'}`}>
@@ -119,8 +120,10 @@ export default function BatchDetailPage() {
                             </div>
                             <div className="text-sm mt-2 flex gap-4">
                                 <div className="font-bold text-slate-700">Total: {batch.total_files}</div>
-                                <div className="font-bold text-green-600">Success: {batch.success_files}</div>
-                                <div className="font-bold text-red-600">Failed: {batch.failed_files}</div>
+                                <div className="font-bold text-blue-600">Processing: {items.filter(i => i.status === 'processing').length}</div>
+                                <div className="font-bold text-green-600">Success: {items.filter(i => i.status === 'success').length}</div>
+                                <div className="font-bold text-yellow-600">Skipped: {items.filter(i => i.status === 'skipped').length}</div>
+                                <div className="font-bold text-red-600">Failed: {items.filter(i => i.status === 'failed').length}</div>
                             </div>
                         </div>
 
