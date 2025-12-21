@@ -345,7 +345,7 @@ def run_batch_ingestion(batch_id: str):
                 success_data = False
             
             processed_count += 1
-            })
+
             
             # Atomic Increment for Batch Counters
             batch_ref.update({
