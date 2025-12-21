@@ -76,46 +76,66 @@ export default function LogicMapperPage() {
                         <span className="text-xs font-normal text-slate-500">{results.length} found</span>
                     </h3>
 
-                    {/* Logic Visualization Box */}
+                    {/* Logic Visualization Box: Shows the 3 generated queries */}
                     {metadata && metadata.refinedQuery && (
-                        <div className="mb-6 bg-blue-50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800">
-                            <div className="font-bold mb-1 flex items-center gap-2">
-                                <span>🧠 AI Interpretation Logic</span>
+                        <div className="mb-6 bg-indigo-50 border border-indigo-100 p-4 rounded-lg text-sm text-indigo-900">
+                            <div className="font-bold mb-2 flex items-center gap-2">
+                                <span>🧠 AI Search Strategy (Multi-Query)</span>
                             </div>
-                            <p>{metadata.refinedQuery}</p>
+                            <div className="flex flex-wrap gap-2">
+                                {metadata.refinedQuery.split(' / ').map((q, i) => (
+                                    <span key={i} className="bg-white px-2 py-1 rounded shadow-sm border border-indigo-100 text-xs">
+                                        {i === 0 && "🏷️ Topic: "}
+                                        {i === 1 && "📐 Structure: "}
+                                        {i === 2 && "🔗 Combined: "}
+                                        {q}
+                                    </span>
+                                ))}
+                            </div>
                         </div>
                     )}
-
-                    {/* Hack: The refinedQuery is in metadata but we put it in results[0] for easy access or pass it separately? */}
-                    {/* Ideally we should store metadata in state. Let's fix handleSearch first. */}
 
                     {results.length === 0 && !loading && (
                         <div className="text-center py-20 text-slate-400">
                             <div className="text-4xl mb-2">🧠</div>
-                            <p>Enter your logic to see suggestions.</p>
+                            <p>検索ワードを入力して、スライド構成を検索します。</p>
                         </div>
                     )}
 
                     <div className="grid grid-cols-1 lg:grid-cols-2 gap-6">
                         {results.map((item, idx) => (
-                            <div key={idx} className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group cursor-pointer">
-                                <div className="aspect-video bg-slate-200 relative overflow-hidden">
-                                    {/* eslint-disable-next-line @next/next/no-img-element */}
-                                    <img src={item.url} alt="Slide Template" className="w-full h-full object-cover" />
-                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/10 transition-colors" />
-                                </div>
-                                <div className="p-3">
-                                    <div className="text-xs text-slate-400 font-mono mb-1">{item.id || item.uri || 'Reference'}</div>
-                                    <div className="flex items-center gap-2 mb-1">
-                                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
-                                            <div
-                                                className="h-full bg-indigo-500 rounded-full"
-                                                style={{ width: `${(item.score * 100).toFixed(0)}%` }}
-                                            />
+                            <div
+                                key={idx}
+                                className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden hover:shadow-md transition-shadow group cursor-pointer flex flex-col"
+                                onClick={() => item.url && window.open(`${item.url}#page=${item.page_number || 1}`, '_blank')}
+                            >
+                                <div className="aspect-video bg-slate-100 relative overflow-hidden flex items-center justify-center border-b border-slate-100 shrink-0">
+                                    {/* Since we don't store page thumbnails in GCS currently, we show a PDF preview placeholder */}
+                                    <div className="text-center p-4">
+                                        <div className="text-4xl mb-2">📄</div>
+                                        <div className="text-sm font-bold text-slate-600 line-clamp-1">{item.filename}</div>
+                                        <div className="text-xs text-indigo-500 font-bold bg-indigo-50 px-2 py-1 rounded-full inline-block mt-2">
+                                            Page {item.page_number}
                                         </div>
-                                        <div className="text-sm font-bold text-indigo-600">{(item.score * 100).toFixed(0)}% Match</div>
                                     </div>
-                                    <p className="text-xs text-slate-500 line-clamp-2">{item.key_message || item.description}</p>
+                                    <div className="absolute inset-0 bg-black/0 group-hover:bg-black/5 transition-colors" />
+                                </div>
+                                <div className="p-3 flex flex-col flex-1">
+                                    <div className="flex justify-between items-start mb-2">
+                                        <div className="text-xs text-slate-400 font-mono">{item.id.slice(0, 8)}...</div>
+                                        <div className="text-xs font-bold text-indigo-600 bg-indigo-50 px-2 py-0.5 rounded">
+                                            Score: {(item.score * 100).toFixed(0)}
+                                        </div>
+                                    </div>
+
+                                    {/* AI Reason Display */}
+                                    {item.aiReason && (
+                                        <div className="mb-2 bg-yellow-50 border border-yellow-100 p-2 rounded text-xs text-yellow-800">
+                                            <span className="font-bold">Why?</span> {item.aiReason}
+                                        </div>
+                                    )}
+
+                                    <p className="text-xs text-slate-500 line-clamp-3 mb-2">{item.key_message || item.description}</p>
                                 </div>
                             </div>
                         ))}

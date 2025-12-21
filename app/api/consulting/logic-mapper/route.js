@@ -65,39 +65,59 @@ async function getEmbedding(text) {
 async function refineQuery(originalQuery) {
     if (!PROJECT_ID) {
         console.warn("PROJECT_ID is not set. Skipping refinement.");
-        return originalQuery; // Fallback
+        return [originalQuery]; // Fallback
     }
 
     try {
-        // Initialize GoogleGenAI SDK (Vertex AI mode) as per article
+        // Initialize GoogleGenAI SDK
         const ai = new GoogleGenAI({
             vertexai: true,
             project: PROJECT_ID,
-            location: GENAI_LOCATION // 'global'
+            location: GENAI_LOCATION
         });
 
         const prompt = `
-        You are an expert presentation consultant.
-        Your task is to transform the user's raw query (which describes a business logic or intent) into a visual slide structure description used for vector search.
-        
-        Rules:
-        1. Output ONLY the refined description. No intro/outro.
-        2. Focus on visual elements types (e.g., "Bar chart comparing...", "3-step process flow...", "2x2 matrix...").
-        3. Be specific about the relationship (e.g., "Contrast", "Growth", "Hierarchy").
+        You are an expert presentation search assistant.
         
         User Query: "${originalQuery}"
-        Refined Description:
+        
+        Task: Generate 3 distinct search queries to find relevant slides.
+        1. **Topic Query**: Focus purely on the business topic (e.g., "Customer Satisfaction", "Market Sizing").
+        2. **Structure Query**: Focus purely on the visual structure (e.g., "Bar chart", "Process flow", "2x2 Matrix").
+        3. **Combined Query**: A natural sentence combining both (e.g., "Bar chart showing customer satisfaction trends").
+        
+        Output: A JSON array of strings. Example: ["Customer Satisfaction", "Bar chart", "Customer Satisfaction Bar chart"]
+        RETURN JSON ONLY.
         `;
 
         const response = await ai.models.generateContent({
-            model: GENERATIVE_MODEL_ID,
-            contents: prompt
+            model: GENERATIVE_MODEL_ID, // gemini-3-flash-preview or switch to 2.0 if needed
+            contents: [{ role: "user", parts: [{ text: prompt }] }],
+            generationConfig: {
+                responseMimeType: "application/json"
+            }
         });
 
-        return response.text ? response.text.trim() : originalQuery;
+        // The @google/genai SDK response might vary. 
+        // Typically response.text() exists.
+        let jsonStr;
+        if (typeof response.text === 'function') {
+            jsonStr = response.text();
+        } else if (response.response && typeof response.response.text === 'function') {
+            // Fallback for some versions
+            jsonStr = response.response.text();
+        } else {
+            console.warn("Unexpected Gemini response structure:", JSON.stringify(response, null, 2));
+            // Try manual extraction
+            jsonStr = response.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+        }
+
+        jsonStr = jsonStr.replace(/```json|```/g, "").trim();
+        return JSON.parse(jsonStr);
+
     } catch (e) {
         console.error("Gemini Refinement Error:", e);
-        return originalQuery; // Fallback to original
+        return [originalQuery]; // Fallback to array
     }
 }
 
@@ -109,33 +129,6 @@ export async function POST(request) {
         if (!query) {
             return NextResponse.json({ error: 'Query is required' }, { status: 400 });
         }
-
-        // 1. Refine Query (Gemini)
-        console.log(`[LogicMapper] Original Query: ${query}`);
-        const refinedQuery = await refineQuery(query);
-        console.log(`[LogicMapper] Refined Query: ${refinedQuery}`);
-
-        // 2. Generate Embedding (Multimodal)
-        const embeddingVector = await getEmbedding(refinedQuery);
-
-        if (!embeddingVector) {
-            return NextResponse.json({ error: 'Failed to generate embedding' }, { status: 500 });
-        }
-
-        // 3. Vector Search (Firestore)
-        const coll = db.collection('consulting_slides');
-        const vectorQuery = coll.findNearest('embedding', FieldValue.vector(embeddingVector), {
-            limit: 10,
-            distanceMeasure: 'COSINE'
-        });
-
-        const snapshot = await vectorQuery.get();
-
-        // Helper to get Signed URL
-        const { getStorage } = await import('firebase-admin/storage');
-        const bucket = getStorage().bucket(process.env.GCS_BUCKET_NAME || `${PROJECT_ID}.firebasestorage.app`);
-        // Note: Default bucket might be different. 
-        // Ideally we parse the 'uri' field: gs://<bucket>/<path>
 
         // Helper: Cosine Similarity
         function cosineSimilarity(vecA, vecB) {
@@ -153,57 +146,193 @@ export async function POST(request) {
             return dotProduct / (magnitudeA * magnitudeB);
         }
 
-        const results = await Promise.all(snapshot.docs.map(async (doc) => {
-            const data = doc.data();
-            const { embedding, ...rest } = data;
+        // 1. Generate Multiple Queries (Gemini)
+        console.log(`[LogicMapper] Original Query: ${query}`);
+        const queries = await refineQuery(query);
+        console.log(`[LogicMapper] Generated Queries:`, queries);
 
-            // Calculate Score manually
-            let score = 0;
-            if (embedding && embeddingVector) {
-                // embedding might be an object/Vector type depending on SDK version, 
-                // or a plain array. Adjust if needed.
-                // Usually it's an array or has .toArray(). 
-                // Let's assume array for now or try to convert.
-                const docVec = Array.isArray(embedding) ? embedding :
-                    (embedding.toArray ? embedding.toArray() : Object.values(embedding));
-                score = cosineSimilarity(embeddingVector, docVec);
+        // 2. Generate Embeddings & Run Vector Searches in Parallel
+        const coll = db.collection('consulting_slides');
+        const CANDIDATE_LIMIT = 50; // Fetch 50 per query
+
+        const searchPromises = queries.map(async (q) => {
+            const vector = await getEmbedding(q);
+            if (!vector) return [];
+
+            const vQuery = coll.findNearest('embedding', FieldValue.vector(vector), {
+                limit: CANDIDATE_LIMIT,
+                distanceMeasure: 'COSINE'
+            });
+            const snap = await vQuery.get();
+            return snap.docs.map(doc => {
+                const data = doc.data();
+                const { embedding, ...rest } = data;
+
+                // Calculate Vector Score
+                let vectorScore = 0;
+                if (embedding) {
+                    const docVec = Array.isArray(embedding) ? embedding :
+                        (embedding.toArray ? embedding.toArray() : Object.values(embedding));
+                    vectorScore = cosineSimilarity(vector, docVec);
+                }
+
+                return {
+                    id: doc.id,
+                    ...rest,
+                    vectorScore: vectorScore // Note: this is score against THIS query
+                };
+            });
+        });
+
+        const resultsArrays = await Promise.all(searchPromises);
+
+        // Flatten and Deduplicate
+        const uniqueCandidates = new Map();
+        resultsArrays.flat().forEach(item => {
+            if (!uniqueCandidates.has(item.id)) {
+                uniqueCandidates.set(item.id, item);
+            } else {
+                // If already exists, maybe keep the one with higher vectorScore?
+                // Or just keep first one. Let's keep higher score.
+                const existing = uniqueCandidates.get(item.id);
+                if (item.vectorScore > existing.vectorScore) {
+                    uniqueCandidates.set(item.id, item);
+                }
             }
+        });
 
+        let initialResults = Array.from(uniqueCandidates.values());
+        console.log(`[LogicMapper] Total unique candidates: ${initialResults.length}`);
+
+        // 3. Reranking (Gemini)
+        async function rerankResults(query, candidates) {
+            if (!candidates || candidates.length === 0) return [];
+
+            // Initialize GoogleGenAI SDK (Vertex AI mode) for reranking
+            const ai = new GoogleGenAI({
+                vertexai: true,
+                project: PROJECT_ID,
+                location: GENAI_LOCATION
+            });
+
+            // Prepare prompt with candidates
+            // Limit candidates for reranking to avoid token limits? 
+            // 150 candidates * ~100 tokens = 15k tokens. Should be fine for Gemini 2.0.
+            const candidateText = candidates.map((c, i) => {
+                // Truncate description slightly to save tokens
+                const desc = (c.description || "").substring(0, 300);
+                // Also include OCR text if available, as description might be thin
+                const textContent = c.text_content ? c.text_content.substring(0, 200) : "";
+                return `ID: ${c.id}\nContent: [${c.structure_type}] KeyMsg: ${c.key_message}. Desc: ${desc}. Text: ${textContent}`;
+            }).join('\n---\n');
+
+            console.log(`[LogicMapper] Rerank candidates text (snippet): ${candidateText.substring(0, 500)}...`);
+
+            const prompt = `
+            You are a rigorous search relevance evaluator.
+            
+            User Query: "${query}"
+            
+            Task: Rate the relevance of the following slide candidates to the User Query on a scale of 0 to 100.
+            
+            Criteria:
+            - High Score (80-100): The slide content (Key Message, Description, or Text) DIRECTLY addresses the specific business topic in the User Query.
+            - Low Score (0-39): The slide is about a completely different topic, OR it is just a generic template without specific content matching the query.
+            
+            Candidates:
+            ${candidateText}
+            
+            Output JSON format ONLY:
+            [
+              { "id": "candidate_id", "score": 85, "reason": "Explicitly mentions 'Digital Strategy' and 'Roadmap'" },
+              ...
+            ]
+            `;
+
+            try {
+                const result = await ai.models.generateContent({
+                    model: "gemini-2.0-flash-exp",
+                    contents: [{ role: "user", parts: [{ text: prompt }] }],
+                    generationConfig: { responseMimeType: "application/json" }
+                });
+
+                let jsonStr;
+                if (typeof result.text === 'function') {
+                    jsonStr = result.text();
+                } else if (result.response && typeof result.response.text === 'function') {
+                    jsonStr = result.response.text();
+                } else {
+                    jsonStr = result.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
+                }
+
+                // console.log(`[LogicMapper] Rerank raw response: ${jsonStr.substring(0, 200)}...`);
+                jsonStr = jsonStr.replace(/```json|```/g, "").trim();
+                return JSON.parse(jsonStr);
+            } catch (e) {
+                console.error("Reranking failed:", e);
+                return [];
+            }
+        }
+
+        console.log(`[LogicMapper] Reranking ${initialResults.length} candidates...`);
+        const rerankScores = await rerankResults(query, initialResults);
+
+        const scoreMap = new Map(rerankScores.map(r => [r.id, r]));
+
+        const finalResults = initialResults.map(item => {
+            const rankData = scoreMap.get(item.id);
+            const aiScore = rankData ? rankData.score / 100 : 0;
+            const finalScore = rankData ? aiScore : item.vectorScore;
+
+            return {
+                ...item,
+                aiReason: rankData ? rankData.reason : "Vector match",
+                score: finalScore,
+                vectorScore: item.vectorScore
+            };
+        });
+
+        finalResults.sort((a, b) => b.score - a.score);
+        const topResults = finalResults.slice(0, 30);
+
+        // Helper to get Signed URL
+        const { getStorage } = await import('firebase-admin/storage');
+
+        // Sign URLs
+        const results = await Promise.all(topResults.map(async (item) => {
             let signedUrl = null;
-            if (data.uri && data.uri.startsWith('gs://')) {
+            if (item.uri && item.uri.startsWith('gs://')) {
                 try {
-                    // uri format: gs://bucket/path/to/file
-                    const match = data.uri.match(/gs:\/\/([^\/]+)\/(.+)/);
+                    const match = item.uri.match(/gs:\/\/([^\/]+)\/(.+)/);
                     if (match) {
                         const bucketName = match[1];
                         const filePath = match[2];
                         const file = getStorage().bucket(bucketName).file(filePath);
                         const [url] = await file.getSignedUrl({
                             action: 'read',
-                            expires: Date.now() + 1000 * 60 * 60, // 1 hour
+                            expires: Date.now() + 1000 * 60 * 60,
                         });
                         signedUrl = url;
+                    } else {
+                        console.warn(`[LogicMapper] Invalid gs format for doc ${item.id}: ${item.uri}`);
                     }
                 } catch (e) {
-                    console.warn("Failed to generate signed URL for", data.uri, e);
+                    console.warn(`[LogicMapper] Failed to sign URL for ${item.id} (${item.uri}):`, e.message);
                 }
+            } else {
+                console.warn(`[LogicMapper] No valid uri for doc ${item.id}: ${item.uri}`);
             }
-
             return {
-                id: doc.id,
-                ...rest,
-                url: signedUrl || data.public_url || null,
-                score: score
+                ...item,
+                url: signedUrl || item.public_url || null
             };
         }));
-
-        // Sort by score just in case (though vectorQuery should have done it)
-        results.sort((a, b) => b.score - a.score);
 
         return NextResponse.json({
             results,
             metadata: {
-                refinedQuery,
+                // Join queries for display
+                refinedQuery: queries.join(' / '),
                 originalQuery: query
             }
         });
