@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '../lib/firebase';
+import { getTodayJST, getNowJST } from '../utils/date';
 
 function serialize(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -54,7 +55,7 @@ export async function getRoutines(type = null) {
 export async function addRoutine(data) {
     // data: { title, routine_type, frequency, icon, scheduled_time, is_highlighted, goal_config }
     const docRef = db.collection('routines').doc();
-    const now = new Date();
+    const now = getNowJST();
 
     const payload = {
         id: docRef.id,
@@ -82,7 +83,7 @@ export async function addRoutine(data) {
 
 async function syncRoutineToDaily(sourceId, title) {
     try {
-        const todayStr = new Date().toISOString().split('T')[0];
+        const todayStr = getTodayJST();
         const snap = await db.collection('daily_tasks')
             .where('source_id', '==', sourceId)
             .where('source_type', '==', 'ROUTINE')
@@ -120,7 +121,7 @@ export async function updateRoutine(id, data) {
             updates.stats = {
                 weekly_count: 0,
                 monthly_count: 0,
-                last_updated: new Date()
+                last_updated: getNowJST()
             };
         }
     }
