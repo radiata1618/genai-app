@@ -429,13 +429,21 @@ class BatchProcessor:
 def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
     start_time_total = time.time()
     
+    today = datetime.now(JST).date()
+    current_time_dt = datetime.now(JST)
+
     if target_date is None:
-        target_date = datetime.now(JST).date()
+        # If running before 5AM, treat as previous day
+        if current_time_dt.hour < 5:
+            target_date = today - timedelta(days=1)
+        else:
+            target_date = today
+            
     target_date_str = target_date.isoformat()
     weekday = target_date.weekday()
     day_of_month = target_date.day
     
-    print(f"Starting generate_daily_tasks for {target_date_str}")
+    print(f"Starting generate_daily_tasks for {target_date_str} (Current Time: {current_time_dt})")
 
     # --- OPTIMIZATION: Fetch existing IDs once ---
     existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
@@ -461,6 +469,20 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             if day_of_month in freq.get('month_days', []): should_run = True
             
         if not should_run: continue
+        
+        # --- SCHEDULED TIME CHECK ---
+        # Only check if we are generating for "today" (physical day)
+        # If target_date is in the past (e.g. yesterday before 5AM), we generally want to generate missed ones?
+        # Actually, if we are in "catch up" mode for yesterday, we should probably generate all.
+        # But if target_date == today, we must wait for time.
+        
+        is_target_today = (target_date == today)
+        if is_target_today:
+            scheduled_time = r.get('scheduled_time', "05:00")
+            current_time_str = current_time_dt.strftime("%H:%M")
+            if current_time_str < scheduled_time:
+                continue # Not yet time
+
 
         doc_id = f"{r['id']}_{target_date_str}"
         
