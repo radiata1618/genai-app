@@ -457,8 +457,14 @@ async def run_background_index_creation(task_id: str):
     try:
         await add_log(task_id, "Starting Index Creation...")
         await add_log(task_id, "This triggers 'gcloud firestore indexes composite create' command.")
+        # Detect OS for command adjustment
+        import platform
+        is_windows = platform.system().lower() == "windows"
+        gcloud_cmd = "gcloud.cmd" if is_windows else "gcloud"
+
         cmd = [
-            "gcloud", "firestore", "indexes", "composite", "create",
+             gcloud_cmd, "firestore", "indexes", "composite", "create",
+            "--quiet",
             "--project", PROJECT_ID,
             "--collection-group", FIRESTORE_COLLECTION_NAME,
             "--query-scope", "COLLECTION",

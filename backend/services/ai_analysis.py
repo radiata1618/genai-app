@@ -3,71 +3,95 @@ from typing import Dict, List, Any
 from google.genai import types
 from services.ai_shared import get_genai_client, trace
 
-def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
-    """Analyzes a slide image using Gemini 2.5 Flash (Cost Effective) to extract structure and key message."""
+def analyze_slide_structure_batch(images_bytes: List[bytes]) -> List[Dict[str, Any]]:
+    """
+    Analyzes a batch of slide images using Gemini 1.5 Flash (High Speed, Low Cost).
+    Returns a list of analysis results corresponding to the input images.
+    """
     client = get_genai_client()
     if not client:
-        return {}
+        return [{"structure_type": "Error", "key_message": "Client unavailable", "description": ""} for _ in images_bytes]
         
     try:
+        # Prompt asking for a JSON Array
         prompt = """
-    Analyze this slide image and return a JSON object with the following fields:
-    - "structure_type": The type of visual structure (e.g., "Graph", "Table", "Text", "Diagram").
-    - "key_message": A single, short sentence summarizing the implication (in Japanese, max 80 characters).
-    - "description": A concise explanation of the logical structure or framework used (e.g., "Comparison of A vs B", "Factor decomposition", "Process flow"), followed by a list of important content keywords (in Japanese, max 250 characters).
+    Analyze the following slide images and return a JSON Array where each item corresponds to an image in order.
+    For EACH image, provide:
+    - "structure_type": Visual structure type (e.g., "Graph", "Table", "Text").
+    - "key_message": A single, short sentence summarizing the implication (Japanese, max 80 chars).
+    - "description": Logical structure explanation + keywords (Japanese, max 250 chars).Format: "[Structure]. Keywords: [w1, w2...]"
     
-    IMPORTANT: 
-    1. "description" format: "[Logical Structure description]. Keywords: [Keyword1, Keyword2...]"
-    2. Output MUST BE IN JAPANESE.
-    3. Strictly follow character limits.
+    Output Format:
+    [
+      { "structure_type": "...", "key_message": "...", "description": "..." },
+      ...
+    ]
+    
+    IMPORTANT:
+    1. Output MUST be a valid JSON Array.
+    2. Order MUST match the input images.
+    3. Determine the count of images provided and return exactly that many objects.
+    4. Output Japanese.
     """
         
-        # Use gemini-2.5-flash for high speed and low cost
+        contents = [types.Part.from_text(text=prompt)]
+        for img_data in images_bytes:
+             contents.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
+
+        # Use gemini-2.0-flash-exp for high performance and low cost
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
-            contents=[
-                types.Part.from_text(text=prompt),
-                types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg")
-            ],
+            model="gemini-2.0-flash-exp",
+            contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
                 temperature=0.2
             )
         )
         
-        # Accessing .text directly triggers 'Non-text part found' warning if safety filter blocks it or other parts exist.
         text = ""
         try:
-             # Debug log full response structure
-             if response.candidates:
-                 # trace(f"Candidate 0 content parts: {response.candidates[0].content.parts}")
-                 # trace(f"Finish Reason: {response.candidates[0].finish_reason}")
-                 pass
-             
              if response.text:
                  text = response.text
              else:
-                 # Fallback: sometimes model returns parts but no 'text' shortcut if multiple parts
-                 # Just concate all text parts
-                 text = " ".join([p.text for p in response.candidates[0].content.parts if p.text])
+                 if response.candidates and response.candidates[0].content.parts:
+                     text = " ".join([p.text for p in response.candidates[0].content.parts if p.text])
                  
              clean_text = text.strip()
              if clean_text.startswith("```json"):
                  clean_text = clean_text[7:]
              if clean_text.endswith("```"):
                  clean_text = clean_text[:-3]
-             return json.loads(clean_text)
+             
+             results = json.loads(clean_text)
+             
+             # Validate it is a list
+             if isinstance(results, list):
+                 # Ensure length matches (pad or truncate if model hallucinated count, but usually it's robust)
+                 if len(results) < len(images_bytes):
+                      # Pad with errors
+                      results.extend([{"structure_type": "Error", "key_message": "Analysis missing", "description": "Model returned fewer results than images."}] * (len(images_bytes) - len(results)))
+                 return results[:len(images_bytes)]
+             else:
+                 # It returned a single object? Wrap it if only 1 input
+                 if len(images_bytes) == 1:
+                     return [results]
+                 return [{"structure_type": "Error", "key_message": "Invalid Format", "description": "Model returned object instead of array"}] * len(images_bytes)
+
         except Exception as json_err:
-             print(f"JSON Parse Error for Analysis: {json_err}, Raw: {text}")
-             return {
-                 "structure_type": "Unknown", 
-                 "key_message": "Analysis failed",
-                 "description": "Could not parse AI response."
-             }
+             print(f"JSON Parse Error for Batch Analysis: {json_err}, Raw: {text}")
+             return [{"structure_type": "Error", "key_message": "JSON Error", "description": f"Parse failed."}] * len(images_bytes)
         
     except Exception as e:
-        print(f"Analysis error: {e}")
-        return {}
+        print(f"Batch Analysis error: {e}")
+        return [{"structure_type": "Error", "key_message": "API Error", "description": str(e)}] * len(images_bytes)
+
+def analyze_slide_structure(image_bytes: bytes) -> Dict[str, Any]:
+    """Wraps batch analysis for single image backward compatibility."""
+    results = analyze_slide_structure_batch([image_bytes])
+    if results:
+        return results[0]
+    return {}
+
 
 def evaluate_document_quality(images_bytes: List[bytes]) -> Dict[str, Any]:
     """
@@ -130,7 +154,7 @@ def evaluate_document_quality(images_bytes: List[bytes]) -> Dict[str, Any]:
             contents.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
 
         response = client.models.generate_content(
-            model="gemini-2.5-flash",
+            model="gemini-2.0-flash-exp",
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

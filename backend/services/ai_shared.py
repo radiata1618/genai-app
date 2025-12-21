@@ -24,6 +24,21 @@ FIRESTORE_COLLECTION_NAME = os.getenv("FIRESTORE_COLLECTION_NAME", "consulting_s
 BATCH_COLLECTION_NAME = "ingestion_batches"
 RESULT_COLLECTION_NAME = "ingestion_results"
 
+# --- Credentials Auto-Fix (for Local Windows Check) ---
+if os.getenv("GOOGLE_APPLICATION_CREDENTIALS") == "/app/key.json":
+    if not os.path.exists("/app/key.json"):
+        # We are likely running locally on Windows, check for local key.json
+        # Assuming we are in backend/services, key.json is in backend/ or root
+        current_dir = os.path.dirname(os.path.abspath(__file__)) # services/
+        backend_dir = os.path.dirname(current_dir) # backend/
+        local_key_path = os.path.join(backend_dir, "key.json")
+        
+        if os.path.exists(local_key_path):
+            print(f"Auto-fixing CREDENTIALS path to local: {local_key_path}")
+            os.environ["GOOGLE_APPLICATION_CREDENTIALS"] = local_key_path
+            # Re-init clients if needed, but usually lazy loaded or will use env var on init
+
+
 def trace(msg: str):
     """Prints message with high-precision timestamp for debugging."""
     now = datetime.datetime.now().strftime("%H:%M:%S.%f")[:-3]
@@ -42,7 +57,7 @@ def get_genai_client():
             _genai_client = genai.Client(
                 vertexai=True,
                 project=PROJECT_ID,
-                location=LOCATION,
+                location="us-central1", # Force us-central1 for Model availability (Gemini 2.0/new models)
                 http_options={'api_version': 'v1beta1'}
             )
             return _genai_client
