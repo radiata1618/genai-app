@@ -20,13 +20,19 @@ export default function AdminPage() {
         fetchFiles();
     }, []);
 
-    const fetchFiles = async (token = null) => {
+    const fetchFiles = async (token = null, search = null) => {
         setLoading(true);
         try {
             // Construct URL
             let url = '/api/consulting/files?max_results=100';
             if (token) {
                 url += `&page_token=${encodeURIComponent(token)}`;
+            }
+            // Use the arg if provided, otherwise the state (for pagination cases)
+            // But usually for pagination we want to keep the current search term.
+            const query = search !== null ? search : searchTerm;
+            if (query) {
+                url += `&search=${encodeURIComponent(query)}`;
             }
 
             const res = await fetch(url);
@@ -66,9 +72,11 @@ export default function AdminPage() {
     const [activeTaskId, setActiveTaskId] = useState(null);
 
     // Filter Files
-    const filteredFiles = files.filter(f =>
-        f.name.toLowerCase().includes(searchTerm.toLowerCase())
-    );
+    // Filter Files - DEPRECATED: Now server-side
+    // const filteredFiles = files.filter(f =>
+    //     f.name.toLowerCase().includes(searchTerm.toLowerCase())
+    // );
+    const filteredFiles = files; // Use files directly as server filters them
 
     // --- Task Streaming Logic ---
     useEffect(() => {
@@ -296,6 +304,14 @@ export default function AdminPage() {
                                 className="pl-9 pr-3 py-1.5 border border-slate-300 rounded-md text-sm focus:ring-2 focus:ring-cyan-500 outline-none w-full"
                                 value={searchTerm}
                                 onChange={(e) => setSearchTerm(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === 'Enter') {
+                                        setPageToken(null);
+                                        setNextPageToken(null);
+                                        setTokenHistory([]);
+                                        fetchFiles(null, searchTerm);
+                                    }
+                                }}
                             />
                         </div>
                         <span className="text-slate-400 text-sm whitespace-nowrap">{filteredFiles.length} files</span>
