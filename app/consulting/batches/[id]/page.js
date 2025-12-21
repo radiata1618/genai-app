@@ -102,93 +102,96 @@ export default function BatchDetailPage() {
                 </div>
             </div>
 
-            {/* Batch Summary */}
-            <div className="flex-none p-4 max-w-6xl mx-auto w-full">
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
-                    <div>
-                        <h2 className="text-xl font-bold flex items-center gap-2">
-                            {batch.summary || "Ingestion Job"}
-                            <StatusBadge status={batch.status} />
-                        </h2>
-                        <div className="text-sm text-slate-500 mt-1">
-                            ID: <span className="font-mono bg-slate-100 px-1 rounded">{batch.id}</span>
-                            <span className="mx-2">•</span>
-                            Created: {new Date(batch.created_at).toLocaleString()}
+            {/* Scrollable Content Area */}
+            <div className="flex-1 overflow-y-auto w-full">
+                {/* Batch Summary */}
+                <div className="p-4 max-w-6xl mx-auto w-full">
+                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 p-4 mb-4 flex flex-col sm:flex-row justify-between items-start sm:items-center gap-4">
+                        <div>
+                            <h2 className="text-xl font-bold flex items-center gap-2">
+                                {batch.summary || "Ingestion Job"}
+                                <StatusBadge status={batch.status} />
+                            </h2>
+                            <div className="text-sm text-slate-500 mt-1">
+                                ID: <span className="font-mono bg-slate-100 px-1 rounded">{batch.id}</span>
+                                <span className="mx-2">•</span>
+                                Created: {new Date(batch.created_at).toLocaleString()}
+                            </div>
+                            <div className="text-sm mt-2 flex gap-4">
+                                <div className="font-bold text-slate-700">Total: {batch.total_files}</div>
+                                <div className="font-bold text-green-600">Success: {batch.success_files}</div>
+                                <div className="font-bold text-red-600">Failed: {batch.failed_files}</div>
+                            </div>
                         </div>
-                        <div className="text-sm mt-2 flex gap-4">
-                            <div className="font-bold text-slate-700">Total: {batch.total_files}</div>
-                            <div className="font-bold text-green-600">Success: {batch.success_files}</div>
-                            <div className="font-bold text-red-600">Failed: {batch.failed_files}</div>
-                        </div>
-                    </div>
 
-                    <div className="flex gap-2">
-                        <button onClick={fetchDetails} className="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-50 text-sm font-medium">
-                            Refresh
-                        </button>
-                        {failedCount > 0 && (
-                            <button
-                                onClick={handleRetryAllFailed}
-                                disabled={retrying}
-                                className="bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded hover:bg-red-100 font-bold text-sm flex items-center gap-1"
-                            >
-                                {retrying ? 'Retrying...' : `Retry All Failed (${failedCount})`}
+                        <div className="flex gap-2">
+                            <button onClick={fetchDetails} className="bg-white border border-slate-300 text-slate-600 px-3 py-1.5 rounded hover:bg-slate-50 text-sm font-medium">
+                                Refresh
                             </button>
-                        )}
+                            {failedCount > 0 && (
+                                <button
+                                    onClick={handleRetryAllFailed}
+                                    disabled={retrying}
+                                    className="bg-red-50 text-red-600 border border-red-200 px-3 py-1.5 rounded hover:bg-red-100 font-bold text-sm flex items-center gap-1"
+                                >
+                                    {retrying ? 'Retrying...' : `Retry All Failed (${failedCount})`}
+                                </button>
+                            )}
+                        </div>
                     </div>
-                </div>
 
-                {/* File List */}
-                <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
-                    <div className="overflow-x-auto">
-                        <table className="w-full text-sm text-left">
-                            <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
-                                <tr>
-                                    <th className="p-3 w-12">No.</th>
-                                    <th className="p-3">Filename</th>
-                                    <th className="p-3 w-32">Status</th>
-                                    <th className="p-3">Message / Error</th>
-                                    <th className="p-3 w-24 text-right">Action</th>
-                                </tr>
-                            </thead>
-                            <tbody className="divide-y divide-slate-100">
-                                {items.map((item, idx) => (
-                                    <tr key={item.filename} className="hover:bg-slate-50 group">
-                                        <td className="p-3 text-slate-400 text-xs">{idx + 1}</td>
-                                        <td className="p-3 font-medium text-slate-700 break-all">
-                                            <Link
-                                                href={`/consulting/files/${encodeURIComponent(item.filename)}`}
-                                                className="text-indigo-600 hover:text-indigo-900 hover:underline"
-                                            >
-                                                {item.filename}
-                                            </Link>
-                                            {item.pages_processed ? <span className="ml-2 text-xs text-green-600">({item.pages_processed} pages)</span> : null}
-                                        </td>
-                                        <td className="p-3">
-                                            <StatusBadge status={item.status} />
-                                        </td>
-                                        <td className="p-3 text-slate-600 break-all max-w-xs">
-                                            {item.error ? (
-                                                <span className="text-red-600 font-mono text-xs">{item.error}</span>
-                                            ) : (
-                                                item.status === 'success' ? 'Indexed successfully' : '-'
-                                            )}
-                                        </td>
-                                        <td className="p-3 text-right">
-                                            {item.status === 'failed' && (
-                                                <button
-                                                    onClick={() => handleRetryItem(item.id || `${batch.id}_${item.filename.replace(/[^a-zA-Z0-9._-]/g, '')}`)}
-                                                    disabled={retrying}
-                                                    className="text-cyan-600 hover:text-cyan-800 font-bold text-xs"
-                                                >
-                                                    Retry
-                                                </button>
-                                            )}
-                                        </td>
+                    {/* File List */}
+                    <div className="bg-white rounded-lg shadow-sm border border-slate-200 overflow-hidden">
+                        <div className="overflow-x-auto">
+                            <table className="w-full text-sm text-left">
+                                <thead className="bg-slate-50 text-slate-500 font-medium border-b border-slate-200">
+                                    <tr>
+                                        <th className="p-3 w-12">No.</th>
+                                        <th className="p-3">Filename</th>
+                                        <th className="p-3 w-32">Status</th>
+                                        <th className="p-3">Message / Error</th>
+                                        <th className="p-3 w-24 text-right">Action</th>
                                     </tr>
-                                ))}
-                            </tbody>
-                        </table>
+                                </thead>
+                                <tbody className="divide-y divide-slate-100">
+                                    {items.map((item, idx) => (
+                                        <tr key={item.filename} className="hover:bg-slate-50 group">
+                                            <td className="p-3 text-slate-400 text-xs">{idx + 1}</td>
+                                            <td className="p-3 font-medium text-slate-700 break-all">
+                                                <Link
+                                                    href={`/consulting/files/${encodeURIComponent(item.filename)}`}
+                                                    className="text-indigo-600 hover:text-indigo-900 hover:underline"
+                                                >
+                                                    {item.filename}
+                                                </Link>
+                                                {item.pages_processed ? <span className="ml-2 text-xs text-green-600">({item.pages_processed} pages)</span> : null}
+                                            </td>
+                                            <td className="p-3">
+                                                <StatusBadge status={item.status} />
+                                            </td>
+                                            <td className="p-3 text-slate-600 break-all max-w-xs">
+                                                {item.error ? (
+                                                    <span className="text-red-600 font-mono text-xs">{item.error}</span>
+                                                ) : (
+                                                    item.status === 'success' ? 'Indexed successfully' : '-'
+                                                )}
+                                            </td>
+                                            <td className="p-3 text-right">
+                                                {item.status === 'failed' && (
+                                                    <button
+                                                        onClick={() => handleRetryItem(item.id || `${batch.id}_${item.filename.replace(/[^a-zA-Z0-9._-]/g, '')}`)}
+                                                        disabled={retrying}
+                                                        className="text-cyan-600 hover:text-cyan-800 font-bold text-xs"
+                                                    >
+                                                        Retry
+                                                    </button>
+                                                )}
+                                            </td>
+                                        </tr>
+                                    ))}
+                                </tbody>
+                            </table>
+                        </div>
                     </div>
                 </div>
             </div>

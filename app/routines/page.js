@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import { getRoutines, addRoutine } from '../actions/routines';
 
 export default function RoutinesPage() {
     const [routines, setRoutines] = useState([]);
@@ -15,7 +16,7 @@ export default function RoutinesPage() {
 
     const fetchRoutines = async () => {
         try {
-            const data = await api.getRoutines();
+            const data = await getRoutines();
             setRoutines(data);
         } catch (e) {
             console.error(e);
@@ -32,7 +33,12 @@ export default function RoutinesPage() {
         e.preventDefault();
         if (!title.trim()) return;
         try {
-            await api.addRoutine(title, type, cron, icon);
+            await addRoutine({
+                title,
+                routine_type: type,
+                icon,
+                frequency: { type: 'DAILY', weekdays: [], month_days: [] }
+            });
             setTitle('');
             await fetchRoutines();
         } catch (e) {

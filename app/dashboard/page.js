@@ -2,6 +2,8 @@
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { api } from '../utils/api';
+import { getDailyTasks, addQuickTask } from '../actions/dashboard';
+import { toggleTaskComplete, skipTask, highlightTask, updateTaskTitle, reorderDailyTasks, postponeTask } from '../actions/daily';
 import { formatDate } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
@@ -16,7 +18,7 @@ const CATEGORIES = {
     'Dog': { label: '犬', icon: '🐕' },
     'Outing': { label: 'お出かけ', icon: '🏞️' },
     'Chores': { label: '雑務', icon: '🧹' },
-    'Shopping': { label: '買い物', icon: '🛒' },
+    'Shopping': { label: '買い物', 'icon': '🛒' },
     'Book': { label: '本', icon: '📚' },
     'Other': { label: 'その他', icon: '📦' },
 };
@@ -71,24 +73,15 @@ function DashboardContent() {
         }
     };
 
-    const init = async () => {
+    const init = async (currentTodayStr) => {
         // Don't set loading=true here if we already have cache, to avoid flickering
         // Instead, we just fetch and update.
 
         try {
-            // Plan B: Run generation in parallel (background)
-            api.generateDailyTasks().then(async (res) => {
-                if (res && res.message && !res.message.includes("Generated 0 tasks")) {
-                    const t = await api.getDaily();
-                    setTasks(t);
-                    saveCache(t); // Update cache with fresh data
-                }
-            }).catch(err => console.error("Background generation failed", err));
-
             // Fetch data in parallel for Main View
             const [r, t] = await Promise.all([
                 api.getRoutines(),
-                api.getDaily()
+                getDailyTasks(currentTodayStr)
             ]);
 
             setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
@@ -107,9 +100,10 @@ function DashboardContent() {
         if (initialized.current) return;
         initialized.current = true;
 
-        setTodayStr(formatDate(new Date()));
+        const currentTodayStr = formatDate(new Date());
+        setTodayStr(currentTodayStr);
         loadCache(); // Load cache first
-        init(); // Then fetch fresh
+        init(currentTodayStr); // Then fetch fresh
 
         // Check for focus param (from shortcut)
         if (searchParams.get('focus') === 'input') {
@@ -133,7 +127,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.toggleComplete(id, isDone);
+            await toggleTaskComplete(id, isDone);
         } catch (e) {
             console.error("Failed to toggle", e);
             // Revert included in optimistic update logic implicitly if needed, but for now we trust optimistic
@@ -153,7 +147,7 @@ function DashboardContent() {
 
         try {
             const isDone = lastAction.status === 'DONE';
-            await api.toggleComplete(lastAction.id, isDone);
+            await toggleTaskComplete(lastAction.id, isDone);
         } catch (e) {
             console.error("Failed to undo", e);
         }
@@ -181,34 +175,20 @@ function DashboardContent() {
 
         setTasks(prev => {
             const newTasks = [...prev, optimisticTask];
-            saveCache(newTasks);
             return newTasks;
         });
-
         setNewTaskTitle('');
         // Keep focus
         inputRef.current?.focus();
 
-        // 2. Background API Call
+        // 2. Background API Call (Server Action)
         try {
-            const apiDate = new Date().toISOString().split('T')[0]; // YYYY-MM-DD
-            const createdItem = await api.addBacklogItem({
-                title: titleVal,
-                category: 'Other',
-                priority: 'Medium',
-                deadline: apiDate,
-                scheduled_date: apiDate
-            });
+            await addQuickTask(titleVal, todayStr);
 
-            const pickedTask = await api.pickFromBacklog(createdItem.id);
-
-            // 3. Swap Temp ID with Real ID
-            setTasks(prev => {
-                const newTasks = prev.map(t => t.id === tempId ? pickedTask : t);
-                saveCache(newTasks);
-                return newTasks;
-            });
-
+            // Refresh in background to get real ID
+            const t = await getDailyTasks(todayStr);
+            setTasks(t);
+            saveCache(t);
         } catch (e) {
             console.error(e);
             // Rollback on error
@@ -234,7 +214,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.skipTask(id);
+            await skipTask(id);
         } catch (e) {
             console.error("Failed to skip", e);
         }
@@ -262,11 +242,11 @@ function DashboardContent() {
         setPostponeModalOpen(false);
 
         try {
-            await api.postponeTask(taskToPostpone.id, dateStr);
+            await postponeTask(taskToPostpone.id, dateStr);
         } catch (e) {
             console.error("Failed to postpone", e);
             alert("Failed to postpone task");
-            init();
+            init(); // Re-fetch to sync state if postpone failed or ID changed unexpectedly
         }
     };
 
@@ -280,7 +260,7 @@ function DashboardContent() {
         saveCache(updatedTasks);
 
         try {
-            await api.highlightTask(id, newStatus);
+            await highlightTask(id, newStatus);
         } catch (e) {
             console.error("Failed to highlight", e);
         }
@@ -315,7 +295,7 @@ function DashboardContent() {
 
         const ids = tasks.map(t => t.id);
         try {
-            await api.reorderDaily(ids);
+            await reorderDailyTasks(ids);
         } catch (e) {
             console.error("Failed to reorder", e);
         }
@@ -346,7 +326,7 @@ function DashboardContent() {
 
         const ids = newTasks.map(t => t.id);
         try {
-            await api.reorderDaily(ids);
+            await reorderDailyTasks(ids);
         } catch (e) {
             console.error("Failed to reorder manually", e);
         }
@@ -495,7 +475,7 @@ function DashboardContent() {
                                                     onBlur={async (e) => {
                                                         const val = e.target.value;
                                                         try {
-                                                            await api.updateTaskTitle(t.id, val);
+                                                            await updateTaskTitle(t.id, val);
                                                             saveCache(tasks.map(task => task.id === t.id ? { ...task, title: val } : task));
                                                         } catch (err) {
                                                             console.error("Failed to update title", err);

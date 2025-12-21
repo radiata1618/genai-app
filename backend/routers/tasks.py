@@ -398,6 +398,33 @@ def delete_routine(routine_id: str, db: firestore.Client = Depends(get_db)):
     doc_ref.delete()
     return {"status": "deleted", "id": routine_id}
 
+class BatchProcessor:
+    def __init__(self, db):
+        self.db = db
+        self.batch = db.batch()
+        self.count = 0
+        self.limit = 400  # Safety margin below 500
+
+    def set(self, ref, data):
+        self.batch.set(ref, data)
+        self.increment()
+
+    def update(self, ref, data):
+        self.batch.update(ref, data)
+        self.increment()
+
+    def increment(self):
+        self.count += 1
+        if self.count >= self.limit:
+            self.commit()
+
+    def commit(self):
+        if self.count > 0:
+            self.batch.commit()
+            print(f"Committed batch of {self.count} writes")
+            self.batch = self.db.batch()
+            self.count = 0
+
 @router.post("/generate-daily")
 def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Client = Depends(get_db)):
     start_time_total = time.time()
@@ -408,6 +435,8 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     weekday = target_date.weekday()
     day_of_month = target_date.day
     
+    print(f"Starting generate_daily_tasks for {target_date_str}")
+
     # --- OPTIMIZATION: Fetch existing IDs once ---
     existing_docs = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
     existing_ids = {d.id for d in existing_docs}
@@ -417,8 +446,9 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     routines = [d.to_dict() for d in routines_stream]
     
     created_count = 0
-    batch = db.batch()
+    processor = BatchProcessor(db)
     
+    # 1. Generate from Routines
     for r in routines:
         freq = r.get('frequency', {})
         f_type = freq.get('type', 'DAILY')
@@ -433,9 +463,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         if not should_run: continue
 
         doc_id = f"{r['id']}_{target_date_str}"
-        # doc_ref = db.collection("daily_tasks").document(doc_id) # No longer needed for check
         
-        # if not doc_ref.get().exists: # Optimized check
         if doc_id not in existing_ids:
             doc_ref = db.collection("daily_tasks").document(doc_id)
             new_task = {
@@ -450,18 +478,19 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "order": r.get('order', 1000), 
                 "is_highlighted": r.get('is_highlighted', False)
             }
-            batch.set(doc_ref, new_task)
-            existing_ids.add(doc_id) # Prevent duplicates if multiple passes
+            processor.set(doc_ref, new_task)
+            existing_ids.add(doc_id)
             created_count += 1
             
-    
+    processor.commit() # Commit routines first
     
     # --- CARRY OVER LOGIC ---
-    # Optimized: Filter by date < target_date to avoid fetching full history
+    # Optimized: Limit processing to avoid timeout. Job should run hourly.
     past_backlog_docs = db.collection("daily_tasks")\
         .where(filter=FieldFilter("source_type", "==", SourceType.BACKLOG.value))\
         .where(filter=FieldFilter("status", "==", TaskStatus.TODO.value))\
         .where(filter=FieldFilter("target_date", "<", target_date_str))\
+        .limit(500)\
         .stream()
     
     # --- AUTO-SKIP LOGIC (NEW) ---
@@ -469,69 +498,79 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
         .where(filter=FieldFilter("source_type", "==", SourceType.ROUTINE.value))\
         .where(filter=FieldFilter("status", "==", TaskStatus.TODO.value))\
         .where(filter=FieldFilter("target_date", "<", target_date_str))\
+        .limit(500)\
         .stream()
 
     # Fetch current tasks to check duplicates and determine max_order
+    # (re-fetching lightly since we added routines, but we have existing_ids)
+    # Actually, stick to existing_ids + manual order calculation
     
+    # We need max_order from current existing tasks
+    # If we created routines, their order is fixed (1000+). 
+    # Backlog items usually go to the end.
+    
+    current_max_order = 0
+    # Quick query for max order if needed, but for now let's just assume 0 or iterate existing cache logic if possible
+    # But since we are backend, we don't have the full list in memory perfectly unless we re-query or track it.
+    # To be safe and simple: query current max order.
+    
+    # Optimization: Just query keys only? No, need order.
+    # Since we are batching, let's fetch 'order' only?
+    # db.collection("daily_tasks").where(...).select(["order"]).stream()
+    
+    # ... Or reusing the logic from before (fetching all today's tasks) is safer.
     current_today_docs_list = db.collection("daily_tasks").where(filter=FieldFilter("target_date", "==", target_date_str)).stream()
-    current_today_tasks = [d.to_dict() for d in current_today_docs_list]
-    existing_ids = {t['id'] for t in current_today_tasks}
-    
-    max_order = 0
-    for t in current_today_tasks:
-         max_order = max(max_order, t.get('order', 0))
+    for d in current_today_docs_list:
+        t = d.to_dict()
+        current_max_order = max(current_max_order, t.get('order', 0))
+        existing_ids.add(t['id'])
 
     # Process Backlog Carry Over
     for doc in past_backlog_docs:
         t = doc.to_dict()
-        old_date_str = t['target_date']
         
-        # Date check is now redundant but safe to keep
-        if old_date_str < target_date_str:
-            batch.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
-            
-            new_id = f"{t['source_id']}_{target_date_str}"
-            
-            if new_id not in existing_ids:
-                new_ref = db.collection("daily_tasks").document(new_id)
-                max_order += 1
-                new_task = {
-                    "id": new_id,
-                    "source_id": t['source_id'],
-                    "source_type": SourceType.BACKLOG.value,
-                    "target_date": target_date_str,
-                    "status": TaskStatus.TODO.value,
-                    "created_at": datetime.now(JST),
-                    "title": t.get('title', 'Unknown'), # Important: Copy existing title
-                    "order": max_order,
-                    "is_highlighted": t.get('is_highlighted', False) # Important: Copy highlight
-                }
-                batch.set(new_ref, new_task)
-                existing_ids.add(new_id)
-                created_count += 1
+        # Mark old as CARRY_OVER
+        processor.update(doc.reference, {"status": TaskStatus.CARRY_OVER.value})
+        
+        new_id = f"{t['source_id']}_{target_date_str}"
+        
+        if new_id not in existing_ids:
+            new_ref = db.collection("daily_tasks").document(new_id)
+            current_max_order += 1
+            new_task = {
+                "id": new_id,
+                "source_id": t['source_id'],
+                "source_type": SourceType.BACKLOG.value,
+                "target_date": target_date_str,
+                "status": TaskStatus.TODO.value,
+                "created_at": datetime.now(JST),
+                "title": t.get('title', 'Unknown'),
+                "order": current_max_order,
+                "is_highlighted": t.get('is_highlighted', False)
+            }
+            processor.set(new_ref, new_task)
+            existing_ids.add(new_id)
+            created_count += 1
     
+    # Auto-skip routines
     for doc in past_routine_docs:
-        # No need to check date again, filtered in query
-        batch.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
+        processor.update(doc.reference, {"status": TaskStatus.SKIPPED.value})
 
     # --- AUTO-PICK SCHEDULED STOCK (NEW) ---
-    # Pick up Stock items that were scheduled for today or in the past (and are still STOCK).
-    # This ensures items scheduled for yesterday but not opened/generated yesterday appear today.
     scheduled_stock_docs = db.collection("backlog_items")\
         .where(filter=FieldFilter("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time())))\
         .where(filter=FieldFilter("status", "==", "STOCK"))\
         .where(filter=FieldFilter("is_archived", "==", False))\
+        .limit(200)\
         .stream()
 
     for doc in scheduled_stock_docs:
         item = doc.to_dict()
         new_id = f"{item['id']}_{target_date_str}"
-        # new_ref = db.collection("daily_tasks").document(new_id)
 
-        # Check existence to avoid overwriting or duplicating if already picked today
         if new_id not in existing_ids:
             new_ref = db.collection("daily_tasks").document(new_id)
-            max_order += 1
+            current_max_order += 1
             new_task = {
                 "id": new_id,
                 "source_id": item['id'],
@@ -540,14 +579,14 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
                 "status": TaskStatus.TODO.value,
                 "created_at": datetime.now(JST),
                 "title": item.get('title', 'Unknown'),
-                "order": max_order,
+                "order": current_max_order,
                 "is_highlighted": item.get('is_highlighted', False)
             }
-            batch.set(new_ref, new_task)
+            processor.set(new_ref, new_task)
             existing_ids.add(new_id)
             created_count += 1
 
-    batch.commit()
+    processor.commit() # Final commit
     
     end_time_total = time.time()
     print(json.dumps({

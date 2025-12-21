@@ -3,6 +3,7 @@ import os
 import gc
 import tempfile
 import datetime
+import concurrent.futures
 from pdf2image import convert_from_path, pdfinfo_from_path
 from google.cloud import firestore
 
@@ -24,6 +25,10 @@ from services.ai_analysis import (
     evaluate_document_quality
 )
 
+# Cloud Run Jobs Environment Variables
+TASK_INDEX = int(os.environ.get("CLOUD_RUN_TASK_INDEX", "0"))
+TASK_COUNT = int(os.environ.get("CLOUD_RUN_TASK_COUNT", "1"))
+
 def run_batch_ingestion(batch_id: str):
     """
     Main entry point for batch ingestion worker.
@@ -43,8 +48,14 @@ def run_batch_ingestion(batch_id: str):
         
         # Create result entries for all proper files
         target_blobs = []
-        for blob in blobs:
-            if blob.name.lower().endswith(".pdf"):
+        all_pdf_blobs = [b for b in blobs if b.name.lower().endswith(".pdf")]
+        
+        # SHARDING LOGIC: Filter blobs for this specific task
+        my_blobs = [b for i, b in enumerate(all_pdf_blobs) if i % TASK_COUNT == TASK_INDEX]
+        
+        trace(f"Task {TASK_INDEX}/{TASK_COUNT}: Processing {len(my_blobs)} files out of {len(all_pdf_blobs)} total.")
+
+        for blob in my_blobs:
                 safe_id = "".join(c for c in blob.name if c.isalnum() or c in "._-")
                 res_id = f"{batch_id}_{safe_id}"
                 # Use set(merge=True) to avoid overwriting exist status if we are restarting same batch?
@@ -58,13 +69,20 @@ def run_batch_ingestion(batch_id: str):
                 })
                 target_blobs.append(blob)
 
-        batch_ref.update({
-            "status": "processing",
-            "total_files": len(target_blobs),
-            "processed_files": 0,
-            "success_files": 0,
-            "failed_files": 0
-        })
+        # Only update total count if we are the first task (coordinator role approximation)
+        # OR: Just update status. The total count might be set by Workflow in future, 
+        # but for now, each task will try to update it. 
+        # Race condition on total_files is acceptable or we use start-up script.
+        # Let's just have Task 0 update the status to "processing".
+        if TASK_INDEX == 0:
+            batch_ref.set({
+                "status": "processing", 
+                "total_files": len(all_pdf_blobs), # Total across all tasks
+                "started_at": firestore.SERVER_TIMESTAMP
+            }, merge=True)
+
+        # Remove local update of status here to avoid race conditions overlapping Task 0
+        pass
 
         # 2. Processing Phase
         main_collection = db.collection(FIRESTORE_COLLECTION_NAME)
@@ -200,61 +218,82 @@ def run_batch_ingestion(batch_id: str):
                         trace(f"Total pages estimated: {total_pages}. Processing in chunks...")
                         pages_success = 0
                         
-                        CHUNK_SIZE = 1 # Process 1 page at a time for maximum stability against OOM
+                        # Parallel Page Processing
+                        # Use ThreadPoolExecutor to process pages concurrently.
+                        # Limit max_workers to avoid OOM with large images.
+                        MAX_WORKERS = 5 
+                        
+                        def process_page_task(page_num, image_bytes):
+                            try:
+                                trace(f"Analyzing structure for page {page_num}...")
+                                analysis = analyze_slide_structure(image_bytes)
+                                
+                                text_context = f"{analysis.get('structure_type', '')}. {analysis.get('key_message', '')}. {analysis.get('description', '')}"
+                                
+                                if text_context and len(text_context) > 400:
+                                    text_context = text_context[:400]
+                                
+                                trace(f"Generating embedding for page {page_num}...")
+                                emb = get_embedding(image_bytes=image_bytes, text=text_context)
+                                
+                                if emb:
+                                    safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+                                    doc_id = f"{safe_filename}_p{page_num}"
+                                    
+                                    doc_data = {
+                                        "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}",
+                                        "filename": blob.name,
+                                        "page_number": page_num,
+                                        "structure_type": analysis.get("structure_type"),
+                                        "key_message": analysis.get("key_message"),
+                                        "description": analysis.get("description"),
+                                        "embedding": Vector(emb),
+                                        "created_at": firestore.SERVER_TIMESTAMP
+                                    }
+                                    main_collection.document(doc_id).set(doc_data)
+                                    return True
+                                else:
+                                    print(f"WARNING: Embedding generation failed for page {page_num}")
+                                    return False
+                            except Exception as e:
+                                print(f"ERROR in worker for page {page_num}: {e}")
+                                return False
+
+                        
+                        CHUNK_SIZE = 10 # Load 10 pages at a time into memory
                         for start_page in range(1, total_pages + 1, CHUNK_SIZE):
                             end_page = min(start_page + CHUNK_SIZE - 1, total_pages)
-                            trace(f"Loading page {start_page}...")
+                            trace(f"Loading pages {start_page}-{end_page}...")
                             
                             try:
-                                # convert_from_path is 1-indexed for first_page/last_page
                                 chunk_images = convert_from_path(tmp_pdf_path, first_page=start_page, last_page=end_page, fmt="jpeg")
-                            
                                 if not chunk_images:
-                                    break # End of file if total_pages was wrong
-                                    
-                                for i, image in enumerate(chunk_images):
-                                    page_num = start_page + i
-                                    trace(f"Processing page {page_num} of {blob.name}")
-                                    
-                                    # ... Processing Logic ...
-                                    img_byte_arr = io.BytesIO()
-                                    image.save(img_byte_arr, format='JPEG')
-                                    img_bytes = img_byte_arr.getvalue()
-                                    
-                                    trace(f"Analyzing structure for page {page_num}...")
-                                    analysis = analyze_slide_structure(img_bytes)
-                                    
-                                    text_context = f"{analysis.get('structure_type', '')}. {analysis.get('key_message', '')}. {analysis.get('description', '')}"
-                                    
-                                    # RESTORED TRUNCATION LOGIC
-                                    if text_context and len(text_context) > 400:
-                                        trace(f"Truncating text from {len(text_context)} to 400 chars.")
-                                        text_context = text_context[:400]
-                                    
-                                    trace(f"Generating embedding for page {page_num}...")
-                                    emb = get_embedding(image_bytes=img_bytes, text=text_context)
-                                    
-                                    if emb:
-                                        trace(f"Embedding generated. Saving to Firestore...")
-                                        safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
-                                        doc_id = f"{safe_filename}_p{page_num}"
-                                        
-                                        doc_data = {
-                                            "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}",
-                                            "filename": blob.name,
-                                            "page_number": page_num,
-                                            "structure_type": analysis.get("structure_type"),
-                                            "key_message": analysis.get("key_message"),
-                                            "description": analysis.get("description"),
-                                            "embedding": Vector(emb),
-                                            "created_at": firestore.SERVER_TIMESTAMP
-                                        }
-                                        main_collection.document(doc_id).set(doc_data)
-                                        pages_success += 1
-                                    else:
-                                        print(f"WARNING: Embedding generation failed for page {page_num}")
+                                    break
                                 
-                                # Cleanup chunk
+                                # Prepare tasks
+                                future_to_page = {}
+                                with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
+                                    for i, image in enumerate(chunk_images):
+                                        page_num = start_page + i
+                                        
+                                        img_byte_arr = io.BytesIO()
+                                        image.save(img_byte_arr, format='JPEG')
+                                        img_bytes = img_byte_arr.getvalue()
+                                        
+                                        future = executor.submit(process_page_task, page_num, img_bytes)
+                                        future_to_page[future] = page_num
+                                    
+                                    for future in concurrent.futures.as_completed(future_to_page):
+                                        page_num = future_to_page[future]
+                                        try:
+                                            is_success = future.result()
+                                            if is_success:
+                                                pages_success += 1
+                                                trace(f"Page {page_num} processed successfully.")
+                                        except Exception as exc:
+                                            print(f"Page {page_num} generated an exception: {exc}")
+
+                                # Cleanup chunk memory
                                 del chunk_images
                                 gc.collect()
                                 
@@ -279,6 +318,7 @@ def run_batch_ingestion(batch_id: str):
                         res_doc_ref.update(success_data)
                         summary_ref.set(success_data, merge=True)
                         success_count += 1
+                        success_data = True # Flag for increment
                     else:
                         fail_data = {
                             "status": "failed",
@@ -288,6 +328,7 @@ def run_batch_ingestion(batch_id: str):
                         res_doc_ref.update(fail_data)
                         summary_ref.set(fail_data, merge=True)
                         failed_count += 1
+                        success_data = False
                 else:
                     pass
 
@@ -301,16 +342,27 @@ def run_batch_ingestion(batch_id: str):
                 res_doc_ref.update(err_data)
                 summary_ref.set(err_data, merge=True)
                 failed_count += 1
+                success_data = False
             
             processed_count += 1
+            })
+            
+            # Atomic Increment for Batch Counters
             batch_ref.update({
-                "processed_files": processed_count,
-                "success_files": success_count,
-                "failed_files": failed_count
+                "processed_files": firestore.Increment(1),
+                "success_files": firestore.Increment(1) if success_data else firestore.Increment(0),
+                "failed_files": firestore.Increment(1) if not success_data else firestore.Increment(0)
             })
 
-        batch_ref.update({"status": "completed", "completed_at": firestore.SERVER_TIMESTAMP})
-        trace(f"Batch {batch_id} completed.")
+        # Only Task 0 marks as fully completed? 
+        # No, "completed" status is tricky in parallel. 
+        # If we set "completed", the UI might stop polling.
+        # Ideally, we wait for all tasks. Cloud Run Job "Execution" status handles this natively.
+        # The App UI can poll the JOB EXECUTION status if we linked it.
+        # For now, let's NOT mark "completed" from python. Let Firestore track progress.
+        # OR: We check if processed_files == total_files (eventually consistent).
+        
+        trace(f"Task {TASK_INDEX} finished.")
 
     except Exception as e:
         print(f"Critical Batch Error: {e}")

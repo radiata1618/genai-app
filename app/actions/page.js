@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect } from 'react';
 import { api } from '../utils/api';
+import { getRoutines, addRoutine, updateRoutine, deleteRoutine, reorderRoutines } from '../actions/routines';
 import MobileMenuButton from '../../components/MobileMenuButton';
 
 const WEEKDAYS = ['Mon', 'Tue', 'Wed', 'Thu', 'Fri', 'Sat', 'Sun'];
@@ -33,7 +34,7 @@ export default function ActionsPage() {
 
     const fetchRoutines = async () => {
         try {
-            const data = await api.getRoutines('ACTION');
+            const data = await getRoutines('ACTION');
             // Ensure they are sorted by 'order'
             const sorted = data.sort((a, b) => (a.order || 0) - (b.order || 0));
             setRoutines(sorted);
@@ -117,9 +118,25 @@ export default function ActionsPage() {
             } : null;
 
             if (editingId) {
-                await api.updateRoutine(editingId, title, 'ACTION', frequency, icon, scheduledTime, false, goal_config);
+                await updateRoutine(editingId, {
+                    title,
+                    routine_type: 'ACTION',
+                    frequency,
+                    icon,
+                    scheduled_time: scheduledTime,
+                    is_highlighted: false,
+                    goal_config
+                });
             } else {
-                await api.addRoutine(title, 'ACTION', frequency, icon, scheduledTime, false, goal_config);
+                await addRoutine({
+                    title,
+                    routine_type: 'ACTION',
+                    frequency,
+                    icon,
+                    scheduled_time: scheduledTime,
+                    is_highlighted: false,
+                    goal_config
+                });
             }
 
             setIsModalOpen(false);
@@ -132,7 +149,7 @@ export default function ActionsPage() {
     const handleDelete = async (id) => {
         if (!confirm('Are you sure you want to delete this action?')) return;
         try {
-            await api.deleteRoutine(id);
+            await deleteRoutine(id);
             fetchRoutines();
         } catch (e) {
             alert('Failed to delete action');
@@ -170,7 +187,7 @@ export default function ActionsPage() {
         setDraggedItem(null);
         const ids = routines.map(r => r.id);
         try {
-            await api.reorderRoutines(ids);
+            await reorderRoutines(ids);
         } catch (e) {
             console.error("Failed to reorder", e);
             fetchRoutines();
@@ -184,14 +201,9 @@ export default function ActionsPage() {
         setRoutines(prev => prev.map(r => r.id === routine.id ? { ...r, is_highlighted: newStatus } : r));
 
         try {
-            await api.updateRoutine(
+            await updateRoutine(
                 routine.id,
-                routine.title,
-                routine.routine_type,
-                routine.frequency,
-                routine.icon,
-                routine.scheduled_time,
-                newStatus
+                { ...routine, is_highlighted: newStatus }
             );
         } catch (e) {
             console.error('Failed to highlight action', e);
@@ -353,12 +365,17 @@ export default function ActionsPage() {
                                     </div>
                                     <div className="w-28 space-y-1">
                                         <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Time</label>
-                                        <input
-                                            type="time"
+                                        <select
                                             value={scheduledTime}
                                             onChange={e => setScheduledTime(e.target.value)}
-                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all text-center"
-                                        />
+                                            className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 text-sm font-bold text-slate-700 outline-none focus:border-indigo-500 transition-all text-center appearance-none"
+                                        >
+                                            {Array.from({ length: 24 }).map((_, i) => {
+                                                const h = i.toString().padStart(2, '0');
+                                                const timeVal = `${h}:00`;
+                                                return <option key={timeVal} value={timeVal}>{timeVal}</option>;
+                                            })}
+                                        </select>
                                     </div>
                                 </div>
 
