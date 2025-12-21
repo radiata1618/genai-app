@@ -250,6 +250,7 @@ export async function POST(request) {
             `;
 
             try {
+                console.log(`[LogicMapper] Calling Rerank with model: gemini-2.0-flash-exp`);
                 const result = await ai.models.generateContent({
                     model: "gemini-2.0-flash-exp",
                     contents: [{ role: "user", parts: [{ text: prompt }] }],
@@ -257,19 +258,32 @@ export async function POST(request) {
                 });
 
                 let jsonStr;
+                // Robust response text extraction
                 if (typeof result.text === 'function') {
                     jsonStr = result.text();
                 } else if (result.response && typeof result.response.text === 'function') {
                     jsonStr = result.response.text();
                 } else {
+                    // Fallback for deeply nested candidate structure
                     jsonStr = result.candidates?.[0]?.content?.parts?.[0]?.text || "[]";
                 }
 
-                // console.log(`[LogicMapper] Rerank raw response: ${jsonStr.substring(0, 200)}...`);
+                console.log(`[LogicMapper] Rerank success. Response snippet: ${jsonStr.substring(0, 100)}...`);
                 jsonStr = jsonStr.replace(/```json|```/g, "").trim();
                 return JSON.parse(jsonStr);
             } catch (e) {
-                console.error("Reranking failed:", e);
+                // Detailed error logging
+                const errorDetails = {
+                    message: e.message,
+                    status: e.status,
+                    statusText: e.statusText,
+                    details: e.details,
+                    response: e.response // sometimes axios/fetch response
+                };
+                console.error("Reranking failed with gemini-2.0-flash-exp:", JSON.stringify(errorDetails, null, 2));
+
+                // If 2.0 fails, maybe we want to fallback? 
+                // For now, let's just return empty allow the user to see "Vector match" and check logs.
                 return [];
             }
         }
