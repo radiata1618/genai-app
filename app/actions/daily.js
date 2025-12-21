@@ -2,6 +2,7 @@
 
 import { db } from '../lib/firebase';
 import { getISOWeek, getMonth, getYear } from 'date-fns';
+import { getTodayJST, getNowJST } from '../utils/date';
 
 function serialize(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -47,7 +48,7 @@ async function updateRoutineStats(routineId, isCompleted) {
 
         if (!goal || !stats) return;
 
-        const now = new Date();
+        const now = getNowJST(); // Use JST for stat calculations
         const lastUpdated = stats.last_updated ? stats.last_updated.toDate() : null;
 
         let needsReset = false;
@@ -216,7 +217,7 @@ export async function postponeTask(id, newDateStr) {
 }
 
 export async function pickFromBacklog(backlogId, dateStr) {
-    if (!dateStr) dateStr = new Date().toISOString().split('T')[0];
+    if (!dateStr) dateStr = getTodayJST();
 
     const backlogRef = db.collection('backlog_items').doc(backlogId);
     const itemSnap = await backlogRef.get();
@@ -229,15 +230,19 @@ export async function pickFromBacklog(backlogId, dateStr) {
 
     if (dailySnap.exists) return { status: 'already_picked', id: dailyId };
 
-    // Get max order
-    const maxOrderSnap = await db.collection('daily_tasks')
+    // Get max order (Memory Sort to avoid Index requirement)
+    const dailyTasksSnap = await db.collection('daily_tasks')
         .where('target_date', '==', dateStr)
-        .orderBy('order', 'desc')
-        .limit(1)
         .get();
+
     let maxOrder = 0;
-    if (!maxOrderSnap.empty) {
-        maxOrder = maxOrderSnap.docs[0].data().order || 0;
+    if (!dailyTasksSnap.empty) {
+        dailyTasksSnap.docs.forEach(doc => {
+            const d = doc.data();
+            if (d.order && d.order > maxOrder) {
+                maxOrder = d.order;
+            }
+        });
     }
 
     const newTask = {
