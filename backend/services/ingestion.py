@@ -367,4 +367,13 @@ def run_batch_ingestion(batch_id: str):
 
     except Exception as e:
         print(f"Critical Batch Error: {e}")
-        batch_ref.update({"status": "failed", "error": str(e), "completed_at": firestore.SERVER_TIMESTAMP})
+        # Only mark as failed if we haven't started processing yet (likely setup error).
+        # If we are in 'processing' state, one worker failing shouldn't fail the whole batch.
+        try:
+            current_status = batch_ref.get().to_dict().get("status")
+            if current_status in ["pending", "discovering"]:
+                batch_ref.update({"status": "failed", "error": str(e), "completed_at": firestore.SERVER_TIMESTAMP})
+            else:
+                trace(f"Worker failed but batch is {current_status}. Keeping status. Error: {e}")
+        except:
+             batch_ref.update({"status": "failed", "error": str(e), "completed_at": firestore.SERVER_TIMESTAMP})
