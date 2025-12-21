@@ -273,12 +273,7 @@ export default function AdminPage() {
                 <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-lg shadow-sm border border-slate-200 gap-3">
                     <div className="flex items-center gap-4 w-full sm:w-auto">
                         <div className="flex gap-2 mr-4 border-r border-slate-200 pr-4">
-                            <button
-                                onClick={handleIngest}
-                                className="bg-indigo-50 text-indigo-700 px-3 py-1.5 rounded-md hover:bg-indigo-100 transition-colors font-bold text-xs flex items-center gap-1"
-                            >
-                                <span>📥</span> Ingest to DB
-                            </button>
+
                             <Link
                                 href="/consulting/batches"
                                 className="bg-slate-100 text-slate-700 border border-slate-300 px-3 py-1.5 rounded-md hover:bg-slate-200 transition-colors font-bold text-xs flex items-center gap-1"

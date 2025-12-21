@@ -100,9 +100,22 @@ def run_batch_ingestion(batch_id: str):
                 batch_ref.update({"status": "cancelled", "completed_at": firestore.SERVER_TIMESTAMP})
                 break
 
+            safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+            summary_ref = summary_collection.document(safe_filename)
+            
+            # RESUME LOGIC: Check if already processed
+            try:
+                summary_doc = summary_ref.get()
+                if summary_doc.exists:
+                    s_data = summary_doc.to_dict()
+                    if s_data.get("status") in ["success", "skipped"]:
+                        trace(f"Skipping {blob.name} (Already processed: {s_data.get('status')})")
+                        continue
+            except Exception as check_e:
+                print(f"Warning: Failed to check summary for {blob.name}: {check_e}")
+
             trace(f"Processing file: {blob.name}")
             success_data = False # Default to False (failed or skipped)
-            safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
             res_id = f"{batch_id}_{safe_filename}"
             res_doc_ref = results_ref.document(res_id)
             summary_ref = summary_collection.document(safe_filename)
@@ -260,46 +273,83 @@ def run_batch_ingestion(batch_id: str):
                                 print(f"ERROR in worker for page {page_num}: {e}")
                                 return False
 
+                        # Serial Batch Processing (More efficient API usage)
+                        # Load pages in chunks and send to Batch API
+                        BATCH_SIZE = 10 # Send 10 pages at once
                         
-                        CHUNK_SIZE = 10 # Load 10 pages at a time into memory
-                        for start_page in range(1, total_pages + 1, CHUNK_SIZE):
-                            end_page = min(start_page + CHUNK_SIZE - 1, total_pages)
-                            trace(f"Loading pages {start_page}-{end_page}...")
+                        from services.ai_analysis import analyze_slide_structure_batch
+                        
+                        for start_page in range(1, total_pages + 1, BATCH_SIZE):
+                            end_page = min(start_page + BATCH_SIZE - 1, total_pages)
+                            trace(f"Processing batch: pages {start_page}-{end_page}...")
                             
                             try:
                                 chunk_images = convert_from_path(tmp_pdf_path, first_page=start_page, last_page=end_page, fmt="jpeg")
                                 if not chunk_images:
                                     break
                                 
-                                # Prepare tasks
-                                future_to_page = {}
-                                with concurrent.futures.ThreadPoolExecutor(max_workers=MAX_WORKERS) as executor:
-                                    for i, image in enumerate(chunk_images):
-                                        page_num = start_page + i
-                                        
-                                        img_byte_arr = io.BytesIO()
-                                        image.save(img_byte_arr, format='JPEG')
-                                        img_bytes = img_byte_arr.getvalue()
-                                        
-                                        future = executor.submit(process_page_task, page_num, img_bytes)
-                                        future_to_page[future] = page_num
+                                # Prepare images for API
+                                batch_images_bytes = []
+                                for image in chunk_images:
+                                    img_byte_arr = io.BytesIO()
+                                    image.save(img_byte_arr, format='JPEG')
+                                    batch_images_bytes.append(img_byte_arr.getvalue())
+                                
+                                # Call Gemini Batch API
+                                trace(f"Calling Gemini Batch API for {len(batch_images_bytes)} slides...")
+                                batch_results = analyze_slide_structure_batch(batch_images_bytes)
+                                
+                                # Process results
+                                for i, result in enumerate(batch_results):
+                                    page_num = start_page + i
                                     
-                                    for future in concurrent.futures.as_completed(future_to_page):
-                                        page_num = future_to_page[future]
-                                        try:
-                                            is_success = future.result()
-                                            if is_success:
-                                                pages_success += 1
-                                                trace(f"Page {page_num} processed successfully.")
-                                        except Exception as exc:
-                                            print(f"Page {page_num} generated an exception: {exc}")
+                                    # Basic Validation
+                                    if result.get("structure_type") == "Error":
+                                        print(f"Error analyzing page {page_num}: {result.get('key_message')}")
+                                        continue
 
+                                    try:
+                                        text_context = f"{result.get('structure_type', '')}. {result.get('key_message', '')}. {result.get('description', '')}"
+                                        
+                                        if text_context and len(text_context) > 400:
+                                            text_context = text_context[:400]
+                                        
+                                        # trace(f"Generating embedding for page {page_num}...") 
+                                        # Note: Embedding is still 1-by-1 because it's a different model/API (Vertex Multimodal)
+                                        # We could parallelize this part if needed, but keeping it serial for now to avoid complexity
+                                        # since the expensive part (Thinking model) is gone.
+                                        emb = get_embedding(image_bytes=batch_images_bytes[i], text=text_context)
+                                        
+                                        if emb:
+                                            safe_filename = "".join(c for c in blob.name if c.isalnum() or c in "._-")
+                                            doc_id = f"{safe_filename}_p{page_num}"
+                                            
+                                            doc_data = {
+                                                "uri": f"gs://{GCS_BUCKET_NAME}/{blob.name}",
+                                                "filename": blob.name,
+                                                "page_number": page_num,
+                                                "structure_type": result.get("structure_type"),
+                                                "key_message": result.get("key_message"),
+                                                "description": result.get("description"),
+                                                "embedding": Vector(emb),
+                                                "created_at": firestore.SERVER_TIMESTAMP
+                                            }
+                                            main_collection.document(doc_id).set(doc_data)
+                                            pages_success += 1
+                                            trace(f"Page {page_num} saved.")
+                                        else:
+                                            print(f"WARNING: Embedding generation failed for page {page_num}")
+                                            
+                                    except Exception as save_err:
+                                            print(f"Error saving page {page_num}: {save_err}")
+                                
                                 # Cleanup chunk memory
                                 del chunk_images
+                                del batch_images_bytes
                                 gc.collect()
                                 
                             except Exception as chunk_err:
-                                print(f"ERROR processing chunk {start_page}-{end_page}: {chunk_err}")
+                                print(f"ERROR processing batch {start_page}-{end_page}: {chunk_err}")
                                 pass
                             
                 finally:

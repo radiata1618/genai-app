@@ -5,22 +5,32 @@ import MobileMenuButton from '../../../components/MobileMenuButton';
 export default function LogicMapperPage() {
     const [query, setQuery] = useState('');
     const [results, setResults] = useState([]);
+    const [metadata, setMetadata] = useState(null);
     const [loading, setLoading] = useState(false);
 
     const handleSearch = async () => {
         if (!query) return;
         setLoading(true);
+        setMetadata(null); // Reset
         try {
             const res = await fetch('/api/consulting/logic-mapper', {
                 method: 'POST',
                 headers: { 'Content-Type': 'application/json' },
                 body: JSON.stringify({ query })
             });
+
+            if (!res.ok) {
+                const text = await res.text();
+                console.error("API Error:", res.status, text);
+                throw new Error(`API Error ${res.status}: ${text.slice(0, 100)}`);
+            }
+
             const data = await res.json();
             setResults(data.results || []);
+            setMetadata(data.metadata || null);
         } catch (e) {
             console.error(e);
-            alert("Search failed");
+            alert(`Search failed: ${e.message}`);
         } finally {
             setLoading(false);
         }
@@ -66,6 +76,19 @@ export default function LogicMapperPage() {
                         <span className="text-xs font-normal text-slate-500">{results.length} found</span>
                     </h3>
 
+                    {/* Logic Visualization Box */}
+                    {metadata && metadata.refinedQuery && (
+                        <div className="mb-6 bg-blue-50 border border-blue-100 p-4 rounded-lg text-sm text-blue-800">
+                            <div className="font-bold mb-1 flex items-center gap-2">
+                                <span>🧠 AI Interpretation Logic</span>
+                            </div>
+                            <p>{metadata.refinedQuery}</p>
+                        </div>
+                    )}
+
+                    {/* Hack: The refinedQuery is in metadata but we put it in results[0] for easy access or pass it separately? */}
+                    {/* Ideally we should store metadata in state. Let's fix handleSearch first. */}
+
                     {results.length === 0 && !loading && (
                         <div className="text-center py-20 text-slate-400">
                             <div className="text-4xl mb-2">🧠</div>
@@ -83,7 +106,16 @@ export default function LogicMapperPage() {
                                 </div>
                                 <div className="p-3">
                                     <div className="text-xs text-slate-400 font-mono mb-1">{item.id || item.uri || 'Reference'}</div>
-                                    <div className="text-sm font-bold text-slate-700">Relevance Score: {(item.score || 0).toFixed(2)}</div>
+                                    <div className="flex items-center gap-2 mb-1">
+                                        <div className="flex-1 h-2 bg-slate-100 rounded-full overflow-hidden">
+                                            <div
+                                                className="h-full bg-indigo-500 rounded-full"
+                                                style={{ width: `${(item.score * 100).toFixed(0)}%` }}
+                                            />
+                                        </div>
+                                        <div className="text-sm font-bold text-indigo-600">{(item.score * 100).toFixed(0)}% Match</div>
+                                    </div>
+                                    <p className="text-xs text-slate-500 line-clamp-2">{item.key_message || item.description}</p>
                                 </div>
                             </div>
                         ))}
