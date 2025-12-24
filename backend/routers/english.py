@@ -8,6 +8,7 @@ import os
 import shutil
 import uuid
 from pathlib import Path
+from google import genai
 from google.genai import types
 import google.auth
 from google.oauth2 import service_account
