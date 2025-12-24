@@ -10,6 +10,9 @@ import uuid
 from pathlib import Path
 from google import genai
 from google.genai import types
+import google.auth
+from google.auth.transport import requests as google_requests
+from google.auth import iam
 
 try:
     from moviepy import VideoFileClip
@@ -301,6 +304,47 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
             "expires_in": 900
         }
     except Exception as e:
+        # Fallback for Cloud Run (ADC) where private key is not present in credentials
+        # We use IAM API to sign the blob.
+        if "private key" in str(e) or "sign credentials" in str(e):
+            print(f"DEBUG: Falling back to IAM Signing for Signed URL (Error: {e})")
+            try:
+                credentials, project_id = google.auth.default()
+                request = google_requests.Request()
+                credentials.refresh(request)
+                
+                service_account_email = credentials.service_account_email
+                if not service_account_email:
+                    raise Exception("Could not determine service account email for IAM signing.")
+
+                signer = iam.Signer(request, credentials, service_account_email)
+                
+                # Monkey-patch sign_bytes
+                credentials.sign_bytes = signer.sign
+                
+                # Create a new client with the signer-equipped credentials
+                # Use the existing project if available from default() or environment
+                iam_client = storage.Client(project=project_id, credentials=credentials)
+                iam_bucket = iam_client.bucket(GCS_BUCKET_NAME)
+                iam_blob = iam_bucket.blob(unique_name)
+                
+                url = iam_blob.generate_signed_url(
+                    version="v4",
+                    expiration=timedelta(minutes=15),
+                    method="PUT",
+                    content_type=content_type,
+                    service_account_email=service_account_email
+                )
+                
+                return {
+                    "upload_url": url,
+                    "gcs_path": f"gs://{GCS_BUCKET_NAME}/{unique_name}",
+                    "expires_in": 900
+                }
+            except Exception as iam_e:
+                print(f"IAM Signing Error: {iam_e}")
+                raise HTTPException(status_code=500, detail=f"Failed to generate upload URL (IAM): {str(iam_e)}")
+
         print(f"Signed URL Error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
 

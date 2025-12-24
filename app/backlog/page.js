@@ -68,7 +68,11 @@ export default function BacklogPage() {
 
     const fetchTasks = async () => {
         try {
-            const data = await getBacklogItems();
+            setLoading(true);
+            const data = await getBacklogItems({
+                excludeCompleted: filterExcludeCompleted,
+                excludePending: filterExcludePending
+            });
             setTasks(data);
         } catch (e) {
             console.error(e);
@@ -79,7 +83,7 @@ export default function BacklogPage() {
 
     useEffect(() => {
         fetchTasks();
-    }, []);
+    }, [filterExcludeCompleted, filterExcludePending]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;

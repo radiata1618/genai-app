@@ -34,11 +34,20 @@ function serialize(obj) {
     return obj;
 }
 
-export async function getBacklogItems() {
-    const snap = await db.collection('backlog_items')
-        .where('is_archived', '==', false)
-        .orderBy('order', 'asc')
-        .limit(100)
+export async function getBacklogItems(filters = {}) {
+    let query = db.collection('backlog_items')
+        .where('is_archived', '==', false);
+
+    // Filter Logic
+    const statuses = ['STOCK']; // Always include STOCK
+    if (!filters.excludeCompleted) statuses.push('DONE');
+    if (!filters.excludePending) statuses.push('PENDING');
+
+    // Firestore 'in' query supports up to 10 values
+    query = query.where('status', 'in', statuses);
+
+    const snap = await query.orderBy('order', 'asc')
+        .limit(2000)
         .get();
 
     return snap.docs.map(d => {
