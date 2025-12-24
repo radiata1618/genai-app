@@ -8,11 +8,10 @@ import os
 import shutil
 import uuid
 from pathlib import Path
-from google import genai
 from google.genai import types
 import google.auth
-from google.auth.transport import requests as google_requests
-from google.auth import iam
+from google.oauth2 import service_account
+import json
 
 try:
     from moviepy import VideoFileClip
@@ -287,7 +286,28 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
         raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not configured")
     
     try:
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+    try:
+        # Check for service account key in env (injected from Secret Manager)
+        service_account_info_str = os.getenv("SERVICE_ACCOUNT_KEY")
+        if service_account_info_str:
+            try:
+                print("DEBUG: using SERVICE_ACCOUNT_KEY from env")
+                # Handle potential quoting issues if raw json was stringified weirdly
+                if service_account_info_str.startswith("'") and service_account_info_str.endswith("'"):
+                     service_account_info_str = service_account_info_str[1:-1]
+                
+                info = json.loads(service_account_info_str)
+                creds = service_account.Credentials.from_service_account_info(info)
+                # Create a specific client with these creds
+                current_storage_client = storage.Client(credentials=creds)
+                bucket = current_storage_client.bucket(GCS_BUCKET_NAME)
+            except Exception as json_e:
+                print(f"Warning: Failed to parse SERVICE_ACCOUNT_KEY: {json_e}")
+                # Fallback to default
+                bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        else:
+             bucket = storage_client.bucket(GCS_BUCKET_NAME)
+
         unique_name = f"english_uploads/{uuid.uuid4()}_{filename}"
         blob = bucket.blob(unique_name)
         
@@ -304,47 +324,6 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
             "expires_in": 900
         }
     except Exception as e:
-        # Fallback for Cloud Run (ADC) where private key is not present in credentials
-        # We use IAM API to sign the blob.
-        if "private key" in str(e) or "sign credentials" in str(e):
-            print(f"DEBUG: Falling back to IAM Signing for Signed URL (Error: {e})")
-            try:
-                credentials, project_id = google.auth.default()
-                request = google_requests.Request()
-                credentials.refresh(request)
-                
-                service_account_email = credentials.service_account_email
-                if not service_account_email:
-                    raise Exception("Could not determine service account email for IAM signing.")
-
-                signer = iam.Signer(request, credentials, service_account_email)
-                
-                # Monkey-patch sign_bytes
-                credentials.sign_bytes = signer.sign
-                
-                # Create a new client with the signer-equipped credentials
-                # Use the existing project if available from default() or environment
-                iam_client = storage.Client(project=project_id, credentials=credentials)
-                iam_bucket = iam_client.bucket(GCS_BUCKET_NAME)
-                iam_blob = iam_bucket.blob(unique_name)
-                
-                url = iam_blob.generate_signed_url(
-                    version="v4",
-                    expiration=timedelta(minutes=15),
-                    method="PUT",
-                    content_type=content_type,
-                    service_account_email=service_account_email
-                )
-                
-                return {
-                    "upload_url": url,
-                    "gcs_path": f"gs://{GCS_BUCKET_NAME}/{unique_name}",
-                    "expires_in": 900
-                }
-            except Exception as iam_e:
-                print(f"IAM Signing Error: {iam_e}")
-                raise HTTPException(status_code=500, detail=f"Failed to generate upload URL (IAM): {str(iam_e)}")
-
         print(f"Signed URL Error: {e}")
         raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
 
