@@ -287,7 +287,6 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
         raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not configured")
     
     try:
-    try:
         # Check for service account key in env (injected from Secret Manager)
         service_account_info_str = os.getenv("SERVICE_ACCOUNT_KEY")
         if service_account_info_str:
