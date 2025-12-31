@@ -91,18 +91,18 @@ export default function RecipeDetailPage() {
     }
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 p-6 overflow-hidden">
+        <div className="flex flex-col h-full bg-slate-50 p-3 md:p-6 overflow-hidden">
             {/* Header / Actions */}
-            <div className="flex justify-between items-center mb-6">
-                <Link href="/recipes" className="text-slate-500 hover:text-slate-800 flex items-center transition-colors">
+            <div className="flex flex-col md:flex-row md:justify-between md:items-center gap-4 mb-4 md:mb-6">
+                <Link href="/recipes" className="text-slate-500 hover:text-slate-800 flex items-center transition-colors self-start">
                     <span className="mr-1">←</span> Back to List
                 </Link>
 
-                <div className="flex gap-3">
+                <div className="flex flex-wrap gap-2 md:gap-3 self-end md:self-auto">
                     {id !== 'new' && (
                         <button
                             onClick={handleDelete}
-                            className="bg-red-50 text-red-600 px-4 py-2 rounded-lg font-medium hover:bg-red-100 transition-colors"
+                            className="bg-red-50 text-red-600 px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-medium hover:bg-red-100 transition-colors text-sm md:text-base"
                         >
                             Delete
                         </button>
@@ -110,7 +110,7 @@ export default function RecipeDetailPage() {
 
                     <button
                         onClick={() => setIsPreview(!isPreview)}
-                        className="bg-white text-slate-600 border border-slate-200 px-4 py-2 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm"
+                        className="bg-white text-slate-600 border border-slate-200 px-3 py-1.5 md:px-4 md:py-2 rounded-lg font-medium hover:bg-slate-50 transition-colors shadow-sm text-sm md:text-base"
                     >
                         {isPreview ? 'Edit Mode ✏️' : 'Preview Mode 👁️'}
                     </button>
@@ -118,7 +118,7 @@ export default function RecipeDetailPage() {
                     <button
                         onClick={handleSave}
                         disabled={isSaving}
-                        className="bg-indigo-600 text-white px-6 py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-md disabled:opacity-70 disabled:cursor-not-allowed flex items-center"
+                        className="bg-indigo-600 text-white px-4 py-1.5 md:px-6 md:py-2 rounded-lg font-medium hover:bg-indigo-700 transition-colors shadow-md disabled:opacity-70 disabled:cursor-not-allowed flex items-center text-sm md:text-base"
                     >
                         {isSaving ? 'Saving...' : 'Save Recipe'}
                     </button>
@@ -128,7 +128,7 @@ export default function RecipeDetailPage() {
             <div className="flex-1 bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden flex flex-col md:flex-row">
 
                 {/* Meta Data & Editor Side / Full View */}
-                <div className={`flex flex-col p-6 overflow-y-auto ${isPreview ? 'hidden md:flex md:w-1/3 border-r border-slate-100' : 'w-full'} transition-all`}>
+                <div className={`flex flex-col p-4 md:p-6 overflow-y-auto ${isPreview ? 'hidden md:flex md:w-1/3 border-r border-slate-100' : 'w-full'} transition-all`}>
 
                     {/* Title & Type */}
                     <div className="mb-6 space-y-4">
