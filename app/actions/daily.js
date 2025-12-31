@@ -167,33 +167,37 @@ export async function reorderDailyTasks(ids) {
 }
 
 export async function postponeTask(id, newDateStr) {
-    // newDateStr: YYYY-MM-DD
+    // newDateStr: YYYY-MM-DD or null/empty
     const ref = db.collection('daily_tasks').doc(id);
     const snap = await ref.get();
     if (!snap.exists) throw new Error("Task not found");
 
     const task = snap.data();
 
+    const batch = db.batch();
+
+    // If newDateStr is empty, we just delete the daily task.
+    // The backlog item (source) remains in 'STOCK' status (or we can ensure it).
+    if (!newDateStr) {
+        batch.delete(ref);
+
+        // SYNC: Update backlog item to remove scheduled_date
+        if (task.source_type === 'BACKLOG') {
+            const backlogRef = db.collection('backlog_items').doc(task.source_id);
+            batch.update(backlogRef, { scheduled_date: null });
+        }
+
+        await batch.commit();
+        return { status: 'returned_to_backlog', oldId: id };
+    }
+
     // Move logic:
-    // If it's a backlog item, we might just update the target_date of this daily task?
-    // OR create a new daily task for that date and delete this one?
-    // OR just update target_date here.
-    // Python logic was: update target_date.
-
-    // BUT we need to check if ID conflict? ID is usually {sourceId}_{date}.
-    // If we just change target_date field, the ID remains {sourceId}_{oldDate}.
-    // This allows duplicates if we re-generate or re-pick for old date.
-    // Python postpone endpoint: `daily/{id}/postpone` -> implementation?
-
-    // Let's implement robust Move:
     // 1. Create new ID {sourceId}_{newDate}
     // 2. Create new doc
     // 3. Delete old doc
 
     const newId = `${task.source_id}_${newDateStr}`;
     const newRef = db.collection('daily_tasks').doc(newId);
-
-    const batch = db.batch();
 
     // Check if exists? If exists, maybe just update that one or Merge?
     // If exists, we might overwrite or skip.
@@ -210,6 +214,12 @@ export async function postponeTask(id, newDateStr) {
 
     batch.set(newRef, newTask);
     batch.delete(ref);
+
+    // SYNC: Update backlog item with new scheduled_date
+    if (task.source_type === 'BACKLOG') {
+        const backlogRef = db.collection('backlog_items').doc(task.source_id);
+        batch.update(backlogRef, { scheduled_date: new Date(newDateStr) });
+    }
 
     await batch.commit();
 

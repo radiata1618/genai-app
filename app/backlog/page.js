@@ -2,6 +2,7 @@
 
 import React, { useState, useEffect, useRef } from 'react';
 import { getBacklogItems, addBacklogItem, updateBacklogItem, deleteBacklogItem, reorderBacklogItems } from '../actions/backlog';
+import { getCurrentSprint, addTasksToSprint } from '../actions/sprint';
 import { pickFromBacklog } from '../actions/daily';
 
 import { formatDate } from '../utils/date';
@@ -32,6 +33,7 @@ const PRIORITIES = {
 export default function BacklogPage() {
     const [tasks, setTasks] = useState([]);
     const [loading, setLoading] = useState(true);
+    const [activeSprint, setActiveSprint] = useState(null);
 
     // Filters
     const [filterPriority, setFilterPriority] = useState('All'); // All, High, Medium
@@ -40,6 +42,7 @@ export default function BacklogPage() {
     const [filterExcludeScheduled, setFilterExcludeScheduled] = useState(true);
     const [filterExcludePending, setFilterExcludePending] = useState(true);
     const [filterExcludeCompleted, setFilterExcludeCompleted] = useState(true);
+    const [filterExcludeInSprint, setFilterExcludeInSprint] = useState(false); // New filter
     const [filterPetAllowedOnly, setFilterPetAllowedOnly] = useState(false);
     const [filterKeyword, setFilterKeyword] = useState('');
 
@@ -71,7 +74,8 @@ export default function BacklogPage() {
             setLoading(true);
             const data = await getBacklogItems({
                 excludeCompleted: filterExcludeCompleted,
-                excludePending: filterExcludePending
+                excludePending: filterExcludePending,
+                excludeInSprint: filterExcludeInSprint // Pass to backend
             });
             setTasks(data);
         } catch (e) {
@@ -81,9 +85,19 @@ export default function BacklogPage() {
         }
     };
 
+    const fetchSprint = async () => {
+        try {
+            const sprint = await getCurrentSprint();
+            setActiveSprint(sprint);
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
     useEffect(() => {
         fetchTasks();
-    }, [filterExcludeCompleted, filterExcludePending]);
+        fetchSprint();
+    }, [filterExcludeCompleted, filterExcludePending, filterExcludeInSprint]);
 
     const handleChange = (e) => {
         const { name, value, type, checked } = e.target;
@@ -135,6 +149,21 @@ export default function BacklogPage() {
             alert('Added to Today!');
         } catch (e) {
             alert(e.message === 'Already picked' ? '既に今日のタスクにあります' : 'Failed to pick task');
+        }
+    };
+
+    const handleAddToSprint = async (task, e) => {
+        e.stopPropagation();
+        if (!activeSprint) return;
+        if (!confirm(`Add to sprint "${activeSprint.name}"?`)) return;
+
+        try {
+            await addTasksToSprint(activeSprint.id, [task.id]);
+            // Optimistic update
+            setTasks(prev => prev.map(t => t.id === task.id ? { ...t, sprintId: activeSprint.id } : t));
+        } catch (e) {
+            alert('Failed to add to sprint: ' + e.message);
+            fetchTasks();
         }
     };
 
@@ -445,7 +474,7 @@ export default function BacklogPage() {
                             {/* List Container - Header moved inside for alignment */}
                             <div className="flex-1 overflow-y-auto">
                                 {/* Sticky Header */}
-                                <div className="hidden md:grid sticky top-0 grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 py-2 pl-1 pr-2 bg-slate-50/95 backdrop-blur border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-20">
+                                <div className="hidden md:grid sticky top-0 grid-cols-[20px_20px_1fr_100px_60px_110px_110px_240px] gap-2 py-2 pl-1 pr-2 bg-slate-50/95 backdrop-blur border-b border-slate-100 text-[10px] font-bold text-slate-500 uppercase tracking-wider items-center z-20">
                                     <div></div>
                                     <div></div> {/* Checkbox col */}
                                     <div>Task</div>
@@ -487,10 +516,24 @@ export default function BacklogPage() {
                                                             {formatDate(task.scheduled_date)}
                                                         </span>
                                                     )}
+                                                    {task.sprintId && (
+                                                        <span className="text-pink-600 bg-pink-50 px-1.5 py-0.5 rounded border border-pink-100 flex items-center gap-1 font-bold">
+                                                            🏃 Sprint
+                                                        </span>
+                                                    )}
                                                     {task.category === 'Food' && task.is_pet_allowed && (
                                                         <span className="text-green-600 bg-green-50 px-1.5 py-0.5 rounded border border-green-100 flex items-center gap-1">
                                                             🐾 Pet OK
                                                         </span>
+                                                    )}
+                                                    {activeSprint && !task.sprintId && !task.scheduled_date && (
+                                                        <button
+                                                            onClick={(e) => handleAddToSprint(task, e)}
+                                                            className="text-pink-400 hover:text-pink-600 bg-white hover:bg-pink-50 w-5 h-5 flex items-center justify-center rounded-full border border-pink-200 transaction-colors"
+                                                            title={`Add to ${activeSprint.name}`}
+                                                        >
+                                                            <span className="text-xs font-bold leading-none">+</span>
+                                                        </button>
                                                     )}
                                                 </div>
                                             </div>
@@ -503,7 +546,7 @@ export default function BacklogPage() {
                                         <li
                                             key={task.id}
                                             onDragOver={(e) => onDragOver(e, index)}
-                                            className={`hidden md:grid group grid-cols-[20px_20px_1fr_100px_60px_110px_110px_180px] gap-2 p-2 transition-colors items-center
+                                            className={`hidden md:grid group grid-cols-[20px_20px_1fr_100px_60px_110px_110px_240px] gap-2 p-2 transition-colors items-center
                                                 ${task.is_highlighted ? 'bg-pink-50 border-pink-100 hover:bg-pink-100' : 'hover:bg-white'}
                                                 ${task.status === 'DONE' ? 'opacity-60 bg-slate-50' : ''}
                                             `}
@@ -543,6 +586,11 @@ export default function BacklogPage() {
                                                             <span>📍</span>
                                                             <span>{task.place}</span>
                                                         </div>
+                                                    )}
+                                                    {task.sprintId && (
+                                                        <span className="text-pink-600 bg-pink-50 px-1.5 py-0.5 rounded border border-pink-100 flex items-center gap-1 font-bold text-[10px]">
+                                                            🏃 Sprint
+                                                        </span>
                                                     )}
                                                     {task.category === 'Food' && task.is_pet_allowed && (
                                                         <span className="text-green-600 bg-green-50 px-1 rounded flex items-center gap-0.5 text-[10px]">
@@ -621,6 +669,15 @@ export default function BacklogPage() {
                                                 >
                                                     今日やる
                                                 </button>
+                                                {activeSprint && !task.sprintId && !task.scheduled_date && (
+                                                    <button
+                                                        onClick={(e) => handleAddToSprint(task, e)}
+                                                        className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-white text-pink-400 hover:text-pink-600 hover:bg-pink-50 rounded-full border border-pink-200 transition-colors"
+                                                        title={`Add to ${activeSprint.name}`}
+                                                    >
+                                                        <span className="text-xs font-bold leading-none translate-y-[-1px]">+</span>
+                                                    </button>
+                                                )}
                                                 <button
                                                     onClick={() => updateTaskField(task.id, 'status', task.status === 'PENDING' ? 'STOCK' : 'PENDING')}
                                                     className={`p-1 rounded-md transition-colors ${task.status === 'PENDING' ? 'text-indigo-600 bg-indigo-50' : 'text-slate-300 hover:text-slate-500'}`}
@@ -715,6 +772,15 @@ export default function BacklogPage() {
                                 className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
                             />
                             <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">予定済を除く</span>
+                        </label>
+                        <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
+                            <input
+                                type="checkbox"
+                                checked={filterExcludeInSprint}
+                                onChange={(e) => setFilterExcludeInSprint(e.target.checked)}
+                                className="rounded border-slate-300 text-indigo-600 focus:ring-indigo-500 w-4 h-4"
+                            />
+                            <span className="text-sm text-slate-600 group-hover:text-slate-800 transition-colors">Sprintタスクを除く</span>
                         </label>
                         <label className="flex items-center gap-2 cursor-pointer group whitespace-nowrap">
                             <input

@@ -233,7 +233,7 @@ function DashboardContent() {
     const handlePostpone = async () => {
         if (!taskToPostpone) return;
 
-        const dateStr = postponeDate.toISOString().split('T')[0];
+        const dateStr = postponeDate ? postponeDate.toISOString().split('T')[0] : null;
 
         // Optimistic update: Remove from today
         const updatedTasks = tasks.filter(t => t.id !== taskToPostpone.id);
@@ -610,19 +610,31 @@ function DashboardContent() {
                     <div className="bg-white rounded-xl shadow-2xl p-6 w-full max-w-sm animate-in zoom-in-95 duration-200" onClick={(e) => e.stopPropagation()}>
                         <h3 className="text-lg font-bold text-slate-800 mb-4">Postpone Task</h3>
                         <p className="text-sm text-slate-600 mb-4">
-                            Select a new date for <strong>{taskToPostpone?.title}</strong>. It will be moved to Stock with this scheduled date.
+                            Select a new date for <strong>{taskToPostpone?.title}</strong>.
+                            {postponeDate ? ' It will be moved to Stock with this scheduled date.' : ' It will be returned to Backlog (Stack) without a date.'}
                         </p>
 
                         <div className="mb-6">
-                            <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">New Date</label>
-                            <DatePicker
-                                selected={postponeDate}
-                                onChange={(date) => setPostponeDate(date)}
-                                dateFormat="yyyy/MM/dd"
-                                calendarStartDay={1}
-                                className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none text-slate-700 font-medium"
-                                inline
-                            />
+                            <div className="flex justify-between items-center mb-2">
+                                <label className="block text-xs font-bold text-slate-500 uppercase tracking-wider">New Date</label>
+                                <button
+                                    onClick={() => setPostponeDate(null)}
+                                    className={`text-xs font-bold px-2 py-1 rounded transition-colors ${!postponeDate ? 'bg-slate-200 text-slate-700' : 'text-slate-400 hover:text-slate-600 hover:bg-slate-50'}`}
+                                >
+                                    Unscheduled
+                                </button>
+                            </div>
+                            <div className={`transition-opacity duration-200 ${!postponeDate ? 'opacity-50 pointer-events-none grayscale' : ''}`}>
+                                <DatePicker
+                                    selected={postponeDate}
+                                    onChange={(date) => setPostponeDate(date)}
+                                    dateFormat="yyyy/MM/dd"
+                                    calendarStartDay={1}
+                                    className="w-full p-3 border border-slate-200 rounded-xl bg-slate-50 focus:bg-white focus:border-indigo-500 outline-none text-slate-700 font-medium"
+                                    inline
+                                    disabled={!postponeDate}
+                                />
+                            </div>
                         </div>
 
                         <div className="flex justify-end gap-3">
@@ -634,9 +646,11 @@ function DashboardContent() {
                             </button>
                             <button
                                 onClick={handlePostpone}
-                                className="px-6 py-2 bg-indigo-600 text-white rounded-xl font-bold text-sm shadow-md hover:bg-indigo-700 transition-all"
+                                className={`px-6 py-2 text-white rounded-xl font-bold text-sm shadow-md transition-all
+                                    ${!postponeDate ? 'bg-slate-600 hover:bg-slate-700' : 'bg-indigo-600 hover:bg-indigo-700'}
+                                `}
                             >
-                                Confirm
+                                {postponeDate ? 'Confirm Date' : 'Return to Backlog'}
                             </button>
                         </div>
                     </div>

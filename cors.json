@@ -1,7 +1,8 @@
 [
     {
         "origin": [
-            "http://localhost:3000"
+            "http://localhost:3000",
+            "https://genai-app-frontend-yg7yzstuza-uc.a.run.app"
         ],
         "method": [
             "PUT",
