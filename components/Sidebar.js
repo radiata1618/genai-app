@@ -9,10 +9,12 @@ const navItems = [
         category: "タスク管理",
         items: [
             { name: "Today's Focus", icon: "☀️", href: "/dashboard" },
+            { name: "Sprint", icon: "🏃", href: "/sprint" },
             { name: "Stock (Backlog)", icon: "📦", href: "/backlog" },
             { name: "Actions (Habits)", icon: "🔥", href: "/actions" },
             { name: "Mindsets (Rules)", icon: "🧠", href: "/mindsets" },
             { name: "Projects", icon: "🚀", href: "/projects" },
+            { name: "Recipe", icon: "🍳", href: "/recipes" },
         ],
     },
     {

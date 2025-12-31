@@ -4,32 +4,90 @@ import { db } from '../lib/firebase';
 
 import { normalizeDateStr, getTodayJST, getNowJST } from '../utils/date';
 
+import { subDays, format } from 'date-fns';
+
 export async function getDailyTasks(dateStr) {
     dateStr = normalizeDateStr(dateStr);
 
-    const tasksSnap = await db.collection('daily_tasks')
-        .where('target_date', '==', dateStr)
-        .get();
+    // --- 1. 5 AM Business Day Logic ---
+    const nowJST = getNowJST();
+    const todayJST = getTodayJST(); // YYYY-MM-DD
+    const currentHour = nowJST.getHours();
 
-    const tasks = tasksSnap.docs.map(doc => doc.data());
+    let businessDateStr = dateStr;
+
+    // If the requested date is "Today" (physically), checks the time.
+    if (dateStr === todayJST) {
+        if (currentHour < 5) {
+            // It's technically "Today" (e.g. 2 AM), but business-wise it is "Yesterday".
+            // We shift the view to Yesterday.
+            const d = new Date(dateStr);
+            businessDateStr = format(subDays(d, 1), 'yyyy-MM-dd');
+        }
+    }
+
+    // --- 2. Query Logic (Combined) ---
+    // Goal: Show all tasks for 'businessDateStr' AND any overdue TODO tasks.
+    // Strategy:
+    // A. Fetch ALL tasks for businessDateStr (Done, Todo, Skipped, etc.)
+    // B. Fetch ALL 'TODO' tasks (Global) - filtering in memory for those < businessDateStr
+    //    (This avoids complex composite indexes and ensures we catch very old tasks)
+
+    const [dayTasksSnap, allTodosSnap] = await Promise.all([
+        db.collection('daily_tasks').where('target_date', '==', businessDateStr).get(),
+        db.collection('daily_tasks').where('status', '==', 'TODO').get()
+    ]);
+
+    const taskMap = new Map();
+
+    // Add today's tasks (All statuses)
+    dayTasksSnap.docs.forEach(doc => {
+        taskMap.set(doc.id, doc.data());
+    });
+
+    // Add overdue TODOs
+    allTodosSnap.docs.forEach(doc => {
+        const t = doc.data();
+        // If task is older than current business date, it is "Overdue".
+        // Note: String comparison '2024-01-01' < '2024-01-02' works correctly for ISO dates.
+        if (t.target_date < businessDateStr) {
+            taskMap.set(doc.id, t);
+        }
+    });
+
+    const tasks = Array.from(taskMap.values());
 
     // Routine Injection Logic
     const routineIds = new Set();
     const rawTasks = [];
-    const nowJST = getNowJST();
-    const currentHourStr = String(nowJST.getHours()).padStart(2, '0') + ':' + String(nowJST.getMinutes()).padStart(2, '0');
 
-    const isToday = dateStr === getTodayJST();
+    // Calculate cutoff for routines (optional explicit visualization)
+    // We already handled the "Date" shift. 
+    // If businessDate logic is active, we are effectively viewing "Yesterday".
+    // "Now" is still physical "Now" (e.g. 2 AM Next Day).
+    // The "hide future routine" logic usually compares scheduled_time vs current_time.
+    // If we are viewing "Yesterday" (businessDate), we probably want to see ALL of Yesterday's routines?
+    // Or if we are viewing "Today" (after 5 AM), we check time.
+
+    const isViewingToday = businessDateStr === todayJST; // True if > 5AM and viewing Today. False if < 5AM (viewing Yesterday).
+    const currentHourStr = String(nowJST.getHours()).padStart(2, '0') + ':' + String(nowJST.getMinutes()).padStart(2, '0');
 
     for (const t of tasks) {
         if (!t.title) t.title = "Unknown Task";
         if (t.source_type === 'ROUTINE') {
             routineIds.add(t.source_id);
-            // Hide future routines logic (optional, replicating Python)
-            // if (isToday && t.scheduled_time && currentHourStr < t.scheduled_time) continue; 
-            // actually Python logic hides them if strictly greater? 
-            // "if current_time_str < task_scheduled_time: show_task = False"
-            // We'll keep it simple and show all for now, or replicate if strict.
+            // Hide future routines logic
+            // Only apply if we are strictly viewing "Today" (meaning post-5AM).
+            // If we are looking at "Yesterday" (because it's 2 AM), we show all of yesterday's tasks.
+            // If t.target_date < businessDateStr, it's overdue, show it.
+            // If t.target_date === businessDateStr:
+            //    If isViewingToday (Physical Today > 5AM), then apply time filter?
+            //    Actually, if it's 2 AM and we view Yesterday (29th), viewing 29th's tasks. They are all "past" relative to 29th end. Show all.
+            //    So only apply filter if businessDateStr == todayJST (which implies > 5AM).
+
+            if (isViewingToday && t.target_date === businessDateStr && t.scheduled_time && currentHourStr < t.scheduled_time) {
+                continue;
+            }
         }
         rawTasks.push(t);
     }

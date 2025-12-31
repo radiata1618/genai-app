@@ -46,11 +46,18 @@ export async function getBacklogItems(filters = {}) {
     // Firestore 'in' query supports up to 10 values
     query = query.where('status', 'in', statuses);
 
+    if (filters.startDate) {
+        query = query.where('scheduled_date', '>=', new Date(filters.startDate));
+    }
+    if (filters.endDate) {
+        query = query.where('scheduled_date', '<=', new Date(filters.endDate));
+    }
+
     const snap = await query.orderBy('order', 'asc')
         .limit(2000)
         .get();
 
-    return snap.docs.map(d => {
+    const tasks = snap.docs.map(d => {
         const data = d.data();
         return serialize({
             ...data,
@@ -59,9 +66,24 @@ export async function getBacklogItems(filters = {}) {
             priority: data.priority || 'Medium',
             category: data.category || 'Research',
             status: data.status || 'STOCK',
-            is_highlighted: data.is_highlighted || false
+            is_highlighted: data.is_highlighted || false,
+            sprintId: data.sprintId || null // Include sprintId
         });
     });
+
+    // Client-side filtering for complex logic not strictly supported in compound queries easily 
+    // (e.g. "exclude sprint" might be simpler here if not indexing specifically for it)
+    // Actually we can do client side filter for 'excludeInSprint' since we fetch 2000 items.
+    if (filters.excludeInSprint) {
+        return tasks.filter(t => !t.sprintId); // existing sprintId means it is in A sprint (completed or active)
+        // If we only want to exclude ACTIVE sprint tasks, we'd need to know the active sprint ID.
+        // For simplicity based on request "Exclude Sprint Tasks", we exclude ANY assigned task.
+        // Or better, let the client handle it if they pass the active sprint ID?
+        // The implementation plan proposed: "excludeInSprint" filter.
+        // Let's filter out any task that has a sprintId.
+    }
+
+    return tasks;
 }
 
 export async function addBacklogItem(data) {
@@ -80,7 +102,9 @@ export async function addBacklogItem(data) {
         status: 'STOCK',
         order: 0, // Should be max+1 ideally, or handled by reorder
         is_highlighted: data.is_highlighted || false,
-        place: data.place || null
+        place: data.place || null,
+        sprintId: data.sprintId || null, // Optional Sprint Assignment
+        is_pet_allowed: data.is_pet_allowed || false
     };
 
     if (data.deadline) payload.deadline = new Date(data.deadline);
