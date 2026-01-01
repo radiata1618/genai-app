@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getRecipes } from '../actions/recipe';
 import StarRating from '../../components/StarRating';
+import MobileMenuButton from '../../components/MobileMenuButton';
 
 export default function RecipeListPage() {
     const [recipes, setRecipes] = useState([]);
