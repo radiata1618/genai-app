@@ -104,7 +104,7 @@ async def generate_with_google_genai(request: GenerateRequest):
         # モデル名はお好みで変更可能（2.0 / 2.5 など）
         # 例: "gemini-2.5-flash" / "gemini-2.5-pro" :contentReference[oaicite:5]{index=5}
         response = client.models.generate_content(
-            model="gemini-3.0-flash-exp",
+            model="gemini-3-flash-preview",
             contents=contents,
             config=config,
         )

@@ -27,7 +27,7 @@ async def generate_content(request: GenerateRequest):
             http_options={'api_version': 'v1beta1'}
         )
 
-        model = "gemini-3.0-flash-exp"
+        model = "gemini-3-flash-preview"
 
         # Google Search Grounding Tool
         search_tool = types.Tool(
