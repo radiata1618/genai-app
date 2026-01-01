@@ -1,6 +1,7 @@
 'use server';
 
 import { db } from '../lib/firebase';
+import { getCurrentSprint } from './sprint';
 
 import { normalizeDateStr, getTodayJST, getNowJST } from '../utils/date';
 
@@ -180,6 +181,17 @@ export async function addQuickTask(title, dateStr) {
     const utcMidnight = new Date(dateStr);
     const scheduledDate = new Date(utcMidnight.getTime() - 9 * 60 * 60 * 1000);
 
+    // Fetch Active Sprint
+    let sprintId = null;
+    try {
+        const activeSprint = await getCurrentSprint();
+        if (activeSprint) {
+            sprintId = activeSprint.id;
+        }
+    } catch (e) {
+        console.warn("Failed to fetch active sprint for new task", e);
+    }
+
     const backlogItem = {
         id: backlogId,
         title: title,
@@ -191,7 +203,8 @@ export async function addQuickTask(title, dateStr) {
         is_archived: false,
         is_highlighted: false,
         place: null,
-        order: 0
+        order: 0,
+        sprintId: sprintId // Associate with active sprint
     };
 
     const batch = db.batch();
