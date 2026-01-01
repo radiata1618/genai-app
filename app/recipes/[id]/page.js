@@ -4,6 +4,7 @@ import React, { useState, useEffect } from 'react';
 import { useRouter, useParams } from 'next/navigation';
 import Link from 'next/link';
 import ReactMarkdown from 'react-markdown';
+import remarkGfm from 'remark-gfm';
 import { getRecipe, saveRecipe, deleteRecipe } from '../../actions/recipe';
 import StarRating from '../../../components/StarRating';
 
@@ -226,6 +227,7 @@ export default function RecipeDetailPage() {
 
                         {recipe.content ? (
                             <ReactMarkdown
+                                remarkPlugins={[remarkGfm]}
                                 components={{
                                     h1: ({ node, ...props }) => <h1 className="text-2xl font-bold text-slate-800 mt-6 mb-3" {...props} />,
                                     h2: ({ node, ...props }) => <h2 className="text-xl font-bold text-slate-800 mt-5 mb-2 border-b border-slate-100 pb-1" {...props} />,
@@ -239,7 +241,13 @@ export default function RecipeDetailPage() {
                                         return inline ?
                                             <code className="bg-slate-100 px-1 py-0.5 rounded text-sm font-mono text-indigo-600" {...props}>{children}</code> :
                                             <pre className="bg-slate-800 text-slate-100 p-4 rounded-lg overflow-x-auto my-4 text-sm font-mono" {...props}><code>{children}</code></pre>
-                                    }
+                                    },
+                                    table: ({ node, ...props }) => <div className="overflow-x-auto mb-4"><table className="w-full text-left border-collapse border border-slate-200 rounded-lg text-sm" {...props} /></div>,
+                                    thead: ({ node, ...props }) => <thead className="bg-slate-50 border-b border-slate-200" {...props} />,
+                                    tbody: ({ node, ...props }) => <tbody className="divide-y divide-slate-100" {...props} />,
+                                    tr: ({ node, ...props }) => <tr className="hover:bg-slate-50/50 transition-colors" {...props} />,
+                                    th: ({ node, ...props }) => <th className="p-3 font-bold text-slate-700 whitespace-nowrap" {...props} />,
+                                    td: ({ node, ...props }) => <td className="p-3 text-slate-600" {...props} />,
                                 }}
                             >
                                 {recipe.content}
