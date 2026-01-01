@@ -21,8 +21,10 @@ except ImportError:
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
+    from youtube_transcript_api.proxies import ProxyConfig
 except ImportError:
     YouTubeTranscriptApi = None
+    ProxyConfig = None
 
 router = APIRouter(
     prefix="/english",
@@ -185,8 +187,44 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
     # 2. Fetch Transcript
     try:
         # Prefer English, then Japanese, then auto properties
-        ytt = YouTubeTranscriptApi()
+        # Support proxy if configured via environment variable
+        
+        proxy_url = os.getenv("YOUTUBE_PROXY")
+        proxy_config = None
+        if proxy_url:
+            # Handle raw format: host:port:user:pass (Smartproxy copy usage)
+            if "://" not in proxy_url and proxy_url.count(":") >= 3:
+                try:
+                    parts = proxy_url.split(":")
+                    if len(parts) >= 4:
+                        # host:port:user:pass
+                        p_host = parts[0]
+                        p_port = parts[1]
+                        p_user = parts[2]
+                        p_pass = ":".join(parts[3:]) # Handle potential colons in password
+                        
+                        import urllib.parse
+                        p_user = urllib.parse.quote(p_user)
+                        p_pass = urllib.parse.quote(p_pass)
+                        
+                        proxy_url = f"http://{p_user}:{p_pass}@{p_host}:{p_port}"
+                        print(f"DEBUG: Auto-formatted raw proxy to: {proxy_url}")
+                except Exception as e:
+                    print(f"WARNING: Failed to parse raw proxy string: {e}")
+
+            print(f"DEBUG: Using YouTube Proxy: {proxy_url}")
+            if ProxyConfig:
+                proxy_config = ProxyConfig({"http": proxy_url, "https": proxy_url})
+            else:
+                print("WARNING: ProxyConfig not available despite youtube_transcript_api being present.")
+        else:
+             print("DEBUG: No YouTube Proxy configured, connecting directly.")
+
+        # Instantiate API with proxy config if present
+        ytt = YouTubeTranscriptApi(proxy_config=proxy_config)
         transcript_list = ytt.fetch(video_id, languages=['en', 'ja'])
+        
+        # Combine text
         full_text = " ".join([t.text for t in transcript_list])
     except Exception as e:
         print(f"Transcript Error: {e}")
