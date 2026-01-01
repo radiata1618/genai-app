@@ -734,7 +734,7 @@ def pick_from_backlog(backlog_id: str, target_date: Optional[date] = None, db: f
         "source_id": backlog_id,
         "source_type": SourceType.BACKLOG.value,
         "target_date": target_date_str,
-        "status": TaskStatus.TODO.value,
+        "status": TaskStatus.DONE.value if item_data.get('status') == "DONE" else TaskStatus.TODO.value,
         "created_at": datetime.now(JST),
         "order": 0, # Default, will update below
         "title": item_data.get('title', 'Untitled'), # Copied Title
