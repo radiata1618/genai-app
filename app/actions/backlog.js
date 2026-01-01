@@ -176,7 +176,28 @@ export async function updateBacklogItem(id, data) {
 }
 
 export async function deleteBacklogItem(id) {
-    await db.collection('backlog_items').doc(id).delete();
+    const batch = db.batch();
+
+    // 1. Delete Backlog Item
+    const backlogRef = db.collection('backlog_items').doc(id);
+    batch.delete(backlogRef);
+
+    // 2. Find and Delete Linked Daily Tasks
+    try {
+        const dailySnap = await db.collection('daily_tasks')
+            .where('source_id', '==', id)
+            .where('source_type', '==', 'BACKLOG')
+            .get();
+
+        dailySnap.docs.forEach(doc => {
+            batch.delete(doc.ref);
+        });
+    } catch (e) {
+        console.error("Failed to find linked daily tasks for deletion", e);
+        // Continue to delete backlog item at least
+    }
+
+    await batch.commit();
     return { status: 'deleted', id };
 }
 
