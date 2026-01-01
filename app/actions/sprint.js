@@ -95,9 +95,20 @@ export async function addTasksToSprint(sprintId, taskIds) {
 }
 
 // Remove task from Sprint
-export async function removeTaskFromSprint(taskId) {
-    await db.collection('backlog_items').doc(taskId).update({ sprintId: null });
-    return { status: 'removed', taskId };
+export async function removeTaskFromSprint(taskId, scheduleUpdate = undefined) {
+    const updatePayload = { sprintId: null };
+
+    // scheduleUpdate: { date: Date | null }
+    if (scheduleUpdate) {
+        if (scheduleUpdate.date) {
+            updatePayload.scheduled_date = new Date(scheduleUpdate.date);
+        } else {
+            updatePayload.scheduled_date = null; // Clear date
+        }
+    }
+
+    await db.collection('backlog_items').doc(taskId).update(updatePayload);
+    return { status: 'removed', taskId, scheduled_date: updatePayload.scheduled_date };
 }
 
 // Delete Sprint (and unassign tasks)
