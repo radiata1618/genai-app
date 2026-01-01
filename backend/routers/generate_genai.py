@@ -80,7 +80,25 @@ async def generate_with_google_genai(request: GenerateRequest):
             tools=[search_tool],
             # 必要に応じてパラメータをここに
             temperature=0.7,
-            max_output_tokens=1024,
+            max_output_tokens=2048,
+            safety_settings=[
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+                ),
+                types.SafetySetting(
+                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+                ),
+            ]
         )
 
         # モデル名はお好みで変更可能（2.0 / 2.5 など）
@@ -91,7 +109,15 @@ async def generate_with_google_genai(request: GenerateRequest):
             config=config,
         )
 
-        text = response.text or "(no text response)"
+        if response.text:
+            text = response.text
+        else:
+            # Check if there's a reason for blocking
+            reason = "Unknown"
+            if response.candidates and response.candidates[0].finish_reason:
+                reason = str(response.candidates[0].finish_reason)
+            text = f"(no text response, finish_reason: {reason})"
+
         return {"answer": text}
 
     except Exception as e:
