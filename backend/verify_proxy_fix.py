@@ -3,9 +3,9 @@ import sys
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api.proxies import ProxyConfig
+    from youtube_transcript_api.proxies import GenericProxyConfig
 except ImportError:
-    print("ERROR: youtube_transcript_api not installed or missing ProxyConfig.")
+    print("ERROR: youtube_transcript_api not installed or missing GenericProxyConfig.")
     sys.exit(1)
 
 def verify_proxy():
@@ -39,7 +39,7 @@ def verify_proxy():
                 print(f"[WARNING] Failed to parse raw proxy string, using as is.")
 
         print(f"[INFO] Proxy configured: {proxy_url}")
-        proxy_config = ProxyConfig({"http": proxy_url, "https": proxy_url})
+        proxy_config = GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
 
     # Test Video ID (Short, English)
     video_id = "Xg2TBWaXsqg"

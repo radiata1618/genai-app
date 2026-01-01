@@ -21,10 +21,10 @@ except ImportError:
 
 try:
     from youtube_transcript_api import YouTubeTranscriptApi
-    from youtube_transcript_api.proxies import ProxyConfig
+    from youtube_transcript_api.proxies import GenericProxyConfig
 except ImportError:
     YouTubeTranscriptApi = None
-    ProxyConfig = None
+    GenericProxyConfig = None
 
 router = APIRouter(
     prefix="/english",
@@ -213,10 +213,10 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
                     print(f"WARNING: Failed to parse raw proxy string: {e}")
 
             print(f"DEBUG: Using YouTube Proxy: {proxy_url}")
-            if ProxyConfig:
-                proxy_config = ProxyConfig({"http": proxy_url, "https": proxy_url})
+            if GenericProxyConfig:
+                proxy_config = GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
             else:
-                print("WARNING: ProxyConfig not available despite youtube_transcript_api being present.")
+                print("WARNING: GenericProxyConfig not available despite youtube_transcript_api being present.")
         else:
              print("DEBUG: No YouTube Proxy configured, connecting directly.")
 
