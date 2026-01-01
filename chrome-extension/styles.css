@@ -1,0 +1,77 @@
+/* Sidebar Container in Shadow DOM */
+.genai-sidebar {
+  position: fixed;
+  top: 0;
+  right: 0;
+  width: 350px;
+  height: 100vh;
+  background-color: #ffffff;
+  box-shadow: -2px 0 10px rgba(0,0,0,0.1);
+  z-index: 2147483647; /* Max Z-Index */
+  display: flex;
+  flex-direction: column;
+  font-family: 'Segoe UI', Tahoma, Geneva, Verdana, sans-serif;
+  border-left: 1px solid #e0e0e0;
+  transition: transform 0.3s ease-in-out;
+  transform: translateX(100%); /* Hidden by default */
+}
+
+.genai-sidebar.open {
+  transform: translateX(0);
+}
+
+.genai-header {
+  padding: 15px;
+  background-color: #f8f9fa;
+  border-bottom: 1px solid #e0e0e0;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.genai-title {
+  font-weight: bold;
+  font-size: 16px;
+  color: #333;
+}
+
+.genai-close-btn {
+  background: none;
+  border: none;
+  font-size: 20px;
+  cursor: pointer;
+  color: #666;
+}
+
+.genai-content {
+  flex: 1;
+  padding: 20px;
+  overflow-y: auto;
+  font-size: 14px;
+  line-height: 1.6;
+  color: #333;
+}
+
+.genai-loading {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  height: 100px;
+  color: #666;
+}
+
+.genai-error {
+  color: #d32f2f;
+  background-color: #ffebee;
+  padding: 10px;
+  border-radius: 4px;
+}
+
+.genai-summary ul {
+  padding-left: 20px;
+  margin: 0;
+}
+
+.genai-summary li {
+  margin-bottom: 8px;
+}

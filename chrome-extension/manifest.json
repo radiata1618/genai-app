@@ -1,0 +1,36 @@
+{
+    "manifest_version": 3,
+    "name": "GenAI Page Summarizer",
+    "version": "1.0",
+    "description": "Automatically summarizes pages using a local or remote GenAI backend based on domain rules.",
+    "permissions": [
+        "storage"
+    ],
+    "host_permissions": [
+        "<all_urls>"
+    ],
+    "options_page": "options.html",
+    "content_scripts": [
+        {
+            "matches": [
+                "<all_urls>"
+            ],
+            "js": [
+                "content.js"
+            ],
+            "css": [
+                "styles.css"
+            ]
+        }
+    ],
+    "web_accessible_resources": [
+        {
+            "resources": [
+                "styles.css"
+            ],
+            "matches": [
+                "<all_urls>"
+            ]
+        }
+    ]
+}

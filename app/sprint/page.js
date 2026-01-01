@@ -15,6 +15,11 @@ export default function SprintPage() {
     // Drag & Drop
     const [draggedItem, setDraggedItem] = useState(null);
 
+    // Reschedule Modal
+    const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+    const [taskToReschedule, setTaskToReschedule] = useState(null);
+    const [rescheduleDate, setRescheduleDate] = useState(null);
+
     // Initial Fetch
     const init = async () => {
         setLoading(true);
@@ -176,12 +181,31 @@ export default function SprintPage() {
     };
 
     const handleRemoveTask = async (taskId) => {
+        const task = sprintTasks.find(t => t.id === taskId);
+        if (!task) return;
+
+        // If task has scheduled_date, prompt reschedule
+        if (task.scheduled_date) {
+            setTaskToReschedule(task);
+            setRescheduleDate(new Date(task.scheduled_date));
+            setRescheduleModalOpen(true);
+            return;
+        }
+
+        // Standard remove for non-scheduled
         if (!confirm('Remove from proper Sprint?')) return;
+        executeRemoveTask(taskId);
+    };
+
+    const executeRemoveTask = async (taskId, scheduleUpdate = undefined) => {
         try {
-            await removeTaskFromSprint(taskId);
+            await removeTaskFromSprint(taskId, scheduleUpdate);
             setSprintTasks(prev => prev.filter(t => t.id !== taskId));
+            setRescheduleModalOpen(false);
+            setTaskToReschedule(null);
         } catch (e) {
             alert('Failed to remove');
+            console.error(e);
         }
     };
 
@@ -590,10 +614,12 @@ export default function SprintPage() {
                                         </div>
                                         <button
                                             onClick={() => handleRemoveTask(task.id)}
-                                            className="text-slate-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-2"
-                                            title="Remove from Sprint"
+                                            className="text-slate-400 hover:text-indigo-600 p-2 transition-colors"
+                                            title="Reschedule / Remove from Sprint"
                                         >
-                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" /></svg>
+                                            <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M8 7V3m8 4V3m-9 8h10M5 21h14a2 2 0 002-2V7a2 2 0 00-2-2H5a2 2 0 00-2 2v12a2 2 0 002 2z" />
+                                            </svg>
                                         </button>
                                     </li>
                                 ))}
@@ -632,6 +658,59 @@ export default function SprintPage() {
                                     className="flex-1 py-2.5 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-lg shadow-lg hover:shadow-indigo-500/30 transition-all"
                                 >
                                     Complete Sprint
+                                </button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Reschedule Modal */}
+            {rescheduleModalOpen && taskToReschedule && (
+                <div className="fixed inset-0 bg-black/60 backdrop-blur-sm z-60 flex items-center justify-center p-4 animate-in fade-in">
+                    <div className="bg-white rounded-2xl shadow-2xl w-full max-w-md overflow-hidden animate-in zoom-in-95 duration-200" onClick={e => e.stopPropagation()}>
+                        <div className="p-6 bg-slate-50 border-b border-slate-100">
+                            <h3 className="text-lg font-bold text-slate-800">Remove & Reschedule</h3>
+                            <p className="text-sm text-slate-500 mt-1">Task: <strong>{taskToReschedule.title}</strong></p>
+                        </div>
+                        <div className="p-6 space-y-6">
+                            <div>
+                                <div className="flex justify-between items-center mb-2">
+                                    <label className="text-xs font-bold text-slate-500 uppercase">New Scheduled Date</label>
+                                    <button
+                                        onClick={() => setRescheduleDate(null)}
+                                        className={`text-xs font-bold px-2 py-1 rounded transition-colors ${!rescheduleDate ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`}
+                                    >
+                                        Clear / Unschedule
+                                    </button>
+                                </div>
+                                <div className={`transition-all duration-200 ${!rescheduleDate ? 'opacity-50 grayscale pointer-events-none' : ''}`}>
+                                    <CustomDatePicker
+                                        selected={rescheduleDate}
+                                        onChange={date => setRescheduleDate(date)}
+                                        className="w-full bg-white border border-slate-200 rounded-xl px-4 py-3 text-sm focus:ring-2 focus:ring-indigo-500 outline-none shadow-sm"
+                                        placeholderText="Select date"
+                                        inline
+                                    />
+                                </div>
+                            </div>
+
+                            <div className="flex flex-col gap-3">
+                                <button
+                                    onClick={() => executeRemoveTask(taskToReschedule.id, { date: rescheduleDate })}
+                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                                >
+                                    {rescheduleDate ? (
+                                        <><span>📅</span> Change Date & Remove</>
+                                    ) : (
+                                        <><span>🗑️</span> Remove & Clear Date</>
+                                    )}
+                                </button>
+                                <button
+                                    onClick={() => setRescheduleModalOpen(false)}
+                                    className="w-full py-3 text-slate-500 font-bold hover:bg-slate-50 rounded-xl transition-colors"
+                                >
+                                    Cancel
                                 </button>
                             </div>
                         </div>
