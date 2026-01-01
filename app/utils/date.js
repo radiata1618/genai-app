@@ -58,3 +58,24 @@ export const normalizeDateStr = (dateStr) => {
     if (!dateStr) return getTodayJST();
     return dateStr.replace(/\//g, '-');
 }
+
+/**
+ * Get the "Business Date" in JST.
+ * If current time is before 05:00 AM, returns Yesterday's date.
+ * Otherwise returns Today's date.
+ * @returns {string} YYYY-MM-DD
+ */
+export const getBusinessDateJST = () => {
+    const nowJST = getNowJST();
+    const currentHour = nowJST.getHours();
+
+    // If before 5 AM, subtract 1 day
+    if (currentHour < 5) {
+        nowJST.setDate(nowJST.getDate() - 1);
+    }
+
+    const year = nowJST.getFullYear();
+    const month = String(nowJST.getMonth() + 1).padStart(2, '0');
+    const day = String(nowJST.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+};
