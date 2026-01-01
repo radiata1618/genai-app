@@ -55,7 +55,7 @@ const addRuleElement = (domainRegex = '', systemPrompt = '') => {
     </div>
     <div class="form-group">
       <label>System Prompt / Question</label>
-      <input type="text" class="system-prompt" value="${systemPrompt}" placeholder="e.g. Summarize this page in 3 bullet points.">
+      <textarea class="system-prompt" placeholder="e.g. Summarize this page in 3 bullet points." rows="3" style="width: 100%; padding: 8px; box-sizing: border-box; resize: vertical; font-family: sans-serif;">${systemPrompt}</textarea>
     </div>
     <button class="delete">Delete Rule</button>
   `;

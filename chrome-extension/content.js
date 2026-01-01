@@ -52,16 +52,22 @@ if (!window.genaiExtensionLoaded) {
     `;
         shadow.appendChild(sidebar);
 
-        // 5. Open Sidebar (wait for CSS to load slightly or just force reflow)
+        // 5. Open Sidebar
         requestAnimationFrame(() => {
             sidebar.classList.add('open');
+            document.body.style.transition = 'margin-right 0.3s ease-in-out';
+            document.body.style.marginRight = '350px'; // Shift body content
         });
 
         // Close handler
         sidebar.querySelector('.genai-close-btn').addEventListener('click', () => {
             sidebar.classList.remove('open');
+            document.body.style.marginRight = '0px'; // Reset body content
             // Optional: remove host after animation
-            setTimeout(() => host.remove(), 300);
+            setTimeout(() => {
+                host.remove();
+                document.body.style.transition = ''; // Clean up transition
+            }, 300);
         });
 
         // 6. Extract Content & Call API
