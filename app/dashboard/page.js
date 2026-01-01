@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, Suspense } from 'react';
 import { api } from '../utils/api';
 import { getDailyTasks, addQuickTask } from '../actions/dashboard';
 import { toggleTaskComplete, skipTask, highlightTask, updateTaskTitle, reorderDailyTasks, postponeTask } from '../actions/daily';
-import { formatDate } from '../utils/date';
+import { formatDate, getBusinessDateJST } from '../utils/date';
 import DatePicker from "react-datepicker";
 import "react-datepicker/dist/react-datepicker.css";
 import MobileMenuButton from '../../components/MobileMenuButton';
@@ -100,7 +100,7 @@ function DashboardContent() {
         if (initialized.current) return;
         initialized.current = true;
 
-        const currentTodayStr = formatDate(new Date());
+        const currentTodayStr = getBusinessDateJST();
         setTodayStr(currentTodayStr);
         loadCache(); // Load cache first
         init(currentTodayStr); // Then fetch fresh

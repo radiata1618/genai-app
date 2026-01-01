@@ -3,7 +3,7 @@
 import { db } from '../lib/firebase';
 import { getCurrentSprint } from './sprint';
 
-import { normalizeDateStr, getTodayJST, getNowJST } from '../utils/date';
+import { normalizeDateStr, getTodayJST, getNowJST, getBusinessDateJST } from '../utils/date';
 
 import { subDays, format } from 'date-fns';
 
@@ -13,18 +13,13 @@ export async function getDailyTasks(dateStr) {
     // --- 1. 5 AM Business Day Logic ---
     const nowJST = getNowJST();
     const todayJST = getTodayJST(); // YYYY-MM-DD
-    const currentHour = nowJST.getHours();
 
     let businessDateStr = dateStr;
 
-    // If the requested date is "Today" (physically), checks the time.
+    // If the requested date is "Today" (physically), checks against Business Date.
+    // If it is < 5 AM, Business Date will be Yesterday.
     if (dateStr === todayJST) {
-        if (currentHour < 5) {
-            // It's technically "Today" (e.g. 2 AM), but business-wise it is "Yesterday".
-            // We shift the view to Yesterday.
-            const d = new Date(dateStr);
-            businessDateStr = format(subDays(d, 1), 'yyyy-MM-dd');
-        }
+        businessDateStr = getBusinessDateJST();
     }
 
     // --- 2. Query Logic (Combined) ---
