@@ -81,24 +81,24 @@ async def generate_with_google_genai(request: GenerateRequest):
             # 必要に応じてパラメータをここに
             temperature=0.7,
             max_output_tokens=2048,
-            safety_settings=[
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
-                ),
-                types.SafetySetting(
-                    category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
-                    threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
-                ),
-            ]
+            # safety_settings=[
+            #     types.SafetySetting(
+            #         category=types.HarmCategory.HARM_CATEGORY_HATE_SPEECH,
+            #         threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+            #     ),
+            #     types.SafetySetting(
+            #         category=types.HarmCategory.HARM_CATEGORY_DANGEROUS_CONTENT,
+            #         threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+            #     ),
+            #     types.SafetySetting(
+            #         category=types.HarmCategory.HARM_CATEGORY_SEXUALLY_EXPLICIT,
+            #         threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+            #     ),
+            #     types.SafetySetting(
+            #         category=types.HarmCategory.HARM_CATEGORY_HARASSMENT,
+            #         threshold=types.HarmBlockThreshold.BLOCK_ONLY_HIGH
+            #     ),
+            # ]
         )
 
         # モデル名はお好みで変更可能（2.0 / 2.5 など）
