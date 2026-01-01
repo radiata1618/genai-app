@@ -55,18 +55,35 @@ if (!window.genaiExtensionLoaded) {
         // 5. Open Sidebar
         requestAnimationFrame(() => {
             sidebar.classList.add('open');
+
+            // Adjust both html and body to ensure content shifts
+            const shiftAmount = '350px';
+
+            document.documentElement.style.transition = 'margin-right 0.3s ease-in-out';
+            document.documentElement.style.marginRight = shiftAmount;
+
             document.body.style.transition = 'margin-right 0.3s ease-in-out';
-            document.body.style.marginRight = '350px'; // Shift body content
+            document.body.style.marginRight = shiftAmount;
+
+            // Optional: for fixed/absolute elements, sometimes width needs adjustment
+            // document.body.style.width = `calc(100% - ${shiftAmount})`; 
         });
 
         // Close handler
         sidebar.querySelector('.genai-close-btn').addEventListener('click', () => {
             sidebar.classList.remove('open');
-            document.body.style.marginRight = '0px'; // Reset body content
-            // Optional: remove host after animation
+
+            // Reset styles
+            document.documentElement.style.marginRight = '';
+            document.body.style.marginRight = '';
+            // document.body.style.width = '';
+
+            // Cleanup transitions after animation
             setTimeout(() => {
+                document.documentElement.style.transition = '';
+                document.body.style.transition = '';
+
                 host.remove();
-                document.body.style.transition = ''; // Clean up transition
             }, 300);
         });
 
