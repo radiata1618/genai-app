@@ -104,41 +104,13 @@ if (!window.genaiExtensionLoaded) {
             const data = await response.json();
             const answer = data.answer || "No response received.";
 
-            // Format simple markdown-like text to HTML
-            contentContainer.innerHTML = formatResponse(answer);
+            // Convert Markdown to HTML using marked.js
+            // marked is available globally because we included it in manifest.json
+            contentContainer.innerHTML = `<div class="genai-summary">${marked.parse(answer)}</div>`;
 
         } catch (error) {
             console.error('GenAI API Error:', error);
             contentContainer.innerHTML = `<div class="genai-error">Error: ${error.message}. Please check your API settings.</div>`;
         }
-    }
-
-    function formatResponse(text) {
-        // Simple formatter: 
-        // - Convert newlines to <br>
-        // - Convert bullet points
-        // Note: For production, use a real Markdown library (e.g. marked.js packaged)
-        // Here we do basic manual formatting for simplicity without external deps.
-
-        let html = text
-            .replace(/&/g, "&amp;")
-            .replace(/</g, "&lt;")
-            .replace(/>/g, "&gt;");
-
-        // Bold (**text**)
-        html = html.replace(/\*\*(.*?)\*\*/g, '<b>$1</b>');
-
-        // Headers (# Header)
-        html = html.replace(/^# (.*$)/gm, '<h3>$1</h3>');
-        html = html.replace(/^## (.*$)/gm, '<h4>$1</h4>');
-
-        // Bullet points
-        html = html.replace(/^- (.*$)/gm, '<li>$1</li>');
-
-        // Wrap lists (Primitive approach, assumes contiguous lists)
-        // A better way for simple text is just preserve newlines
-        html = html.replace(/\n/g, '<br>');
-
-        return `<div class="genai-summary">${html}</div>`;
     }
 }
