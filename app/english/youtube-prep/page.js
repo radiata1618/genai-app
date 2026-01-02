@@ -281,6 +281,18 @@ export default function YouTubePrepPage() {
                             >
                                 Script
                             </button>
+                            <button
+                                onClick={() => setActiveTab("script_plus")}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === "script_plus" ? "bg-white text-red-600 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-700"}`}
+                            >
+                                Script +
+                            </button>
+                            <button
+                                onClick={() => setActiveTab("notes_raw")}
+                                className={`px-4 py-1.5 rounded-full text-sm font-medium transition-all ${activeTab === "notes_raw" ? "bg-white text-red-600 shadow-sm ring-1 ring-gray-200" : "text-gray-500 hover:text-gray-700"}`}
+                            >
+                                Notes (Raw)
+                            </button>
                         </div>
                         <div className="text-center text-xs text-gray-400 py-1 bg-gray-50 border-b border-gray-100 hidden sm:block">
                             Created: {new Date(selectedTask.created_at).toLocaleDateString()}
@@ -360,23 +372,96 @@ export default function YouTubePrepPage() {
                              `}>
                                 <div className="max-w-3xl mx-auto">
                                     <h2 className="text-xl font-bold text-slate-800 mb-4">Video Script</h2>
-                                    {selectedTask.script ? (
+                                    {selectedTask.script_formatted || selectedTask.script ? (
                                         <article className="prose prose-slate max-w-none">
-                                            <ReactMarkdown>
-                                                {selectedTask.script}
+                                            <ReactMarkdown
+                                                components={{
+                                                    h2: ({ node, ...props }) => (
+                                                        <h2 className="text-lg font-bold text-slate-800 mt-6 mb-2" {...props} />
+                                                    ),
+                                                }}
+                                            >
+                                                {selectedTask.script_formatted || selectedTask.script}
                                             </ReactMarkdown>
                                             <div className="h-20"></div> {/* Bottom spacer */}
                                         </article>
                                     ) : (
                                         <div className="text-center text-gray-500 mt-10">
                                             <p>No script available for this video.</p>
-                                            <p className="text-sm mt-2">Scripts are only saved for newly added videos.</p>
                                         </div>
                                     )}
                                 </div>
                             </div>
-                        </div>
 
+                            {/* Script+ View */}
+                            <div className={`absolute inset-0 bg-white overflow-y-auto p-4 md:p-8 transition-all duration-300
+                                 ${activeTab === "script_plus" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
+                             `}>
+                                <div className="max-w-3xl mx-auto">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-4">Script + (Vocabulary)</h2>
+                                    {selectedTask.script_augmented ? (
+                                        <article className="prose prose-slate max-w-none">
+                                            <ReactMarkdown
+                                                components={{
+                                                    h2: ({ node, ...props }) => (
+                                                        <h2 className="text-lg font-bold text-slate-800 mt-6 mb-2" {...props} />
+                                                    ),
+                                                    strong: ({ node, ...props }) => {
+                                                        const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                                        // Filter out "A:" "B:" or purely graphic chars if any, but prompt says **word** only
+                                                        return (
+                                                            <span className="inline-flex items-center">
+                                                                <strong className="font-bold text-red-600 bg-red-50 px-1 rounded" {...props} />
+                                                                <button
+                                                                    onClick={(e) => {
+                                                                        e.stopPropagation();
+                                                                        const synth = window.speechSynthesis;
+                                                                        const cleanText = text.replace(/\(.*\)/, '').trim(); // Remove () meaning if accidentally inside bold, though prompt says outside. safe to keep.
+                                                                        const u = new SpeechSynthesisUtterance(cleanText);
+                                                                        u.lang = 'en-US';
+                                                                        synth.speak(u);
+                                                                    }}
+                                                                    className="ml-1 text-gray-400 hover:text-red-500 p-0.5 rounded-full transition-colors"
+                                                                    title="Listen"
+                                                                >
+                                                                    🔊
+                                                                </button>
+                                                            </span>
+                                                        )
+                                                    }
+                                                }}
+                                            >
+                                                {selectedTask.script_augmented}
+                                            </ReactMarkdown>
+                                            <div className="h-20"></div> {/* Bottom spacer */}
+                                        </article>
+                                    ) : (
+                                        <div className="text-center text-gray-500 mt-10">
+                                            {selectedTask.script_formatted ? (
+                                                <p>Augmented script not available for this video.</p>
+                                            ) : (
+                                                <p>No script data available.</p>
+                                            )}
+                                            <p className="text-sm mt-2">Try processing a new video to see this feature.</p>
+                                        </div>
+                                    )}
+                                </div>
+                            </div>
+
+                            {/* Notes Raw View (Debug) */}
+                            <div className={`absolute inset-0 bg-white overflow-y-auto p-4 md:p-8 transition-all duration-300
+                                  ${activeTab === "notes_raw" ? "z-10 opacity-100" : "z-0 opacity-0 pointer-events-none"}
+                              `}>
+                                <div className="max-w-3xl mx-auto">
+                                    <h2 className="text-xl font-bold text-slate-800 mb-4">Notes (Raw Data)</h2>
+                                    <pre className="whitespace-pre-wrap bg-gray-100 p-4 rounded text-sm font-mono text-slate-700 overflow-x-auto">
+                                        {selectedTask.content}
+                                    </pre>
+                                    <div className="h-20"></div>
+                                </div>
+                            </div>
+
+                        </div>
                     </div>
                 ) : (
                     <div className="flex-1 flex items-center justify-center text-gray-400 relative">

@@ -1,0 +1,27 @@
+{
+    "name": "consulting-toolkit",
+    "version": "1.0.0",
+    "description": "PowerPoint Add-in",
+    "main": "index.html",
+    "scripts": {
+        "start": "webpack serve --mode development --config webpack.config.js",
+        "build": "webpack --mode production --config webpack.config.js"
+    },
+    "dependencies": {
+        "core-js": "^3.0.0",
+        "regenerator-runtime": "^0.13.0"
+    },
+    "devDependencies": {
+        "copy-webpack-plugin": "^11.0.0",
+        "html-webpack-plugin": "^5.0.0",
+        "html-loader": "^4.0.0",
+        "office-addin-debugging": "^5.0.0",
+        "office-addin-dev-certs": "^1.13.0",
+        "office-addin-lint": "^2.0.0",
+        "office-addin-manifest": "^1.0.0",
+        "office-addin-prettier-config": "^1.0.0",
+        "webpack": "^5.0.0",
+        "webpack-cli": "^5.0.0",
+        "webpack-dev-server": "4.15.1"
+    }
+}
