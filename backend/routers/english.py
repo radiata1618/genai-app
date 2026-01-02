@@ -82,6 +82,8 @@ class YouTubePrepTask(BaseModel):
     topic: str
     content: str
     script: Optional[str] = None
+    script_formatted: Optional[str] = None
+    script_augmented: Optional[str] = None
     created_at: datetime
     status: str = "TODO"
 
@@ -172,7 +174,7 @@ def delete_preparation(task_id: str, db: firestore.Client = Depends(get_db)):
 
 
 @router.post("/youtube-prep", response_model=YouTubePrepTask)
-def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(get_db)):
+async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(get_db)):
     if YouTubeTranscriptApi is None:
         raise HTTPException(status_code=500, detail="youtube_transcript_api not installed")
 
@@ -230,9 +232,13 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
         print(f"Transcript Error: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
 
-    # 3. Generate Content with Gemini
-    prompt = f"""
-    あなたは既にTOEIC900点以上を取得し、ネイティブレベルの英語力を目指している学習者のためのプロの英語教師です。
+    # 3. Generate Content with Gemini (Parallel Execution)
+    import asyncio
+
+    # Prompt for Notes (Main Content)
+    # Improved to avoid excessive bolding and ensure proper structure
+    prompt_notes = f"""
+    あなたはTOEIC900点以上を取得し、ネイティブレベルの英語力を目指している学習者のためのプロの英語教師です。
     以下はYouTube動画の字幕テキストです。この動画を視聴して学習するための、妥協のない高度な予習資料を作成してください。
 
     **字幕テキスト:**
@@ -243,43 +249,138 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
     Markdown形式（日本語）で出力してください。
     **冒頭の挨拶や前置きは不要です。**
     **最初の行に、この動画の内容を表す適切なタイトル（日本語）を `# タイトル` の形式で書いてください。**
+    **重要: タイトルの直後は必ず改行し、各セクションの間にも必ず空行を入れてください。**
 
     ## 構成案
     1. **概要 (Summary)**
        - 動画の内容を3行程度で要約。
 
     2. **発展的語彙・専門用語 (Advanced & Niche Vocabulary)**
-       - 動画内で使われている、TOEIC等の試験範囲を超えた難解な単語、専門用語、文学的な表現などを**可能な限りすべて（少なくとも20個以上）**列挙してください。
-       - 既知の単語でも、文脈が特殊な場合や、第二義・第三義で使われているものも含めてください。
-       - **Word**: 意味 - 動画内での文脈、語源、または類義語とのニュアンスの違いなども含めた深い解説
+       - 動画内で使われている、TOEIC等の試験範囲を超えた難解な単語、専門用語、文学的な表現などを**可能な限りすべて（少なくとも20個以上）**リストアップしてください。
+       - **形式**:
+         - **Word**: 意味 - 解説
+         - **Word**: 意味 - 解説
+       - **注意:** 見出し語（Word）のみを太字 `**Word**` にしてください。説明文全体を太字にしないように注意してください。
 
     3. **高度なフレーズ・慣用句 (Sophisticated Phrases & Idioms)**
        - ネイティブが使うこなれた言い回し、スラング、教養ある表現などを**徹底的に（10個以上）**ピックアップしてください。
-       - **Phrase**: 意味 - 解説（どのようなシチュエーションで使われるか等）
+       - **形式**:
+         - **Phrase**: 意味 - 解説
+         - **Phrase**: 意味 - 解説
+       - **注意:** 見出し語（Phrase）のみを太字 `**Phrase**` にしてください。
 
     4. **リスニング、理解のポイント (Listening Points)**
        - 特に聞き取るべき箇所や、話の展開のポイント。難易度が高い箇所があれば解説。
-
-
     """
 
+    # Prompt for Script Formatting
+    prompt_format_script = f"""
+    以下のYouTube動画の字幕テキスト（Transcript）を、読みやすい英語のスクリプトに整形してください。
+
+    **処理内容:**
+    1. 意味のまとまりごとに改行を入れて段落（Paragraph）に分けてください。
+    2. 話題が変わるタイミングなどで、適切な見出し（Heading 2: ## 見出し名 [英語]）を挿入してください。
+    3. `>>` やタイムスタンプなどの不要なメタデータはすべて削除してください。
+    4. テキストの内容（単語など）は絶対に変更しないでください。
+
+    **Input Script:**
+    {full_text[:25000]}
+
+    **Output:**
+    - 整形されたMarkdownテキストのみを出力してください。
+    - 冒頭の挨拶などは不要です。
+    """
+
+    async def generate_notes():
+        try:
+            # Reverting to 3.0 Pro for better formatting quality (fixing bolding issue)
+            response = await client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt_notes,
+            )
+            return response.text
+        except Exception as e:
+            print(f"Notes Generation Error: {e}")
+            raise e
+
+    async def generate_scripts():
+        try:
+            # 1. Format Script
+            response_format = await client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt_format_script,
+            )
+            formatted_text = response_format.text
+
+            # 2. Augment Script (Vocabulary Analysis)
+            # Improved prompt for broader coverage and detailed explanations
+            prompt_augment_script = f"""
+            以下の英語スクリプト（整形済み）を読み、英語学習者のために語彙の補足を追加してください。
+
+            **処理内容:**
+            1. 以下の基準に該当する語彙・表現を**幅広く**特定してください（単なる難単語だけでなく、文脈理解に必要なものを含む）。
+               - 英検准1級〜1級、TOEIC 800点以上のレベルの単語
+               - ニュース特有の表現、固有名詞（人名、地名、イベント名などで背景知識が必要なもの）
+               - カジュアルな口語表現、比喩、イディオム
+               - 文脈によって特殊な意味を持つ語
+               - 具体例: "MAMMOGRAMS", "ROSE PARADE", "LEGACY CELEBRATED" など
+
+            2. 特定した語・表現を **太字** (`**word**`) に変更してください。
+
+            3. 太字にした語の直後に、カッコ書き `(意味: 解説)` で補足を追加してください。
+               - 単なる日本語訳だけでなく、**なぜその言葉が使われているか、背景知識、ニュアンス**などを含めて少し詳しく解説してください。
+               - 形式: `**word** (意味: 解説)`
+
+            4. 元のテキストの段落構成や見出しは維持してください。
+            5. 元の英文自体は変更しないでください（挿入のみ）。
+
+            **Formatted Script:**
+            {formatted_text}
+
+            **Output:**
+            - 補足追加済みのMarkdownテキストのみを出力してください。
+            - 冒頭の挨拶などは不要です。
+            """
+
+            response_augment = await client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt_augment_script,
+            )
+            augmented_text = response_augment.text
+            
+            return formatted_text, augmented_text
+        except Exception as e:
+            print(f"Script Generation Error: {e}")
+            raise e
+
     try:
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview",
-            contents=prompt,
+        # Execute in parallel
+        notes_content, (script_formatted, script_augmented) = await asyncio.gather(
+            generate_notes(),
+            generate_scripts()
         )
-        content = response.text
+        
+        content = notes_content
         
         # Extract title from the first line if present
-        lines = content.strip().split('\n')
         topic = "YouTube Video Study" # Default
-        if lines and lines[0].startswith('# '):
-            topic = lines[0].replace('# ', '').strip()
-            # Remove the title line from content to avoid duplication if desired, 
-            # but keeping it is fine too. Let's keep it for MD rendering.
-        
+        lines = content.strip().splitlines()
+        if lines:
+            first_line = lines[0].strip()
+            if first_line.startswith('# '):
+                candidate_topic = first_line.replace('# ', '').strip()
+                # Safety check: If "topic" is too long, it's likely the whole text. 
+                # Titles shouldn't be excessively long.
+                if len(candidate_topic) < 100:
+                    topic = candidate_topic
+                    # Optional: Remove title from content to avoid duplication, or keep it.
+                    # Keeping it is fine as it acts as a header.
+                else:
+                    print("Extracted topic too long, ignoring:", candidate_topic[:50])
+                    topic = "Video Analysis"
+
     except Exception as e:
-        print(f"Gemini Error: {e}")
+        print(f"Gemini Error (Parallel): {e}")
         raise HTTPException(status_code=500, detail=f"Gemini Generation Failed: {str(e)}")
 
     # 4. Save to Firestore
@@ -291,6 +392,9 @@ def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = Depends(
         topic=topic,
         content=content,
         script=full_text,
+        script_formatted=script_formatted,
+        # script_augmented=script_augmented, # Fix: variable usage
+        script_augmented=script_augmented,
         created_at=datetime.now()
     )
     doc_ref.set(task.dict())

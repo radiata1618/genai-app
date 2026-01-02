@@ -14,6 +14,7 @@
     "devDependencies": {
         "copy-webpack-plugin": "^11.0.0",
         "html-webpack-plugin": "^5.0.0",
+        "html-loader": "^4.0.0",
         "office-addin-debugging": "^5.0.0",
         "office-addin-dev-certs": "^1.13.0",
         "office-addin-lint": "^2.0.0",
