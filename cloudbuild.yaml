@@ -1,71 +1,23 @@
-
 steps:
-  # 1. Build Backend Image
+  # Build the container image
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '-t', 'gcr.io/$PROJECT_ID/genai-app-backend', '-f', 'backend/Dockerfile.prod', 'backend']
+    args: ['build', '-t', 'gcr.io/$PROJECT_ID/consulting-toolkit', '-f', 'office-addin/Dockerfile.prod', 'office-addin']
 
-  # 2. Push Backend Image
+  # Push the container image to Container Registry
   - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/genai-app-backend']
+    args: ['push', 'gcr.io/$PROJECT_ID/consulting-toolkit']
 
-  # 3. Deploy Backend to Cloud Run
+  # Deploy container image to Cloud Run
   - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
     entrypoint: gcloud
     args:
       - 'run'
       - 'deploy'
-      - 'genai-app-backend'
+      - 'consulting-toolkit'
       - '--image'
-      - 'gcr.io/$PROJECT_ID/genai-app-backend'
+      - 'gcr.io/$PROJECT_ID/consulting-toolkit'
       - '--region'
-      - 'us-central1'
+      - 'asia-northeast1'
       - '--platform'
       - 'managed'
       - '--allow-unauthenticated'
-      - '--min-instances'
-      - '1'
-      - '--service-account'
-      - 'app-account@trial-project-ushikoshi.iam.gserviceaccount.com'
-      - '--set-env-vars'
-      - 'PROJECT_ID=$PROJECT_ID'
-      - '--set-secrets'
-      - 'LOCATION_FOR_CAR_QUIZZ=LOCATION_FOR_CAR_QUIZZ:latest,GCS_BUCKET_NAME=GCS_BUCKET_NAME:latest,INTERNAL_API_KEY=INTERNAL_API_KEY:latest,GCS_BUCKET_NAME_FOR_ENGLISH_REVIEW=GCS_BUCKET_NAME_FOR_ENGLISH_REVIEW:latest,GCS_BUCKET_NAME_FOR_CONSUL_DOC=GCS_BUCKET_NAME_FOR_CONSUL_DOC:latest,SERVICE_ACCOUNT_KEY=SERVICE_ACCOUNT_KEY:latest,YOUTUBE_PROXY=YOUTUBE_PROXY:latest'
-
-  # 4. Build Frontend Image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['build', '--build-arg', 'IS_CLOUD_RUN=true', '-t', 'gcr.io/$PROJECT_ID/genai-app-frontend', '-f', 'Dockerfile.prod', '.']
-
-  # 5. Push Frontend Image
-  - name: 'gcr.io/cloud-builders/docker'
-    args: ['push', 'gcr.io/$PROJECT_ID/genai-app-frontend']
-
-  # 6. Deploy Frontend to Cloud Run (Dynamic BACKEND_URL)
-  - name: 'gcr.io/google.com/cloudsdktool/cloud-sdk'
-    entrypoint: 'bash'
-    args:
-      - '-c'
-      - |
-        # 1. Hardcoded Service URLs (Reliability Fix)
-        echo "Using Hardcoded Service URLs..."
-        BACKEND_URL="https://genai-app-backend-yg7yzstuza-uc.a.run.app"
-        FRONTEND_URL="https://genai-app-frontend-yg7yzstuza-uc.a.run.app"
-        
-        echo "Backend URL: $$BACKEND_URL"
-        echo "Frontend URL: $$FRONTEND_URL"
-
-        # 2. Deploy Frontend
-        gcloud run deploy genai-app-frontend \
-          --image gcr.io/$PROJECT_ID/genai-app-frontend \
-          --region us-central1 \
-          --platform managed \
-          --allow-unauthenticated \
-          --service-account app-account@trial-project-ushikoshi.iam.gserviceaccount.com \
-          --set-env-vars BACKEND_URL=$$BACKEND_URL,ALLOWED_EMAIL=haruki.u@gmail.com,NEXTAUTH_URL=$$FRONTEND_URL,IS_CLOUD_RUN=true \
-          --set-secrets GOOGLE_CLIENT_ID=GOOGLE_CLIENT_ID:latest,GOOGLE_CLIENT_SECRET=GOOGLE_CLIENT_SECRET:latest,NEXTAUTH_SECRET=NEXTAUTH_SECRET:latest,INTERNAL_API_KEY=INTERNAL_API_KEY:latest
-    
-images:
-  - 'gcr.io/$PROJECT_ID/genai-app-backend'
-  - 'gcr.io/$PROJECT_ID/genai-app-frontend'
-
-options:
-  logging: CLOUD_LOGGING_ONLY

@@ -30,5 +30,16 @@ services:
     volumes:
       - ./backend:/app
 
+  office-addin:
+    build:
+      context: ./office-addin
+      dockerfile: Dockerfile
+    container_name: genai-app-office-addin
+    ports:
+      - "3000:3000"
+    volumes:
+      - ./office-addin:/app
+      - /app/node_modules # Anonymous volume to prevent host node_modules overriding container
+
 volumes:
   genai-node-modules:

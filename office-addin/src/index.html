@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html>
+
+<head>
+    <meta charset="UTF-8" />
+    <meta http-equiv="X-UA-Compatible" content="IE=Edge" />
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Consulting Toolkit</title>
+
+    <!-- Office.js -->
+    <script type="text/javascript" src="https://appsforoffice.microsoft.com/lib/1.1/hosted/office.js"></script>
+
+    <!-- Google Fonts -->
+    <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Roboto:wght@300;400;500&display=swap">
+
+    <link href="taskpane.css" rel="stylesheet" type="text/css" />
+</head>
+
+<body class="ms-font-m ms-welcome ms-Fabric">
+    <header class="header">
+        <h1>Consulting Toolkit</h1>
+    </header>
+
+    <main class="container">
+        <!-- Tabs -->
+        <div class="tabs">
+            <button class="tab-link active" onclick="openTab(event, 'Shapes')">Shapes</button>
+            <button class="tab-link" onclick="openTab(event, 'Tools')">Tools</button>
+        </div>
+
+        <!-- Tab Content: Shapes -->
+        <div id="Shapes" class="tab-content" style="display: block;">
+            <p class="section-title">Frameworks</p>
+            <div class="button-grid">
+                <button id="btn-matrix-2x2" class="ms-Button">
+                    <span class="ms-Button-label">2x2 Matrix</span>
+                </button>
+                <button id="btn-3-columns" class="ms-Button">
+                    <span class="ms-Button-label">3 Columns</span>
+                </button>
+            </div>
+        </div>
+
+        <!-- Tab Content: Tools -->
+        <div id="Tools" class="tab-content">
+            <p class="section-title">Quick Stamps</p>
+            <div class="button-grid">
+                <button id="btn-stamp-draft" class="ms-Button btn-warn">
+                    <span class="ms-Button-label">DRAFT</span>
+                </button>
+                <button id="btn-stamp-confidential" class="ms-Button btn-danger">
+                    <span class="ms-Button-label">CONFIDENTIAL</span>
+                </button>
+            </div>
+
+            <p class="section-title">Style Sanitizer</p>
+            <div class="button-list">
+                <button id="btn-fix-fonts" class="ms-Button btn-primary">
+                    <span class="ms-Button-label">Fix Fonts (Meiryo UI)</span>
+                </button>
+            </div>
+        </div>
+    </main>
+
+    <script type="text/javascript" src="taskpane.js"></script>
+</body>
+
+</html>

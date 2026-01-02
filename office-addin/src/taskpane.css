@@ -1,0 +1,139 @@
+/* Basic Clean Style */
+body {
+    font-family: 'Segoe UI', 'Roboto', sans-serif;
+    margin: 0;
+    padding: 0;
+    background-color: #f3f2f1;
+    color: #201f1e;
+}
+
+.header {
+    background-color: #0078d4;
+    color: white;
+    padding: 10px 20px;
+    box-shadow: 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.header h1 {
+    font-size: 18px;
+    margin: 0;
+    font-weight: 600;
+}
+
+.container {
+    padding: 15px;
+}
+
+/* Tabs */
+.tabs {
+    overflow: hidden;
+    border-bottom: 1px solid #ccc;
+    margin-bottom: 15px;
+}
+
+.tab-link {
+    background-color: inherit;
+    float: left;
+    border: none;
+    outline: none;
+    cursor: pointer;
+    padding: 10px 16px;
+    transition: 0.3s;
+    font-size: 14px;
+    font-weight: 500;
+    color: #605e5c;
+    border-bottom: 2px solid transparent;
+}
+
+.tab-link:hover {
+    background-color: #edebe9;
+}
+
+.tab-link.active {
+    color: #0078d4;
+    border-bottom: 2px solid #0078d4;
+}
+
+.tab-content {
+    display: none;
+    animation: fadeEffect 0.5s;
+}
+
+@keyframes fadeEffect {
+    from {
+        opacity: 0;
+    }
+
+    to {
+        opacity: 1;
+    }
+}
+
+/* Sections */
+.section-title {
+    font-size: 13px;
+    color: #605e5c;
+    margin-bottom: 8px;
+    margin-top: 0;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    font-weight: 600;
+}
+
+/* Buttons */
+.ms-Button {
+    background-color: white;
+    border: 1px solid #8a8886;
+    color: #201f1e;
+    padding: 8px 16px;
+    text-align: center;
+    text-decoration: none;
+    display: inline-block;
+    font-size: 14px;
+    margin: 4px 2px;
+    cursor: pointer;
+    border-radius: 2px;
+    width: 100%;
+    box-sizing: border-box;
+    transition: all 0.2s;
+}
+
+.ms-Button:hover {
+    background-color: #f3f2f1;
+    border-color: #201f1e;
+}
+
+.btn-primary {
+    background-color: #0078d4;
+    border-color: #0078d4;
+    color: white;
+}
+
+.btn-primary:hover {
+    background-color: #106ebe;
+    color: white;
+}
+
+.btn-warn {
+    color: #d13438;
+    border-color: #d13438;
+}
+
+.btn-danger {
+    background-color: #a4262c;
+    border-color: #a4262c;
+    color: white;
+}
+
+.button-grid {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 10px;
+    margin-bottom: 20px;
+}
+
+.button-list {
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+}
