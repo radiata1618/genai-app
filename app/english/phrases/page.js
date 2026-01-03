@@ -10,7 +10,7 @@ export default function PhrasesPage() {
 
     // List State
     const [showEnglish, setShowEnglish] = useState(false);
-    const [hideMemorized, setHideMemorized] = useState(false);
+    const [showCompleted, setShowCompleted] = useState(false); // Default false: hide status 2.
 
     // Registration State
     const [inputJapanese, setInputJapanese] = useState("");
@@ -21,13 +21,14 @@ export default function PhrasesPage() {
 
     useEffect(() => {
         fetchPhrases();
-    }, [hideMemorized]);
+    }, [showCompleted]);
 
     const fetchPhrases = async () => {
         setIsLoading(true);
         try {
             const params = new URLSearchParams();
-            if (hideMemorized) params.append("filter_memorized", "true");
+            // If NOT showCompleted, we want to filter out memorized (status 2).
+            if (!showCompleted) params.append("filter_memorized", "true");
 
             const res = await fetch(`/api/english/phrases?${params.toString()}`);
             if (res.ok) {
@@ -148,13 +149,24 @@ export default function PhrasesPage() {
         }
     };
 
-    const handleToggleMemorized = async (id, currentStatus) => {
+    const handleStatusCycle = async (id, currentStatus) => {
+        // Cycle: 0 -> 1 -> 2 -> 0
+        // Use currentStatus from the phrase object (default 0 if undefined)
+        const status = currentStatus || 0;
+        const newStatus = (status + 1) % 3;
+
         try {
-            const res = await fetch(`/api/english/phrases/${id}/status?is_memorized=${!currentStatus}`, {
+            const res = await fetch(`/api/english/phrases/${id}/status?status=${newStatus}`, {
                 method: "PATCH"
             });
             if (res.ok) {
-                setPhrases(phrases.map(p => p.id === id ? { ...p, is_memorized: !currentStatus } : p));
+                setPhrases(phrases.map(p => p.id === id ? { ...p, status: newStatus, is_memorized: newStatus === 2 } : p));
+
+                // If we are hiding completed and it becomes completed (2), it should disappear (handled by re-render if we filtering locally, but we are fetching from API).
+                // If we rely on API fetch for filtering, we might need to remove it from list manually if not showing completed.
+                if (!showCompleted && newStatus === 2) {
+                    setPhrases(prev => prev.filter(p => p.id !== id));
+                }
             }
         } catch (error) {
             console.error("Update error", error);
@@ -352,11 +364,11 @@ export default function PhrasesPage() {
                             <label className="flex items-center cursor-pointer select-none">
                                 <input
                                     type="checkbox"
-                                    checked={hideMemorized}
-                                    onChange={(e) => setHideMemorized(e.target.checked)}
+                                    checked={showCompleted}
+                                    onChange={(e) => setShowCompleted(e.target.checked)}
                                     className="w-4 h-4 text-cyan-600 rounded border-gray-300 focus:ring-cyan-500"
                                 />
-                                <span className="ml-2 text-sm text-slate-600">Hide Memorized</span>
+                                <span className="ml-2 text-sm text-slate-600">Show Completed</span>
                             </label>
                         </div>
 
@@ -399,11 +411,14 @@ export default function PhrasesPage() {
 
                                             <div className="flex flex-col items-center gap-2">
                                                 <button
-                                                    onClick={() => handleToggleMemorized(phrase.id, phrase.is_memorized)}
-                                                    className={`p-2 rounded-full transition-colors ${phrase.is_memorized ? "bg-green-100 text-green-600" : "bg-gray-100 text-gray-400 hover:bg-green-50 hover:text-green-500"}`}
-                                                    title={phrase.is_memorized ? "Mark as unmemorized" : "Mark as memorized"}
+                                                    onClick={() => handleStatusCycle(phrase.id, phrase.status)}
+                                                    className={`p-2 rounded-full transition-colors font-bold text-xs w-8 h-8 flex items-center justify-center 
+                                                        ${(phrase.status || 0) === 2 ? "bg-green-100 text-green-700" :
+                                                            (phrase.status || 0) === 1 ? "bg-yellow-100 text-yellow-700" :
+                                                                "bg-gray-100 text-gray-500 hover:bg-gray-200"}`}
+                                                    title="Cycle Status: Unlearned -> Learned -> Mastered"
                                                 >
-                                                    <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M5 13l4 4L19 7"></path></svg>
+                                                    {(phrase.status || 0) === 2 ? "M" : (phrase.status || 0) === 1 ? "L" : "U"}
                                                 </button>
                                                 <button
                                                     onClick={() => handleDelete(phrase.id)}

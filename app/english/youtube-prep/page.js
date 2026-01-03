@@ -9,7 +9,7 @@ export default function YouTubePrepPage() {
     const [isCreating, setIsCreating] = useState(false);
     const [newUrl, setNewUrl] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [filterDone, setFilterDone] = useState(false);
+    const [showCompleted, setShowCompleted] = useState(false); // If false, show status 0 and 1. If true, show all.
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
@@ -100,7 +100,10 @@ export default function YouTubePrepPage() {
 
     const handleToggleStatus = async (task, e) => {
         e.stopPropagation();
-        const newStatus = task.status === "DONE" ? "TODO" : "DONE";
+        // Cycle: 0 -> 1 -> 2 -> 0
+        const currentStatus = task.status || 0;
+        const newStatus = (currentStatus + 1) % 3;
+
         try {
             const res = await fetch(`/api/english/youtube-prep/${task.id}/status?status=${newStatus}`, {
                 method: "PATCH"
@@ -123,7 +126,24 @@ export default function YouTubePrepPage() {
         }
     };
 
-    const filteredTasks = tasks.filter(t => filterDone ? true : t.status !== "DONE");
+    // Filter logic: If showCompleted is true, show all. If false, show only status < 2.
+    const filteredTasks = tasks.filter(t => showCompleted ? true : (t.status || 0) < 2);
+
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 2: return "MASTERED";
+            case 1: return "LEARNED";
+            default: return "UNLEARNED";
+        }
+    };
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 2: return "bg-green-100 text-green-700 border-green-200";
+            case 1: return "bg-yellow-100 text-yellow-700 border-yellow-200";
+            default: return "bg-gray-100 text-gray-600 border-gray-200";
+        }
+    };
 
     return (
         <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
@@ -151,8 +171,8 @@ export default function YouTubePrepPage() {
                             <label className="flex items-center cursor-pointer">
                                 <input
                                     type="checkbox"
-                                    checked={filterDone}
-                                    onChange={(e) => setFilterDone(e.target.checked)}
+                                    checked={showCompleted}
+                                    onChange={(e) => setShowCompleted(e.target.checked)}
                                     className="mr-2"
                                 />
                                 Show Completed
@@ -182,9 +202,9 @@ export default function YouTubePrepPage() {
                                     <span>{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</span>
                                     <button
                                         onClick={(e) => handleToggleStatus(task, e)}
-                                        className={`px-2 py-0.5 rounded border ${task.status === "DONE" ? "bg-green-100 text-green-700 border-green-200" : "bg-gray-100 text-gray-600 border-gray-200"}`}
+                                        className={`px-2 py-0.5 rounded border text-[10px] font-bold ${getStatusColor(task.status || 0)}`}
                                     >
-                                        {task.status}
+                                        {getStatusLabel(task.status || 0)}
                                     </button>
                                 </div>
                             </div>
