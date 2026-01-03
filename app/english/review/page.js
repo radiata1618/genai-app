@@ -191,7 +191,7 @@ export default function ReviewPage() {
     };
 
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
+        <div className="flex h-full bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Mobile Sidebar Backdrop */}
             {isSidebarOpen && (
                 <div

@@ -440,7 +440,7 @@ export default function SprintPage() {
                                 onChange={(e) => setGoal(e.target.value)}
                                 onBlur={handleSaveGoal}
                                 placeholder="What is the goal of this sprint?"
-                                className="w-full bg-indigo-50/50 hover:bg-white focus:bg-white border-2 border-transparent focus:border-indigo-200 rounded-xl px-3 py-2 text-sm text-slate-700 placeholder-indigo-300 resize-none transition-all outline-none h-[50px] md:h-[60px]"
+                                className="w-full bg-indigo-50/50 hover:bg-white focus:bg-white border-2 border-transparent focus:border-indigo-200 rounded-xl px-3 py-2 text-sm text-slate-700 placeholder-indigo-300 resize-none transition-all outline-none h-20 md:h-24"
                             />
                             <div className="absolute top-2 right-2 text-[10px] text-indigo-300 pointer-events-none opacity-0 group-hover:opacity-100 transition-opacity">
                                 GOAL
