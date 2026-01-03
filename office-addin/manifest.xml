@@ -1,4 +1,4 @@
-<?xml version="1.0" encoding="UTF-8"?>
+<?xml version="1.0" encoding="UTF-8" standalone="yes"?>
 <OfficeApp 
     xmlns="http://schemas.microsoft.com/office/appforoffice/1.1" 
     xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance" 
@@ -15,7 +15,7 @@
   <Description DefaultValue="Tools for Consultants: Matrix, Stamps, formatting." />
   <SupportUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/help.html" />
 
-  <!-- Icons (Point to local assets) -->
+  <!-- Icons -->
   <IconUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-32.png" />
   <HighResolutionIconUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-80.png" />
 
@@ -39,12 +39,12 @@
   <!-- Version Overrides (The Ribbon Button) -->
   <VersionOverrides xmlns="http://schemas.microsoft.com/office/taskpaneappversionoverrides" xsi:type="VersionOverridesV1_0">
     <Hosts>
-      <Host xsi:type="Host" Name="Presentation">
+      <Host xsi:type="Presentation">
         <DesktopFormFactor>
           <ExtensionPoint xsi:type="PrimaryCommandSurface">
             <CustomTab id="TabConsulting">
               <Group id="GrpConsulting">
-                <Label DefaultValue="Consulting Tools" />
+                <Label resid="GrpConsulting.Label" />
                 <Icon>
                   <bt:Image size="16" resid="Icon.16x16" />
                   <bt:Image size="32" resid="Icon.32x32" />
@@ -52,10 +52,10 @@
                 </Icon>
 
                 <Control xsi:type="Button" id="BtnOpenPane">
-                  <Label DefaultValue="Open Toolkit" />
+                  <Label resid="BtnOpenPane.Label" />
                   <Supertip>
-                    <Title DefaultValue="Consulting Toolkit" />
-                    <Description DefaultValue="Open the Consulting Toolkit task pane." />
+                    <Title resid="BtnOpenPane.Label" />
+                    <Description resid="BtnOpenPane.Tooltip" />
                   </Supertip>
                   <Icon>
                     <bt:Image size="16" resid="Icon.16x16" />
@@ -68,7 +68,7 @@
                   </Action>
                 </Control>
               </Group>
-              <Label DefaultValue="Consulting" />
+              <Label resid="TabConsulting.Label" />
             </CustomTab>
           </ExtensionPoint>
         </DesktopFormFactor>
@@ -84,6 +84,14 @@
       <bt:Urls>
         <bt:Url id="Taskpane.Url" DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/index.html" />
       </bt:Urls>
+      <bt:ShortStrings>
+        <bt:String id="TabConsulting.Label" DefaultValue="Consulting"/>
+        <bt:String id="GrpConsulting.Label" DefaultValue="Consulting Tools"/>
+        <bt:String id="BtnOpenPane.Label" DefaultValue="Open Toolkit"/>
+      </bt:ShortStrings>
+      <bt:LongStrings>
+        <bt:String id="BtnOpenPane.Tooltip" DefaultValue="Open the Consulting Toolkit task pane."/>
+      </bt:LongStrings>
     </Resources>
   </VersionOverrides>
 </OfficeApp>
