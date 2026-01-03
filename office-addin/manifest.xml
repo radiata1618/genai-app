@@ -7,16 +7,21 @@
     xsi:type="TaskPaneApp">
 
   <!-- Basic Metadata -->
-  <Id>37f78141-912b-4a24-89ac-decd6a483c41</Id>
-  <Version>1.0.0.0</Version>
+  <Id>5be38680-9289-4176-8094-121212121212</Id>
+  <Version>1.0.0.1</Version>
   <ProviderName>GenAI App Team</ProviderName>
   <DefaultLocale>en-US</DefaultLocale>
   <DisplayName DefaultValue="Consulting Toolkit" />
   <Description DefaultValue="Tools for Consultants: Matrix, Stamps, formatting." />
+  <SupportUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/help.html" />
 
   <!-- Icons (Point to local assets) -->
-  <IconUrl DefaultValue="https://localhost:3001/assets/icon-32.png" />
-  <HighResolutionIconUrl DefaultValue="https://localhost:3001/assets/icon-80.png" />
+  <IconUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-32.png" />
+  <HighResolutionIconUrl DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-80.png" />
+
+  <AppDomains>
+    <AppDomain>https://genai-app-office-addin-997062428865.us-central1.run.app</AppDomain>
+  </AppDomains>
 
   <!-- Hosts -->
   <Hosts>
@@ -25,7 +30,7 @@
 
   <!-- Default Settings -->
   <DefaultSettings>
-    <SourceLocation DefaultValue="https://localhost:3001/index.html" />
+    <SourceLocation DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/index.html" />
   </DefaultSettings>
 
   <!-- Permissions -->
@@ -72,12 +77,12 @@
 
     <Resources>
       <bt:Images>
-        <bt:Image id="Icon.16x16" DefaultValue="https://localhost:3001/assets/icon-32.png" />
-        <bt:Image id="Icon.32x32" DefaultValue="https://localhost:3001/assets/icon-32.png" />
-        <bt:Image id="Icon.80x80" DefaultValue="https://localhost:3001/assets/icon-80.png" />
+        <bt:Image id="Icon.16x16" DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-32.png" />
+        <bt:Image id="Icon.32x32" DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-32.png" />
+        <bt:Image id="Icon.80x80" DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/assets/icon-80.png" />
       </bt:Images>
       <bt:Urls>
-        <bt:Url id="Taskpane.Url" DefaultValue="https://localhost:3001/index.html" />
+        <bt:Url id="Taskpane.Url" DefaultValue="https://genai-app-office-addin-997062428865.us-central1.run.app/index.html" />
       </bt:Urls>
     </Resources>
   </VersionOverrides>

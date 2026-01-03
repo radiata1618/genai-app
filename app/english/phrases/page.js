@@ -1,5 +1,6 @@
 "use client";
 import React, { useState, useEffect } from "react";
+import ReactMarkdown from "react-markdown";
 import MobileMenuButton from "../../../components/MobileMenuButton";
 
 export default function PhrasesPage() {
@@ -16,6 +17,7 @@ export default function PhrasesPage() {
     const [suggestions, setSuggestions] = useState([]);
     const [selectedSuggestions, setSelectedSuggestions] = useState({}); // { index: bool }
     const [isGenerating, setIsGenerating] = useState(false);
+    const [editingState, setEditingState] = useState({}); // { index: { english: str, explanation: str } }
 
     useEffect(() => {
         fetchPhrases();
@@ -66,6 +68,55 @@ export default function PhrasesPage() {
         } finally {
             setIsGenerating(false);
         }
+    };
+
+    const handleSpeak = (text) => {
+        const synth = window.speechSynthesis;
+        const u = new SpeechSynthesisUtterance(text);
+        u.lang = 'en-US';
+        synth.speak(u);
+    };
+
+    const handleEditClick = (idx, item) => {
+        setEditingState(prev => ({
+            ...prev,
+            [idx]: { english: item.english, explanation: item.explanation }
+        }));
+    };
+
+    const handleSaveEdit = (idx) => {
+        const newValues = editingState[idx];
+        if (!newValues) return;
+
+        const newSuggestions = [...suggestions];
+        newSuggestions[idx] = {
+            ...newSuggestions[idx],
+            english: newValues.english,
+            explanation: newValues.explanation
+        };
+        setSuggestions(newSuggestions);
+
+        // Remove from editing state
+        setEditingState(prev => {
+            const next = { ...prev };
+            delete next[idx];
+            return next;
+        });
+    };
+
+    const handleCancelEdit = (idx) => {
+        setEditingState(prev => {
+            const next = { ...prev };
+            delete next[idx];
+            return next;
+        });
+    };
+
+    const handleEditChange = (idx, field, value) => {
+        setEditingState(prev => ({
+            ...prev,
+            [idx]: { ...prev[idx], [field]: value }
+        }));
     };
 
     const handleRegister = async () => {
@@ -178,38 +229,107 @@ export default function PhrasesPage() {
 
                         {suggestions.length > 0 && (
                             <section className="space-y-4">
-                                <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
-                                    <span>Suggestions</span>
-                                    <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Select phrases to save</span>
-                                </h2>
-                                <div className="grid gap-4">
-                                    {suggestions.map((item, idx) => (
-                                        <div
-                                            key={idx}
-                                            onClick={() => setSelectedSuggestions(prev => ({ ...prev, [idx]: !prev[idx] }))}
-                                            className={`p-4 rounded-xl border-2 cursor-pointer transition-all relative ${selectedSuggestions[idx] ? "border-cyan-500 bg-cyan-50" : "border-transparent bg-white shadow-sm hover:bg-gray-50"}`}
-                                        >
-                                            <div className="flex justify-between items-start mb-2">
-                                                <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded ${item.type === "recommendation" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
-                                                    {item.type}
-                                                </span>
-                                                <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors ${selectedSuggestions[idx] ? "bg-cyan-500 border-cyan-500" : "border-gray-300"}`}>
-                                                    {selectedSuggestions[idx] && <span className="text-white text-sm">✓</span>}
-                                                </div>
-                                            </div>
-                                            <p className="text-sm text-gray-500 mb-1">{item.japanese}</p>
-                                            <p className="text-lg font-bold text-slate-800 mb-2">{item.english}</p>
-                                            <p className="text-sm text-slate-600 bg-white/50 p-2 rounded-lg">{item.explanation}</p>
-                                        </div>
-                                    ))}
-                                </div>
-                                <div className="flex justify-end pt-4">
+                                <div className="flex justify-between items-center">
+                                    <h2 className="text-lg font-bold text-slate-800 flex items-center gap-2">
+                                        <span>Suggestions</span>
+                                        <span className="text-xs font-normal text-gray-500 bg-gray-100 px-2 py-1 rounded-full">Select phrases to save</span>
+                                    </h2>
                                     <button
                                         onClick={handleRegister}
-                                        className="bg-slate-900 hover:bg-slate-800 text-white px-8 py-3 rounded-xl font-bold shadow-lg transition-transform active:scale-95"
+                                        className="bg-slate-900 hover:bg-slate-800 text-white px-6 py-2 rounded-xl font-bold shadow-lg transition-transform active:scale-95 text-sm"
                                     >
                                         Register Selected ({Object.values(selectedSuggestions).filter(Boolean).length})
                                     </button>
+                                </div>
+                                <div className="grid gap-4">
+                                    {suggestions.map((item, idx) => {
+                                        const isEditing = !!editingState[idx];
+                                        const editValues = editingState[idx] || {};
+
+                                        return (
+                                            <div
+                                                key={idx}
+                                                className={`p-4 rounded-xl border-2 transition-all relative ${selectedSuggestions[idx] ? "border-cyan-500 bg-cyan-50" : "border-transparent bg-white shadow-sm hover:bg-gray-50"}`}
+                                            >
+                                                {/* Edit Mode Overlay - or just conditional rendering */}
+
+                                                <div className="flex justify-between items-start mb-2" onClick={() => !isEditing && setSelectedSuggestions(prev => ({ ...prev, [idx]: !prev[idx] }))}>
+                                                    <span className={`text-xs font-bold uppercase tracking-wider px-2 py-1 rounded ${item.type === "recommendation" ? "bg-purple-100 text-purple-700" : "bg-blue-100 text-blue-700"}`}>
+                                                        {item.type}
+                                                    </span>
+                                                    <div className="flex items-center gap-2">
+                                                        {!isEditing && (
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleEditClick(idx, item); }}
+                                                                className="text-gray-400 hover:text-cyan-600 p-1 rounded transition-colors"
+                                                                title="Edit"
+                                                            >
+                                                                ✏️
+                                                            </button>
+                                                        )}
+                                                        <div className={`w-6 h-6 rounded-full border-2 flex items-center justify-center transition-colors cursor-pointer ${selectedSuggestions[idx] ? "bg-cyan-500 border-cyan-500" : "border-gray-300"}`}>
+                                                            {selectedSuggestions[idx] && <span className="text-white text-sm">✓</span>}
+                                                        </div>
+                                                    </div>
+                                                </div>
+
+                                                <p className="text-sm text-gray-500 mb-1">{item.japanese}</p>
+
+                                                {isEditing ? (
+                                                    <div className="space-y-2 mt-2">
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 font-bold">English</label>
+                                                            <textarea
+                                                                value={editValues.english}
+                                                                onChange={(e) => handleEditChange(idx, "english", e.target.value)}
+                                                                className="w-full p-2 border border-gray-300 rounded-lg text-lg font-bold text-slate-800"
+                                                                rows={2}
+                                                            />
+                                                        </div>
+                                                        <div>
+                                                            <label className="text-xs text-gray-500 font-bold">Explanation</label>
+                                                            <textarea
+                                                                value={editValues.explanation}
+                                                                onChange={(e) => handleEditChange(idx, "explanation", e.target.value)}
+                                                                className="w-full p-2 border border-gray-300 rounded-lg text-sm text-slate-600 font-mono"
+                                                                rows={3}
+                                                            />
+                                                        </div>
+                                                        <div className="flex justify-end gap-2 mt-2">
+                                                            <button
+                                                                onClick={() => handleCancelEdit(idx)}
+                                                                className="px-3 py-1 text-sm text-gray-500 hover:text-gray-700 font-medium"
+                                                            >
+                                                                Cancel
+                                                            </button>
+                                                            <button
+                                                                onClick={() => handleSaveEdit(idx)}
+                                                                className="px-3 py-1 text-sm bg-cyan-600 hover:bg-cyan-700 text-white rounded font-medium shadow-sm"
+                                                            >
+                                                                Save
+                                                            </button>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <>
+                                                        <div className="flex items-center gap-2 mb-2">
+                                                            <p className="text-lg font-bold text-slate-800">{item.english}</p>
+                                                            <button
+                                                                onClick={(e) => { e.stopPropagation(); handleSpeak(item.english); }}
+                                                                className="text-cyan-400 hover:text-cyan-600 p-1 rounded-full transition-colors"
+                                                                title="Listen"
+                                                            >
+                                                                🔊
+                                                            </button>
+                                                        </div>
+                                                        <div className="text-sm text-slate-600 bg-white/50 p-2 rounded-lg prose prose-sm max-w-none">
+                                                            <ReactMarkdown>{item.explanation}</ReactMarkdown>
+                                                        </div>
+                                                    </>
+                                                )}
+                                            </div>
+                                        );
+                                    })}
                                 </div>
                             </section>
                         )}

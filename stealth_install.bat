@@ -28,7 +28,7 @@ echo [OK] Updated manifest.xml in %TARGET_DIR%
 :: Assumes "C:\work\MyAddins" is shared as "MyAddins"
 set "REG_KEY=HKCU\Software\Microsoft\Office\16.0\WEF\TrustedCatalogs\{55555555-4444-3333-2222-111111111111}"
 reg add "%REG_KEY%" /v "Id" /t REG_SZ /d "{55555555-4444-3333-2222-111111111111}" /f >nul
-reg add "%REG_KEY%" /v "Url" /t REG_SZ /d "\\localhost\%SHARE_NAME%" /f >nul
+reg add "%REG_KEY%" /v "Url" /t REG_SZ /d "\\%COMPUTERNAME%\%SHARE_NAME%" /f >nul
 reg add "%REG_KEY%" /v "Flags" /t REG_DWORD /d 1 /f >nul
 echo [OK] Registry key added for \\localhost\%SHARE_NAME%
 
