@@ -59,7 +59,9 @@ class PreparationTask(BaseModel):
     topic: str
     content: str
     created_at: datetime
-    status: str = "TODO" # TODO, DONE
+    content: str
+    created_at: datetime
+    status: int = 0 # 0: Unlearned, 1: Learned Once, 2: Mastered
 
 class ReviewCreateRequest(BaseModel):
     video_filename: str
@@ -70,7 +72,9 @@ class ReviewTask(BaseModel):
     video_filename: str
     content: str
     created_at: datetime
-    status: str = "TODO"
+    content: str
+    created_at: datetime
+    status: int = 0
 
 class YouTubePrepRequest(BaseModel):
     url: str
@@ -85,7 +89,7 @@ class YouTubePrepTask(BaseModel):
     script_formatted: Optional[str] = None
     script_augmented: Optional[str] = None
     created_at: datetime
-    status: str = "TODO"
+    status: int = 0
 # --- Models ---
 
 class PhraseGenerateRequest(BaseModel):
@@ -111,6 +115,7 @@ class Phrase(BaseModel):
     english: str
     note: Optional[str] = None
     is_memorized: bool = False
+    status: int = 0
     created_at: datetime
     
 # --- Helpers ---
@@ -182,15 +187,25 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
 @router.get("/preparation", response_model=List[PreparationTask])
 def get_preparation_list(db: firestore.Client = Depends(get_db)):
     docs = db.collection("english_preparation").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-    return [PreparationTask(**d.to_dict()) for d in docs]
+    tasks = []
+    for d in docs:
+        data = d.to_dict()
+        # Migration: "TODO" -> 0, "DONE" -> 2
+        if isinstance(data.get("status"), str):
+             if data["status"] == "DONE":
+                 data["status"] = 2
+             else:
+                 data["status"] = 0
+        tasks.append(PreparationTask(**data))
+    return tasks
 
 @router.patch("/preparation/{task_id}/status")
-def update_preparation_status(task_id: str, status: str, db: firestore.Client = Depends(get_db)):
+def update_preparation_status(task_id: str, status: int, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("english_preparation").document(task_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Task not found")
     doc_ref.update({"status": status})
-    return {"status": "updated"}
+    return {"status": "updated", "new_status": status}
 
 
 @router.delete("/preparation/{task_id}")
@@ -430,7 +445,16 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
 @router.get("/youtube-prep", response_model=List[YouTubePrepTask])
 def get_youtube_prep_list(db: firestore.Client = Depends(get_db)):
     docs = db.collection("english_youtube_prep").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-    return [YouTubePrepTask(**d.to_dict()) for d in docs]
+    tasks = []
+    for d in docs:
+        data = d.to_dict()
+        if isinstance(data.get("status"), str):
+             if data["status"] == "DONE":
+                 data["status"] = 2
+             else:
+                 data["status"] = 0
+        tasks.append(YouTubePrepTask(**data))
+    return tasks
 
 @router.delete("/youtube-prep/{task_id}")
 def delete_youtube_prep(task_id: str, db: firestore.Client = Depends(get_db)):
@@ -438,12 +462,12 @@ def delete_youtube_prep(task_id: str, db: firestore.Client = Depends(get_db)):
     return {"status": "deleted"}
 
 @router.patch("/youtube-prep/{task_id}/status")
-def update_youtube_prep_status(task_id: str, status: str, db: firestore.Client = Depends(get_db)):
+def update_youtube_prep_status(task_id: str, status: int, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("english_youtube_prep").document(task_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Task not found")
     doc_ref.update({"status": status})
-    return {"status": "updated"}
+    return {"status": "updated", "new_status": status}
 
 
 @router.get("/upload-url")
@@ -626,7 +650,16 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
 @router.get("/review", response_model=List[ReviewTask])
 def get_review_list(db: firestore.Client = Depends(get_db)):
     docs = db.collection("english_review").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-    return [ReviewTask(**d.to_dict()) for d in docs]
+    tasks = []
+    for d in docs:
+        data = d.to_dict()
+        if isinstance(data.get("status"), str):
+             if data["status"] == "DONE":
+                 data["status"] = 2
+             else:
+                 data["status"] = 0
+        tasks.append(ReviewTask(**data))
+    return tasks
 
 @router.delete("/review/{task_id}")
 def delete_review(task_id: str, db: firestore.Client = Depends(get_db)):
@@ -634,12 +667,12 @@ def delete_review(task_id: str, db: firestore.Client = Depends(get_db)):
     return {"status": "deleted"}
 
 @router.patch("/review/{task_id}/status")
-def update_review_status(task_id: str, status: str, db: firestore.Client = Depends(get_db)):
+def update_review_status(task_id: str, status: int, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("english_review").document(task_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Task not found")
     doc_ref.update({"status": status})
-    return {"status": "updated"}
+    return {"status": "updated", "new_status": status}
 
 # --- Phrases Endpoints ---
 
@@ -723,25 +756,31 @@ def create_phrases(req_list: List[PhraseCreateRequest], db: firestore.Client = D
 
 @router.get("/phrases", response_model=List[Phrase])
 def get_phrases(
-    filter_memorized: bool = Query(False, description="If true, exclude memorized phrases"),
+    filter_memorized: bool = Query(False, description="Deprecated: Use status filtering"), # Keeping for backward compat logic if needed
     db: firestore.Client = Depends(get_db)
 ):
     query = db.collection("english_phrases").order_by("created_at", direction=firestore.Query.DESCENDING)
     
-    if filter_memorized:
-        query = query.where("is_memorized", "==", False)
-        
     docs = query.stream()
-    return [Phrase(**d.to_dict()) for d in docs]
+    phrases = []
+    for d in docs:
+        data = d.to_dict()
+        # Migration: is_memorized=True -> status=2, False -> status=0
+        if "status" not in data:
+            data["status"] = 2 if data.get("is_memorized", False) else 0
+        
+        phrases.append(Phrase(**data))
+        
+    return phrases
 
 @router.patch("/phrases/{phrase_id}/status")
-def update_phrase_status(phrase_id: str, is_memorized: bool, db: firestore.Client = Depends(get_db)):
+def update_phrase_status(phrase_id: str, status: int, db: firestore.Client = Depends(get_db)):
     doc_ref = db.collection("english_phrases").document(phrase_id)
     if not doc_ref.get().exists:
         raise HTTPException(status_code=404, detail="Phrase not found")
         
-    doc_ref.update({"is_memorized": is_memorized})
-    return {"status": "updated", "is_memorized": is_memorized}
+    doc_ref.update({"status": status, "is_memorized": status == 2})
+    return {"status": "updated", "new_status": status}
 
 @router.delete("/phrases/{phrase_id}")
 def delete_phrase(phrase_id: str, db: firestore.Client = Depends(get_db)):

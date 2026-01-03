@@ -14,6 +14,44 @@ export default function ReviewPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [showCompleted, setShowCompleted] = useState(false);
+
+    const getStatusLabel = (status) => {
+        switch (status) {
+            case 2: return "MASTERED";
+            case 1: return "LEARNED";
+            default: return "UNLEARNED";
+        }
+    };
+
+    const getStatusColor = (status) => {
+        switch (status) {
+            case 2: return "bg-green-100 text-green-700 border-green-200";
+            case 1: return "bg-yellow-100 text-yellow-700 border-yellow-200";
+            default: return "bg-gray-100 text-gray-600 border-gray-200";
+        }
+    };
+
+    const handleToggleStatus = async (task, e) => {
+        e.stopPropagation();
+        // Cycle: 0 -> 1 -> 2 -> 0
+        const currentStatus = task.status || 0;
+        const newStatus = (currentStatus + 1) % 3;
+
+        try {
+            const res = await fetch(`/api/english/review/${task.id}/status?status=${newStatus}`, {
+                method: "PATCH"
+            });
+            if (res.ok) {
+                setTasks(tasks.map(t => t.id === task.id ? { ...t, status: newStatus } : t));
+                if (selectedTask?.id === task.id) {
+                    setSelectedTask({ ...selectedTask, status: newStatus });
+                }
+            }
+        } catch (error) {
+            console.error("Failed to update status", error);
+        }
+    };
 
     const fetchTasks = async () => {
         try {
@@ -170,11 +208,24 @@ export default function ReviewPage() {
                 border-gray-200 flex flex-col overflow-hidden flex-shrink-0
             `}>
                 <div className="w-80 flex flex-col h-full">
-                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center flex-shrink-0">
-                        <h2 className="text-lg font-bold text-slate-700">Review History</h2>
+                    <div className="p-4 border-b border-gray-100 bg-gray-50 flex-col flex flex-shrink-0">
+                        <div className="flex justify-between items-center mb-2">
+                            <h2 className="text-lg font-bold text-slate-700">Review History</h2>
+                        </div>
+                        <div className="flex items-center space-x-2 text-sm text-slate-500">
+                            <label className="flex items-center cursor-pointer">
+                                <input
+                                    type="checkbox"
+                                    checked={showCompleted}
+                                    onChange={(e) => setShowCompleted(e.target.checked)}
+                                    className="mr-2"
+                                />
+                                Show Completed
+                            </label>
+                        </div>
                     </div>
                     <div className="flex-1 overflow-y-auto">
-                        {tasks.map((task) => (
+                        {tasks.filter(t => showCompleted ? true : (t.status || 0) < 2).map((task) => (
                             <div
                                 key={task.id}
                                 onClick={() => handleSelectTask(task)}
@@ -191,7 +242,15 @@ export default function ReviewPage() {
                                         ×
                                     </button>
                                 </div>
-                                <p className="text-xs text-gray-500 mt-1">{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</p>
+                                <div className="flex justify-between items-center mt-1">
+                                    <p className="text-xs text-gray-500">{new Date(task.created_at).toLocaleDateString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit" })}</p>
+                                    <button
+                                        onClick={(e) => handleToggleStatus(task, e)}
+                                        className={`px-2 py-0.5 rounded border text-[10px] font-bold ${getStatusColor(task.status || 0)}`}
+                                    >
+                                        {getStatusLabel(task.status || 0)}
+                                    </button>
+                                </div>
                             </div>
                         ))}
                     </div>
