@@ -86,7 +86,33 @@ class YouTubePrepTask(BaseModel):
     script_augmented: Optional[str] = None
     created_at: datetime
     status: str = "TODO"
+# --- Models ---
 
+class PhraseGenerateRequest(BaseModel):
+    japanese: str
+
+class PhraseSuggestion(BaseModel):
+    japanese: str
+    english: str
+    type: str # variation, recommendation
+    explanation: str
+
+class PhraseGenerateResponse(BaseModel):
+    suggestions: List[PhraseSuggestion]
+
+class PhraseCreateRequest(BaseModel):
+    japanese: str
+    english: str
+    note: Optional[str] = None
+
+class Phrase(BaseModel):
+    id: str
+    japanese: str
+    english: str
+    note: Optional[str] = None
+    is_memorized: bool = False
+    created_at: datetime
+    
 # --- Helpers ---
 
 
@@ -614,3 +640,110 @@ def update_review_status(task_id: str, status: str, db: firestore.Client = Depen
         raise HTTPException(status_code=404, detail="Task not found")
     doc_ref.update({"status": status})
     return {"status": "updated"}
+
+# --- Phrases Endpoints ---
+
+@router.post("/phrases/generate", response_model=PhraseGenerateResponse)
+def generate_phrases(req: PhraseGenerateRequest):
+    prompt = f"""
+    あなたはプロの英語教師です。以下の日本語フレーズに対して、いくつかの英語のバリエーションと、関連するおすすめフレーズ（追加のトピックや会話の返しなど）を提案してください。
+    
+    日本語: {req.japanese}
+    
+    以下のJSON形式で出力してください。Markdownのコードブロックは不要です。
+    [
+      {{
+        "japanese": "{req.japanese}",
+        "english": "英語フレーズ1",
+        "type": "variation",
+        "explanation": "ニュアンス解説"
+      }},
+      {{
+         "japanese": "{req.japanese}",
+         "english": "英語フレーズ2",
+         "type": "variation",
+         "explanation": "ニュアンス解説"
+      }},
+      {{
+         "japanese": "関連する日本語",
+         "english": "英語フレーズ3",
+         "type": "recommendation",
+         "explanation": "なぜこれがおすすめか"
+      }}
+    ]
+    
+    バリエーションは3つ程度、おすすめは2つ程度提案してください。
+    学習者が微妙なニュアンスの違いを理解できるように解説を含めてください。
+    """
+    
+    try:
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt,
+        )
+        
+        # Simple cleaning of Markdown code blocks if present
+        text = response.text.strip()
+        if text.startswith("```json"):
+            text = text[7:]
+        if text.startswith("```"):
+            text = text[3:]
+        if text.endswith("```"):
+            text = text[:-3]
+        text = text.strip()
+        
+        suggestions_data = json.loads(text)
+        return PhraseGenerateResponse(suggestions=[PhraseSuggestion(**s) for s in suggestions_data])
+        
+    except Exception as e:
+        print(f"Phrase Generation Error: {e}")
+        # Return a dummy response or raise error? Raising error is better for now.
+        raise HTTPException(status_code=500, detail=f"Phrase Generation Failed: {str(e)}")
+
+@router.post("/phrases", response_model=List[Phrase])
+def create_phrases(req_list: List[PhraseCreateRequest], db: firestore.Client = Depends(get_db)):
+    batch = db.batch()
+    new_phrases = []
+    
+    for req in req_list:
+        doc_ref = db.collection("english_phrases").document()
+        phrase = Phrase(
+            id=doc_ref.id,
+            japanese=req.japanese,
+            english=req.english,
+            note=req.note,
+            is_memorized=False,
+            created_at=datetime.now()
+        )
+        batch.set(doc_ref, phrase.dict())
+        new_phrases.append(phrase)
+        
+    batch.commit()
+    return new_phrases
+
+@router.get("/phrases", response_model=List[Phrase])
+def get_phrases(
+    filter_memorized: bool = Query(False, description="If true, exclude memorized phrases"),
+    db: firestore.Client = Depends(get_db)
+):
+    query = db.collection("english_phrases").order_by("created_at", direction=firestore.Query.DESCENDING)
+    
+    if filter_memorized:
+        query = query.where("is_memorized", "==", False)
+        
+    docs = query.stream()
+    return [Phrase(**d.to_dict()) for d in docs]
+
+@router.patch("/phrases/{phrase_id}/status")
+def update_phrase_status(phrase_id: str, is_memorized: bool, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("english_phrases").document(phrase_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Phrase not found")
+        
+    doc_ref.update({"is_memorized": is_memorized})
+    return {"status": "updated", "is_memorized": is_memorized}
+
+@router.delete("/phrases/{phrase_id}")
+def delete_phrase(phrase_id: str, db: firestore.Client = Depends(get_db)):
+    db.collection("english_phrases").document(phrase_id).delete()
+    return {"status": "deleted"}
