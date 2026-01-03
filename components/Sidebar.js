@@ -23,6 +23,7 @@ const navItems = [
             { name: "Preparation", icon: "📚", href: "/english/preparation" },
             { name: "Review", icon: "📹", href: "/english/review" },
             { name: "YouTube Prep", icon: "📺", href: "/english/youtube-prep" },
+            { name: "Phrases", icon: "💬", href: "/english/phrases" },
         ],
     },
     {
