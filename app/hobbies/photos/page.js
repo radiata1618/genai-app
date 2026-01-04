@@ -23,7 +23,7 @@ export default function PhotosPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
 
     const fetchTasks = async () => {
         try {
@@ -40,8 +40,13 @@ export default function PhotosPage() {
     useEffect(() => {
         fetchTasks();
         const handleResize = () => {
-            if (window.innerWidth < 1024) setIsSidebarOpen(false);
-            else setIsSidebarOpen(true);
+            if (window.innerWidth < 1024) {
+                setIsSidebarOpen(false);
+                setIsChatSidebarOpen(false); // Close chat on smaller screens
+            } else {
+                setIsSidebarOpen(true);
+                setIsChatSidebarOpen(true); // Open chat on desktop
+            }
         };
         handleResize();
         window.addEventListener('resize', handleResize);
@@ -267,6 +272,14 @@ export default function PhotosPage() {
                         </button>
                     )}
                 </div>
+
+                {/* Mobile FAB */}
+                <button
+                    onClick={() => setIsSidebarOpen(true)}
+                    className={`lg:hidden fixed bottom-6 right-6 z-50 w-14 h-14 bg-cyan-600 text-white rounded-full shadow-lg hover:bg-cyan-700 transition-all ${isSidebarOpen ? "hidden" : "flex"} items-center justify-center`}
+                >
+                    <span className="text-xl">☰</span>
+                </button>
 
                 <div className="flex-1 flex overflow-hidden relative">
                     {isCreating ? (

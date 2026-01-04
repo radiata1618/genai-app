@@ -15,9 +15,8 @@ export default function ReviewPage() {
     const [isDragging, setIsDragging] = useState(false);
 
     // UI State
-    // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true); // Default Open
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false); // Default closed
     const [showCompleted, setShowCompleted] = useState(false);
     const [activeTab, setActiveTab] = useState('correction'); // 'correction' or 'script'
 
@@ -78,8 +77,10 @@ export default function ReviewPage() {
         const handleResize = () => {
             if (window.innerWidth < 1024) { // Changed to lg breakpoint
                 setIsSidebarOpen(false);
+                setIsChatSidebarOpen(false); // Close chat on smaller screens
             } else {
                 setIsSidebarOpen(true);
+                setIsChatSidebarOpen(true); // Open chat on desktop
             }
         };
 

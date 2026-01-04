@@ -14,15 +14,17 @@ export default function PreparationPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false); // Default closed for mobile safety
 
     useEffect(() => {
         fetchTasks();
         const handleResize = () => {
             if (window.innerWidth < 1024) { // Changed to lg breakpoint
                 setIsSidebarOpen(false);
+                setIsChatSidebarOpen(false); // Close chat on smaller screens
             } else {
                 setIsSidebarOpen(true);
+                setIsChatSidebarOpen(true); // Open chat on desktop
             }
         };
 
