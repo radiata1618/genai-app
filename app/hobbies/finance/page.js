@@ -96,9 +96,9 @@ export default function FinancePage() {
                 </button>
             </div>
 
-            <div className="flex-1 overflow-y-auto p-4 sm:p-8 flex flex-col lg:flex-row gap-8">
+            <div className="flex-1 overflow-y-auto p-0 lg:p-8 flex flex-col lg:flex-row gap-0 lg:gap-8">
                 {/* Left: Assets List */}
-                <div className="w-full lg:w-1/3 flex flex-col space-y-4">
+                <div className="w-full lg:w-1/3 flex flex-col space-y-4 p-4 lg:p-0">
                     <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100">
                         <h2 className="text-lg font-bold mb-4 text-slate-700">Portfolio</h2>
                         {assets.length === 0 ? (
@@ -130,8 +130,8 @@ export default function FinancePage() {
 
                 {/* Right: Analysis */}
                 <div className="w-full lg:w-2/3 flex flex-col">
-                    <div className="bg-white p-6 rounded-xl shadow-sm border border-gray-100 flex-1 flex flex-col">
-                        <div className="flex justify-between items-center mb-6">
+                    <div className="bg-white p-0 lg:p-6 lg:rounded-xl lg:shadow-sm lg:border lg:border-gray-100 flex-1 flex flex-col">
+                        <div className="flex justify-between items-center p-4 lg:p-0 mb-0 lg:mb-6 border-b lg:border-none border-gray-100">
                             <h2 className="text-xl font-bold flex items-center">
                                 <span className="text-2xl mr-2">📈</span> Market Outlook
                             </h2>
@@ -142,11 +142,11 @@ export default function FinancePage() {
                                     ${isAnalyzing ? "bg-gray-400 cursor-not-allowed animate-pulse" : "bg-gradient-to-r from-cyan-500 to-blue-600 hover:from-cyan-600 hover:to-blue-700"}
                                 `}
                             >
-                                {isAnalyzing ? "Analyzing with Gemini..." : "⚡ Run AI Analysis"}
+                                {isAnalyzing ? "Analyzing..." : "⚡ Analyze"}
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto bg-white lg:bg-slate-50 p-2 lg:p-6 lg:rounded-lg lg:border border-slate-200 prose prose-slate max-w-none">
+                        <div className="flex-1 overflow-y-auto bg-white lg:bg-slate-50 p-4 lg:p-6 lg:rounded-lg lg:border border-slate-200 prose prose-slate max-w-none">
                             {analysis ? (
                                 <div>
                                     <div className="text-xs text-gray-400 mb-4 text-right">Last Updated: {new Date(analysis.created_at).toLocaleString()}</div>
