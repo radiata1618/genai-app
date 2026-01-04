@@ -146,7 +146,7 @@ export default function FinancePage() {
                             </button>
                         </div>
 
-                        <div className="flex-1 overflow-y-auto bg-slate-50 p-6 rounded-lg border border-slate-200 prose prose-slate max-w-none">
+                        <div className="flex-1 overflow-y-auto bg-white lg:bg-slate-50 p-2 lg:p-6 lg:rounded-lg lg:border border-slate-200 prose prose-slate max-w-none">
                             {analysis ? (
                                 <div>
                                     <div className="text-xs text-gray-400 mb-4 text-right">Last Updated: {new Date(analysis.created_at).toLocaleString()}</div>
