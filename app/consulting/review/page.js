@@ -56,7 +56,19 @@ export default function ConsultingReviewPage() {
 
         try {
             // 1. Get Signed URL
-            const urlRes = await fetch(`/api/consulting/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type)}`, {
+            // Fix for mobile: Ensure Content-Type is not empty
+            let contentType = file.type;
+            if (!contentType) {
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (['mp4', 'm4v', 'mov'].includes(ext)) contentType = 'video/mp4';
+                else if (['mp3', 'mpeg'].includes(ext)) contentType = 'audio/mpeg';
+                else if (ext === 'wav') contentType = 'audio/wav';
+                else if (ext === 'm4a') contentType = 'audio/mp4';
+                else if (ext === 'webm') contentType = 'video/webm';
+                else contentType = 'application/octet-stream';
+            }
+
+            const urlRes = await fetch(`/api/consulting/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(contentType)}`, {
                 method: "POST"
             });
             if (!urlRes.ok) throw new Error("Failed to get upload URL");
@@ -66,7 +78,7 @@ export default function ConsultingReviewPage() {
             setProgress("Uploading Media...");
             const uploadRes = await fetch(upload_url, {
                 method: "PUT",
-                headers: { "Content-Type": file.type },
+                headers: { "Content-Type": contentType },
                 body: file,
             });
             if (!uploadRes.ok) throw new Error("Upload failed");

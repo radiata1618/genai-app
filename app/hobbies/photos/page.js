@@ -41,14 +41,20 @@ export default function PhotosPage() {
         fetchTasks();
         const handleResize = () => {
             if (window.innerWidth < 1024) {
-                setIsSidebarOpen(false);
-                setIsChatSidebarOpen(false); // Close chat on smaller screens
+                // setIsSidebarOpen(false); // Disable auto-close on resize for now, or just on init?
+                // The requirement is "mobile also has list visible by default".
+                // If I remove this logic entirely, it will stay open.
+                // But typically on mobile we want it closed if we select something?
+                // Let's just remove the initial check that forces it closed.
+                // And we want the sidebar to be responsive.
+                // If I resize from desktop to mobile, should it close? Maybe.
+                // But the critical part is INITIAL LOAD.
             } else {
                 setIsSidebarOpen(true);
                 setIsChatSidebarOpen(true); // Open chat on desktop
             }
         };
-        handleResize();
+        // handleResize(); // REMOVED: Do not force close on init
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
@@ -84,7 +90,17 @@ export default function PhotosPage() {
 
         try {
             // 1. Get Signed URL
-            const urlRes = await fetch(`/api/hobbies/photos/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(file.type)}`);
+            // Fix for mobile: Ensure Content-Type is not empty
+            let contentType = file.type;
+            if (!contentType) {
+                const ext = file.name.split('.').pop().toLowerCase();
+                if (['jpg', 'jpeg'].includes(ext)) contentType = 'image/jpeg';
+                else if (ext === 'png') contentType = 'image/png';
+                else if (ext === 'heic') contentType = 'image/heic';
+                else contentType = 'application/octet-stream';
+            }
+
+            const urlRes = await fetch(`/api/hobbies/photos/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(contentType)}`);
             if (!urlRes.ok) throw new Error("Failed to get upload URL");
             const { upload_url, gcs_path } = await urlRes.json();
 
@@ -92,7 +108,7 @@ export default function PhotosPage() {
             setProgress("Uploading photo...");
             const uploadRes = await fetch(upload_url, {
                 method: "PUT",
-                headers: { "Content-Type": file.type },
+                headers: { "Content-Type": contentType },
                 body: file,
             });
             if (!uploadRes.ok) throw new Error("Failed to upload to GCS");
