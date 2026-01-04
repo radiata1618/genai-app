@@ -81,7 +81,11 @@ export default function ConsultingReviewPage() {
                 headers: { "Content-Type": contentType },
                 body: file,
             });
-            if (!uploadRes.ok) throw new Error("Upload failed");
+            if (!uploadRes.ok) {
+                const errText = await uploadRes.text();
+                console.error(`Upload failed: ${uploadRes.status} ${uploadRes.statusText}`, errText);
+                throw new Error(`Upload failed to GCS: ${uploadRes.status} ${uploadRes.statusText}`);
+            }
 
             // 3. Process Review
             setProgress("Analyzing with Gemini Pro... (This may take a while)");
