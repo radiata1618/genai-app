@@ -21,6 +21,7 @@ warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_
 from fastapi.responses import StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
+from google import genai
 from google.cloud import firestore
 import traceback
 
@@ -826,117 +827,121 @@ def get_consulting_reviews():
 #  MTG SME Endpoints (Live API WebSocket)
 # ==========================================
 
+
 @router.websocket("/consulting/sme/ws")
 async def consulting_sme_websocket(websocket: WebSocket):
     await websocket.accept()
-    print("DEBUG: SME WebSocket connected", flush=True)
+    print("DEBUG: SME WebSocket connected (Live API: Audio+Transcript Mode)", flush=True)
 
-    client = get_genai_client() # Re-use client
-    
-    # Config for Live API
-    # We want AUDIO input, but TEXT output (as user requested text-based output).
-    # "Roleplay (Live) のようなLiveAPIを用い... 情報をテキストベースで表示したい"
-    # Live API usually is Audio-to-Audio. 
-    # Can we ask for TEXT response modality in Live API? 
-    # Yes, `response_modalities=["TEXT"]` is supported in Multimodal Live API.
-    
-    config = {
-        "model": "gemini-live-2.5-flash-preview-native-audio-09-2025", # Use the working Live API model
-        "response_modalities": ["TEXT"] # We only want text back to display on screen
-    }
+    # Use Shared Vertex AI Client
+    client = get_genai_client()
+    if not client:
+        print("ERROR: Failed to get GenAI Client")
+        await websocket.close(code=1011)
+        return
+
+    # Model Configuration
+    # verified working model for Live API connection & transcription
+    MODEL_NAME = "gemini-live-2.5-flash-preview-native-audio-09-2025" 
     
     try:
         # 1. Initial Handshake / Setup
-        init_data = await websocket.receive_json() # Wait for client ready or setup
+        init_data = await websocket.receive_json() 
         print(f"DEBUG: SME Setup data: {init_data}", flush=True)
-        
+
         system_instruction = """
-        あなたはMTGを傍聴している「AI・データ領域の専門家(SME)」です。
-        会議の音声を聞き、以下の役割を果たしてください。
-        
-        **あなたの振る舞い:**
-        1. 基本的に**黙っていてください**（傍聴）。
-        2. ただし、以下の状況が発生した時だけ、**テキストで**割って入って指摘してください。
-           - 会議で出た情報（特に技術的あるいは事実的内容）に**間違いがある**時。
-           - 議論の文脈において、**どうしても知っておくべき追加情報**（最新トレンド、競合情報、リスク等）がある時。
-        
-        **出力時のルール:**
-        - テキストのみを出力してください（音声発話はしない）。
-        - 指摘をする際は、必ず**信頼できるソースURL**を併記してください。
-        - 些末な内容や、単なる感想では発言しないでください。
-        - 簡潔に事実のみを述べてください。
+        You are an expert SME (Subject Matter Expert) listening to a meeting.
+        Your role is to strictly observe and Only speak up to correct factual mistakes or provide critical missing context.
+        Most of the time, you should remain silent.
+        If you speak, be concise and factual.
+        Output MUST be in Japanese.
         """
 
-        # 2. Connect to Gemini Live
-        async with client.aio.live.connect(
-            model=config["model"],
-            config=types.LiveConnectConfig(
-                response_modalities=config["response_modalities"],
-                system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                # Enable Google Search if valid for Live API? 
-                # Live API support for tools (grounding) is evolving. 
-                # For "gemini-2.0-flash-exp", let's try adding GoogleSearch tool if signature allows.
-                # Types signature check: LiveConnectConfig(tools=[Tool(google_search=...)])
-                tools=[types.Tool(google_search=types.GoogleSearch())]
-            )
-        ) as session:
-            print("DEBUG: Connected to Gemini Live API (SME)", flush=True)
+        # Context Integration
+        if init_data.get("type") == "setup":
+             context = init_data.get("context", {})
+             if context.get("topic"):
+                 system_instruction += f"\n\nTopic: {context['topic']}"
 
-            # Parallel Tasks
-            async def send_to_client():
+        # 2. Live API Connection
+        print(f"DEBUG: Connecting to Live API {MODEL_NAME}...", flush=True)
+        
+        config = types.LiveConnectConfig(
+            response_modalities=["AUDIO"], # Model requires AUDIO modality
+            system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+            # Key Feature: Enable Transcription to get text output from the Audio model
+            output_audio_transcription=types.AudioTranscriptionConfig(),
+            input_audio_transcription=types.AudioTranscriptionConfig(), # Enable input transcription too for logs/future
+        )
+
+        async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:
+            print("DEBUG: Connected to Gemini Live API!", flush=True)
+            
+            # 3. Concurrent Handling: Send (Audio) & Receive (Transcript)
+            
+            async def send_audio_loop():
+                try:
+                    while True:
+                        msg = await websocket.receive_json()
+                        if "audio" in msg:
+                            # Frontend sends base64 PCM/WAV
+                            data = base64.b64decode(msg["audio"])
+                            # Send raw bytes to Gemini Live API
+                            # Note: Gemini Live typically expects PCM 16kHz or 24kHz. 
+                            # Frontend usually sends PCM.
+                            await session.send(input=data, end_of_turn=False)
+                except WebSocketDisconnect:
+                    print("DEBUG: Client disconnected from send loop")
+                except Exception as e:
+                    print(f"Send Loop Error: {e}")
+            
+            async def receive_response_loop():
                 try:
                     async for response in session.receive():
                         server_content = response.server_content
-                        if server_content is None: continue
+                        if not server_content:
+                            continue
+
+                        # Extract Transcription (The "Text" output)
+                        transcript = None
+                        if hasattr(server_content, "output_transcription") and server_content.output_transcription:
+                            transcript = server_content.output_transcription.text
                         
-                        model_turn = server_content.model_turn
-                        if model_turn is None: continue
-
-                        # Collect text parts
-                        text_output = ""
-                        for part in model_turn.parts:
-                            if part.text:
-                                text_output += part.text
+                        # Fallback check (sometimes it might end up in model_turn if modality mixed?)
+                        # But our debug confirmed `output_transcription`.
                         
-                        if text_output:
-                            print(f"DEBUG: Gemini SME says: {text_output[:50]}...", flush=True)
-                            await websocket.send_json({"text": text_output, "turn_complete": server_content.turn_complete})
-                            
+                        if transcript:
+                            print(f"DEBUG: SME Transcript: {transcript}", flush=True)
+                            if transcript.strip():
+                                # Send text to frontend
+                                await websocket.send_json({"text": transcript})
+                        
+                        # We ignore AUDIO data in the response (server_content.model_turn.parts inline_data)
+                        # because we only want the text device.
+                        
                 except Exception as e:
-                    print(f"Error sending to client: {e}")
+                    print(f"Receive Loop Error: {e}")
 
-            async def receive_from_client():
-                try:
-                    while True:
-                        message = await websocket.receive_json()
-                        if "audio" in message:
-                            # User sends base64 audio (microphone input)
-                            data = base64.b64decode(message["audio"])
-                            if len(data) > 0:
-                                await session.send_realtime_input(
-                                    media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
-                                )
-                except WebSocketDisconnect:
-                    print("DEBUG: Client disconnected")
-                    raise
-                except Exception as e:
-                    print(f"Error receiving from client: {e}")
-                    raise
-
-            # Run both
-            send_task = asyncio.create_task(send_to_client())
-            receive_task = asyncio.create_task(receive_from_client())
+            # Run loops
+            # When send_audio_loop finishes (disconnect), we should cancel receive_loop
+            send_task = asyncio.create_task(send_audio_loop())
+            receive_task = asyncio.create_task(receive_response_loop())
             
             done, pending = await asyncio.wait(
-                [send_task, receive_task],
+                [send_task, receive_task], 
                 return_when=asyncio.FIRST_COMPLETED
             )
             
-            for t in pending: t.cancel()
+            for task in pending:
+                task.cancel()
 
     except Exception as e:
         print(f"SME WebSocket Error: {e}")
         traceback.print_exc()
+        try:
+            await websocket.send_json({"error": f"Server Error: {str(e)}"})
+        except:
+            pass
     finally:
         await websocket.close()
 
