@@ -37,6 +37,14 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
         if request.url.path == "/health" or request.method == "OPTIONS":
             return await call_next(request)
 
+        # Skip check for WebSocket endpoint (Browser limitations for custom headers)
+        if request.url.path.startswith("/api/roleplay/ws"):
+            return await call_next(request)
+
+        # Skip check for WebSocket endpoint (Browser limitations for custom headers)
+        if request.url.path.startswith("/api/roleplay/ws"):
+            return await call_next(request)
+
         # Retrieve API Key from header
         api_key = request.headers.get("X-INTERNAL-API-KEY")
         # Verify API Key (Trim whitespace to prevent Secret Manager newline issues)
@@ -84,7 +92,9 @@ app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(consulting.router, prefix="/api", tags=["consulting"])
 from routers import english
+from routers import roleplay
 app.include_router(english.router, prefix="/api", tags=["english"])
+app.include_router(roleplay.router, prefix="/api", tags=["roleplay"])
 
 @app.get("/health")
 async def health_check():

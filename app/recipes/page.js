@@ -31,7 +31,7 @@ export default function RecipeListPage() {
     }
 
     return (
-        <div className="flex flex-col h-full bg-slate-50 p-3 md:p-6 overscroll-none">
+        <div className="flex flex-col h-full bg-slate-50 p-3 md:p-6 overscroll-none overflow-x-hidden">
             <header className="flex flex-col md:flex-row md:justify-between md:items-center mb-4 md:mb-8 gap-4">
                 <div className="flex items-center gap-2">
                     <MobileMenuButton />
@@ -89,7 +89,7 @@ export default function RecipeListPage() {
                                         </h2>
 
                                         {/* Ratings Summary */}
-                                        <div className="flex gap-3 md:gap-4 mb-3">
+                                        <div className="flex flex-wrap gap-x-3 gap-y-1 md:gap-4 mb-3">
                                             <div className="flex items-center gap-1">
                                                 <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase">Effort</span>
                                                 <StarRating value={recipe.effort_rating} sizeClass="text-xs" colorClass="text-blue-400" />

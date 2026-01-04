@@ -18,6 +18,7 @@ export default function PhrasesPage() {
     const [selectedSuggestions, setSelectedSuggestions] = useState({}); // { index: bool }
     const [isGenerating, setIsGenerating] = useState(false);
     const [editingState, setEditingState] = useState({}); // { index: { english: str, explanation: str } }
+    const [visibleItems, setVisibleItems] = useState({}); // { id: bool }
 
     useEffect(() => {
         fetchPhrases();
@@ -120,6 +121,13 @@ export default function PhrasesPage() {
         }));
     };
 
+    const toggleItemVisibility = (id) => {
+        setVisibleItems(prev => ({
+            ...prev,
+            [id]: !prev[id]
+        }));
+    };
+
     const handleRegister = async () => {
         const toRegister = suggestions.filter((_, idx) => selectedSuggestions[idx]);
         if (toRegister.length === 0) return;
@@ -218,9 +226,9 @@ export default function PhrasesPage() {
             <main className="max-w-3xl mx-auto px-4 sm:px-6 lg:px-8 py-8">
                 {activeTab === "register" && (
                     <div className="space-y-8 animate-fadeIn">
-                        <section className="bg-white p-6 rounded-2xl shadow-sm border border-gray-100">
+                        <section className="bg-white p-4 md:p-6 rounded-2xl shadow-sm border border-gray-100">
                             <label className="block text-sm font-bold text-slate-700 mb-2">Japanese Phrase</label>
-                            <div className="flex gap-2">
+                            <div className="flex flex-col md:flex-row gap-2">
                                 <input
                                     type="text"
                                     value={inputJapanese}
@@ -392,17 +400,20 @@ export default function PhrasesPage() {
                                         <div className="flex justify-between items-start gap-4">
                                             <div className="flex-1">
                                                 <p className="text-sm text-gray-500 mb-1">{phrase.japanese}</p>
-                                                <div className="relative min-h-[1.75rem] flex items-center">
-                                                    <p className={`text-lg font-bold text-slate-800 transition-opacity duration-300 ${showEnglish ? "opacity-100" : "opacity-0 blur-sm select-none"}`}>
+                                                <div
+                                                    className="relative min-h-[1.75rem] flex items-center cursor-pointer select-none"
+                                                    onClick={() => toggleItemVisibility(phrase.id)}
+                                                >
+                                                    <p className={`text-lg font-bold text-slate-800 transition-all duration-300 ${showEnglish || visibleItems[phrase.id] ? "opacity-100 blur-0" : "opacity-0 blur-sm"}`}>
                                                         {phrase.english}
                                                     </p>
-                                                    {!showEnglish && (
-                                                        <span className="absolute inset-0 flex items-center text-gray-300 text-sm font-medium select-none">
-                                                            Hidden (Toggle to view)
+                                                    {(!showEnglish && !visibleItems[phrase.id]) && (
+                                                        <span className="absolute inset-0 flex items-center text-gray-300 text-sm font-medium">
+                                                            Tap to show
                                                         </span>
                                                     )}
                                                 </div>
-                                                {showEnglish && phrase.note && (
+                                                {(showEnglish || visibleItems[phrase.id]) && phrase.note && (
                                                     <p className="text-xs text-slate-500 mt-2 bg-slate-50 p-2 rounded inline-block">
                                                         {phrase.note}
                                                     </p>

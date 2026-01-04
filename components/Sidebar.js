@@ -24,6 +24,7 @@ const navItems = [
             { name: "Review", icon: "📹", href: "/english/review" },
             { name: "YouTube Prep", icon: "📺", href: "/english/youtube-prep" },
             { name: "Phrases", icon: "💬", href: "/english/phrases" },
+            { name: "Roleplay (Live)", icon: "🎙️", href: "/english/roleplay" },
         ],
     },
     {

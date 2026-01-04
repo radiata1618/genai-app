@@ -2,6 +2,8 @@
 import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import MobileMenuButton from "../../../components/MobileMenuButton";
+import AiChatSidebar from "../../../components/AiChatSidebar";
+
 
 export default function ReviewPage() {
     const [tasks, setTasks] = useState([]);
@@ -13,8 +15,13 @@ export default function ReviewPage() {
     const [isDragging, setIsDragging] = useState(false);
 
     // UI State
+    // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true); // Default Open
     const [showCompleted, setShowCompleted] = useState(false);
+    const [activeTab, setActiveTab] = useState('correction'); // 'correction' or 'script'
+
+
 
     const getStatusLabel = (status) => {
         switch (status) {
@@ -281,7 +288,22 @@ export default function ReviewPage() {
                     <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
                         {isCreating ? "New Review" : selectedTask ? selectedTask.video_filename : "Review"}
                     </span>
+
+                    <div className="flex-1" /> {/* Spacer */}
+
+                    {selectedTask && !isCreating && (
+                        <button
+                            onClick={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
+                            className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${isChatSidebarOpen ? "text-cyan-600 bg-cyan-50" : "text-gray-400"}`}
+                            title="Toggle AI Chat"
+                        >
+                            <svg xmlns="http://www.w3.org/2000/svg" fill="none" viewBox="0 0 24 24" strokeWidth={1.5} stroke="currentColor" className="w-6 h-6">
+                                <path strokeLinecap="round" strokeLinejoin="round" d="M9.813 15.904L9 18.75l-.813-2.846a4.5 4.5 0 00-3.09-3.09L2.25 12l2.846-.813a4.5 4.5 0 003.09-3.09L9 5.25l.813 2.846a4.5 4.5 0 003.09 3.09L15.75 12l-2.846.813a4.5 4.5 0 00-3.09 3.09zM18.259 8.715L18 9.75l-.259-1.035a3.375 3.375 0 00-2.455-2.456L14.25 6l1.036-.259a3.375 3.375 0 002.455-2.456L18 2.25l.259 1.035a3.375 3.375 0 002.456 2.456L21.75 6l-1.035.259a3.375 3.375 0 00-2.456 2.456zM16.894 20.567L16.5 21.75l-.394-1.183a2.25 2.25 0 00-1.423-1.423L13.5 18.75l1.183-.394a2.25 2.25 0 001.423-1.423l.394-1.183.394 1.183a2.25 2.25 0 001.423 1.423l1.183.394-1.183.394a2.25 2.25 0 00-1.423 1.423z" />
+                            </svg>
+                        </button>
+                    )}
                 </div>
+
 
                 {/* Mobile FAB */}
                 <button
@@ -291,145 +313,185 @@ export default function ReviewPage() {
                     <span className="text-xl">☰</span>
                 </button>
 
-                {isCreating ? (
-                    <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
-                        <div className="w-full max-w-lg bg-white p-4 sm:p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
-                            <h3 className="text-2xl font-bold mb-6 text-slate-800">Upload Lesson Video</h3>
-                            <div className="mb-8">
-                                <label
-                                    onDragOver={handleDragOver}
-                                    onDragLeave={handleDragLeave}
-                                    onDrop={handleDrop}
-                                    className={`flex flex-col items-center px-4 py-10 bg-white text-blue rounded-lg shadow-lg tracking-wide uppercase border border-blue cursor-pointer transition-colors
+
+                <div className="flex-1 flex overflow-hidden relative">
+                    {isCreating ? (
+                        <div className="flex-1 flex items-center justify-center p-4 sm:p-8 overflow-y-auto">
+                            <div className="w-full max-w-lg bg-white p-4 sm:p-8 rounded-2xl shadow-xl border border-gray-100 text-center">
+                                <h3 className="text-2xl font-bold mb-6 text-slate-800">Upload Lesson Video</h3>
+                                <div className="mb-8">
+                                    <label
+                                        onDragOver={handleDragOver}
+                                        onDragLeave={handleDragLeave}
+                                        onDrop={handleDrop}
+                                        className={`flex flex-col items-center px-4 py-10 bg-white text-blue rounded-lg shadow-lg tracking-wide uppercase border border-blue cursor-pointer transition-colors
                                         ${isDragging ? "bg-cyan-100 border-cyan-500 scale-105" : "hover:bg-blue-50"}
                                     `}
-                                >
-                                    <svg className="w-8 h-8 text-blue-500" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
-                                        <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4-4-4 4h3v3h2v-3z" />
-                                    </svg>
-                                    <span className="mt-2 text-base leading-normal text-slate-600">
-                                        {isDragging ? "Drop video/audio here" : "Select or Drop a video/audio file"}
-                                    </span>
-                                    <input type='file' accept="video/*,audio/*" className="hidden" onChange={handleFileUpload} />
-                                </label>
-                            </div>
-                            {isLoading && (
-                                <div className="space-y-4">
-                                    <div className="text-cyan-600 font-medium animate-pulse">{progress}</div>
-                                    <div className="w-full bg-gray-200 rounded-full h-2.5">
-                                        <div className="bg-cyan-600 h-2.5 rounded-full animate-progress-indeterminate"></div>
-                                    </div>
+                                    >
+                                        <svg className="w-8 h-8 text-blue-500" fill="currentColor" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 20 20">
+                                            <path d="M16.88 9.1A4 4 0 0 1 16 17H5a5 5 0 0 1-1-9.9V7a3 3 0 0 1 4.52-2.59A4.98 4.98 0 0 1 17 8c0 .38-.04.74-.12 1.1zM11 11h3l-4-4-4 4h3v3h2v-3z" />
+                                        </svg>
+                                        <span className="mt-2 text-base leading-normal text-slate-600">
+                                            {isDragging ? "Drop video/audio here" : "Select or Drop a video/audio file"}
+                                        </span>
+                                        <input type='file' accept="video/*,audio/*" className="hidden" onChange={handleFileUpload} />
+                                    </label>
                                 </div>
-                            )}
-                        </div>
-                    </div>
-                ) : selectedTask ? (
-                    <div className="flex-1 overflow-y-auto p-4 sm:p-8">
-                        <div className="max-w-4xl mx-auto">
-                            <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.video_filename}</h1>
-                            <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
-                                <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                {isLoading && (
+                                    <div className="space-y-4">
+                                        <div className="text-cyan-600 font-medium animate-pulse">{progress}</div>
+                                        <div className="w-full bg-gray-200 rounded-full h-2.5">
+                                            <div className="bg-cyan-600 h-2.5 rounded-full animate-progress-indeterminate"></div>
+                                        </div>
+                                    </div>
+                                )}
                             </div>
-                            <article className="prose prose-slate lg:prose-lg max-w-none">
-                                <ReactMarkdown
-                                    components={{
-                                        blockquote: ({ node, ...props }) => (
-                                            <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 my-6 rounded-r-lg shadow-sm text-slate-700 relative font-medium not-italic" {...props}>
-                                                <div className="absolute -top-3 left-4 bg-cyan-100 text-cyan-700 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide">
-                                                    Snippet
-                                                </div>
-                                                <div className="pt-2">
-                                                    {props.children}
-                                                </div>
-                                            </div>
-                                        ),
-                                        em: ({ node, ...props }) => {
-                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
-                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
-
-                                            return (
-                                                <span className="inline-flex items-center">
-                                                    <em className="italic text-slate-600" {...props} />
-                                                    {isEnglish && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const synth = window.speechSynthesis;
-                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
-                                                                const u = new SpeechSynthesisUtterance(cleanText);
-                                                                u.lang = 'en-US';
-                                                                synth.speak(u);
-                                                            }}
-                                                            className="ml-1 text-cyan-400 hover:text-cyan-600 p-0.5 rounded-full transition-colors scale-75"
-                                                            title="Listen"
-                                                        >
-                                                            🔊
-                                                        </button>
-                                                    )}
-                                                </span>
-                                            );
-                                        },
-                                        h2: ({ node, ...props }) => (
-                                            <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
-                                        ),
-                                        h3: ({ node, ...props }) => (
-                                            <h3 className="text-xl font-semibold text-slate-700 mt-8 mb-4 border-l-4 border-cyan-200 pl-3" {...props} />
-                                        ),
-                                        ul: ({ node, ...props }) => (
-                                            <ul className="list-disc pl-6 space-y-2 mb-6 text-slate-600" {...props} />
-                                        ),
-                                        ol: ({ node, ...props }) => (
-                                            <ol className="list-decimal pl-6 space-y-2 mb-6 text-slate-600" {...props} />
-                                        ),
-                                        li: ({ node, ...props }) => (
-                                            <li className="pl-1" {...props} />
-                                        ),
-                                        p: ({ node, ...props }) => (
-                                            <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
-                                        ),
-                                        strong: ({ node, ...props }) => {
-                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
-                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
-
-                                            return (
-                                                <span className="inline-flex items-center">
-                                                    <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
-                                                    {isEnglish && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const synth = window.speechSynthesis;
-                                                                // Strip leading numbers, dots, and spaces (e.g. "1. Sojourn" -> "Sojourn")
-                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
-                                                                const u = new SpeechSynthesisUtterance(cleanText);
-                                                                u.lang = 'en-US';
-                                                                synth.speak(u);
-                                                            }}
-                                                            className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
-                                                            title="Listen"
-                                                        >
-                                                            🔊
-                                                        </button>
-                                                    )}
-                                                </span>
-                                            );
-                                        },
-                                    }}
-                                >
-                                    {selectedTask.content}
-                                </ReactMarkdown>
-                            </article>
                         </div>
-                    </div>
-                ) : (
-                    <div className="flex-1 flex items-center justify-center text-gray-400">
-                        <div className="text-center">
-                            <p className="text-6xl mb-4">🎥</p>
-                            <p className="text-xl font-medium">Select a review or upload a new video</p>
+                    ) : selectedTask ? (
+                        <div className="flex-1 overflow-y-auto p-4 sm:p-8">
+                            <div className="max-w-4xl mx-auto">
+                                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.video_filename}</h1>
+                                <div className="flex items-center space-x-4 mb-4 text-sm text-gray-500">
+                                    <span>Reviewed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
+                                </div>
+
+                                {/* Tabs */}
+                                <div className="flex space-x-1 bg-gray-100 p-1 rounded-lg mb-6 w-fit">
+                                    <button
+                                        onClick={() => setActiveTab('correction')}
+                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'correction'
+                                            ? 'bg-white text-cyan-700 shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Correction & Feedback
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab('script')}
+                                        className={`px-4 py-2 rounded-md text-sm font-medium transition-all ${activeTab === 'script'
+                                            ? 'bg-white text-cyan-700 shadow-sm'
+                                            : 'text-gray-500 hover:text-gray-700 hover:bg-gray-200'
+                                            }`}
+                                    >
+                                        Transcript / Script
+                                    </button>
+                                </div>
+
+                                <article className="prose prose-slate lg:prose-lg max-w-none">
+                                    <ReactMarkdown
+                                        components={{
+                                            blockquote: ({ node, ...props }) => (
+                                                <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 my-6 rounded-r-lg shadow-sm text-slate-700 relative font-medium not-italic" {...props}>
+                                                    <div className="absolute -top-3 left-4 bg-cyan-100 text-cyan-700 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide">
+                                                        Snippet
+                                                    </div>
+                                                    <div className="pt-2">
+                                                        {props.children}
+                                                    </div>
+                                                </div>
+                                            ),
+                                            em: ({ node, ...props }) => {
+                                                const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                                const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                                return (
+                                                    <span className="inline-flex items-center">
+                                                        <em className="italic text-slate-600" {...props} />
+                                                        {isEnglish && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const synth = window.speechSynthesis;
+                                                                    const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                    const u = new SpeechSynthesisUtterance(cleanText);
+                                                                    u.lang = 'en-US';
+                                                                    synth.speak(u);
+                                                                }}
+                                                                className="ml-1 text-cyan-400 hover:text-cyan-600 p-0.5 rounded-full transition-colors scale-75"
+                                                                title="Listen"
+                                                            >
+                                                                🔊
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                );
+                                            },
+                                            h2: ({ node, ...props }) => (
+                                                <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
+                                            ),
+                                            h3: ({ node, ...props }) => (
+                                                <h3 className="text-xl font-semibold text-slate-700 mt-8 mb-4 border-l-4 border-cyan-200 pl-3" {...props} />
+                                            ),
+                                            ul: ({ node, ...props }) => (
+                                                <ul className="list-disc pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                            ),
+                                            ol: ({ node, ...props }) => (
+                                                <ol className="list-decimal pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                            ),
+                                            li: ({ node, ...props }) => (
+                                                <li className="pl-1" {...props} />
+                                            ),
+                                            p: ({ node, ...props }) => (
+                                                <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
+                                            ),
+                                            strong: ({ node, ...props }) => {
+                                                const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                                const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                                return (
+                                                    <span className="inline-flex items-center">
+                                                        <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
+                                                        {isEnglish && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const synth = window.speechSynthesis;
+                                                                    // Strip leading numbers, dots, and spaces (e.g. "1. Sojourn" -> "Sojourn")
+                                                                    const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                    const u = new SpeechSynthesisUtterance(cleanText);
+                                                                    u.lang = 'en-US';
+                                                                    synth.speak(u);
+                                                                }}
+                                                                className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
+                                                                title="Listen"
+                                                            >
+                                                                🔊
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                );
+                                            },
+                                        }}
+                                    >
+                                        {activeTab === 'correction'
+                                            ? selectedTask.content
+                                            : (selectedTask.script || "*No script available*")}
+                                    </ReactMarkdown>
+                                </article>
+                            </div>
                         </div>
-                    </div>
-                )}
-            </div>
+                    ) : (
+                        <div className="flex-1 flex items-center justify-center text-gray-400">
+                            <div className="text-center">
+                                <p className="text-6xl mb-4">🎥</p>
+                                <p className="text-xl font-medium">Select a review or upload a new video</p>
+                            </div>
+                        </div>
+                    )}
+
+                    {/* Chat Sidebar Overlay for Mobile (if needed, but component handles responsiveness somewhat) */}
+                    {/* Re-layout for chat sidebar */}
+                </div>
+            </div> {/* Closing the flex-col for header+content */}
+
+            {/* Right Sidebar (Chat) */}
+            <AiChatSidebar
+                isOpen={isChatSidebarOpen && selectedTask && !isCreating}
+                onClose={() => setIsChatSidebarOpen(false)}
+                context={selectedTask ? `[CORRECTION REPORT]\n${selectedTask.content}\n\n[TRANSCRIPT]\n${selectedTask.script || "(No script available)"}` : ""}
+                contextTitle={selectedTask?.video_filename}
+            />
         </div>
     );
 }
+
