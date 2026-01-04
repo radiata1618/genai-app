@@ -38,6 +38,8 @@ const navItems = [
         category: "Consulting Support",
         items: [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
+            { name: "MTG Review", icon: "🎙️", href: "/consulting/review" },
+            { name: "MTG SME Live", icon: "👂", href: "/consulting/sme" },
             { name: "Visual Search（未）", icon: "👁️", href: "/consulting/visual-search" },
             { name: "Slide Polisher（未）", icon: "✨", href: "/consulting/slide-polisher" },
             { name: "Data Admin", icon: "⚙️", href: "/consulting/data" },
