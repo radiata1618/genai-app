@@ -99,3 +99,6 @@ app.include_router(roleplay.router, prefix="/api", tags=["roleplay"])
 @app.get("/health")
 async def health_check():
     return {"status": "ok"}
+
+from routers import hobbies
+app.include_router(hobbies.router, prefix="/api", tags=["hobbies"])
