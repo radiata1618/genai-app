@@ -18,6 +18,7 @@ export default function RoleplayPage() {
 
     // Audio Queue for playback
     const nextStartTimeRef = useRef(0);
+    const jitterBufferSizeRef = useRef(0.5); // Adaptive Buffer (Starts at 0.5s, increases if unstable)
 
     useEffect(() => {
         fetchPreps();
@@ -270,10 +271,21 @@ export default function RoleplayPage() {
         const now = ctx.currentTime;
         let start = nextStartTimeRef.current;
 
-        // If we fell behind (buffer underrun) or it's the start, add a larger jitter buffer
-        // Note: Increasing this to 2.0s as requested to maximize stability despite high-latency connection.
+        // Adaptive Jitter Buffering Logic
+        // If we fell behind (buffer underrun), it means our current buffer size was too small for the network jitter.
         if (start < now) {
-            start = now + 2.0; // 2000ms buffering latency to smooth jitter
+            // Increase buffer size to handle the instability
+            // Start with 0.5s, step up by 0.5s each time we fail, max 3.0s
+            const currentBuffer = jitterBufferSizeRef.current;
+            const newBuffer = Math.min(currentBuffer + 0.5, 3.0);
+
+            jitterBufferSizeRef.current = newBuffer;
+            console.log(`DEBUG: Audio Underrun. Increasing jitter buffer to ${newBuffer}s`);
+
+            start = now + newBuffer;
+        } else {
+            // Optional: Slowly decrease buffer if stable? 
+            // For now, prioritize stability over recovering latency.
         }
 
         source.start(start);
