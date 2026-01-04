@@ -136,12 +136,28 @@ export default function RoleplayPage() {
 
         audioWorkletNodeRef.current.port.onmessage = (event) => {
             // Received Float32 chunk from Worklet
-            const float32Data = event.data;
+            const rawFloat32Data = event.data;
+            let finalFloat32Data = rawFloat32Data;
+
+            // Downsample to 16000Hz if needed
+            const targetRate = 16000;
+            const currentRate = ctx.sampleRate;
+            if (currentRate > targetRate) {
+                const ratio = currentRate / targetRate;
+                const newLength = Math.floor(rawFloat32Data.length / ratio);
+                finalFloat32Data = new Float32Array(newLength);
+                for (let i = 0; i < newLength; i++) {
+                    const offset = Math.floor(i * ratio);
+                    if (offset < rawFloat32Data.length) {
+                        finalFloat32Data[i] = rawFloat32Data[offset];
+                    }
+                }
+            }
 
             // Convert to Int16
-            const int16Chunk = new Int16Array(float32Data.length);
-            for (let i = 0; i < float32Data.length; i++) {
-                let s = Math.max(-1, Math.min(1, float32Data[i]));
+            const int16Chunk = new Int16Array(finalFloat32Data.length);
+            for (let i = 0; i < finalFloat32Data.length; i++) {
+                let s = Math.max(-1, Math.min(1, finalFloat32Data[i]));
                 int16Chunk[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
