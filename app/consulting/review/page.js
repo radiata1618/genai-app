@@ -68,9 +68,7 @@ export default function ConsultingReviewPage() {
                 else contentType = 'application/octet-stream';
             }
 
-            const urlRes = await fetch(`/api/consulting/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(contentType)}`, {
-                method: "POST"
-            });
+            const urlRes = await fetch(`/api/consulting/upload-url?filename=${encodeURIComponent(file.name)}&content_type=${encodeURIComponent(contentType)}`);
             if (!urlRes.ok) throw new Error("Failed to get upload URL");
             const { upload_url, gcs_path } = await urlRes.json();
 

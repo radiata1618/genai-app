@@ -658,7 +658,7 @@ async def list_file_pages(filename: str):
 #  MTG Review Endpoints (Video/Audio Upload)
 # ==========================================
 
-@router.post("/consulting/upload-url")
+@router.get("/consulting/upload-url")
 def get_consulting_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
     """
     Generates a PUT Signed URL for uploading directly to GCS (Shared/Similar to English Review).
@@ -727,6 +727,7 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
         elif path_lower.endswith(".wav"): mime_type = "audio/wav"
         elif path_lower.endswith(".m4a"): mime_type = "audio/mp4"
         elif path_lower.endswith(".aac"): mime_type = "audio/aac"
+        elif path_lower.endswith(".mov"): mime_type = "video/quicktime"
         elif path_lower.endswith(".webm"): mime_type = "video/webm"
         
         part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
