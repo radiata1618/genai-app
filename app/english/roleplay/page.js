@@ -139,7 +139,7 @@ export default function RoleplayPage() {
             const rawFloat32Data = event.data;
             let finalFloat32Data = rawFloat32Data;
 
-            // Downsample to 16000Hz if needed
+            // Downsample to 16000Hz (Linear Interpolation)
             const targetRate = 16000;
             const currentRate = ctx.sampleRate;
             if (currentRate > targetRate) {
@@ -147,10 +147,12 @@ export default function RoleplayPage() {
                 const newLength = Math.floor(rawFloat32Data.length / ratio);
                 finalFloat32Data = new Float32Array(newLength);
                 for (let i = 0; i < newLength; i++) {
-                    const offset = Math.floor(i * ratio);
-                    if (offset < rawFloat32Data.length) {
-                        finalFloat32Data[i] = rawFloat32Data[offset];
-                    }
+                    const inputIndex = i * ratio;
+                    const index0 = Math.floor(inputIndex);
+                    const index1 = Math.min(index0 + 1, rawFloat32Data.length - 1);
+                    const fraction = inputIndex - index0;
+                    // Linear interpolation
+                    finalFloat32Data[i] = rawFloat32Data[index0] * (1 - fraction) + rawFloat32Data[index1] * fraction;
                 }
             }
 
@@ -167,8 +169,8 @@ export default function RoleplayPage() {
             newBuffer.set(int16Chunk, inputBuffer.length);
             inputBuffer = newBuffer;
 
-            // Send if >= 2048 samples (4096 bytes, ~128ms)
-            const CHUNK_SIZE = 2048;
+            // Send if >= 1024 samples (2048 bytes, ~64ms) - Low latency
+            const CHUNK_SIZE = 1024;
             if (inputBuffer.length >= CHUNK_SIZE) {
                 // Extract chunks
                 while (inputBuffer.length >= CHUNK_SIZE) {
