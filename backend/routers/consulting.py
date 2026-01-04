@@ -19,8 +19,10 @@ warnings.filterwarnings("ignore", category=UserWarning, module="vertexai._model_
 warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_models._vision_models")
 
 from fastapi.responses import StreamingResponse
+from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 from google.cloud import firestore
+import traceback
 
 # --- Import from Services ---
 from services.ai_shared import (
@@ -222,6 +224,19 @@ def search_vector_db(vector: List[float], top_k: int = 5) -> List[Dict[str, Any]
     except Exception as e:
         print(f"Firestore Vector Search Error: {e}")
         return []
+
+# --- Models for MTG Review & SME ---
+
+class ConsultingReviewCreateRequest(BaseModel):
+    media_filename: str
+    gcs_path: str # gs://bucket/path
+
+class ConsultingReviewTask(BaseModel):
+    id: str
+    media_filename: str
+    feedback: str # Markdown content
+    created_at: datetime.datetime
+    status: int = 0
 
 # --- Models ---
 class CollectRequest(BaseModel):
@@ -637,3 +652,291 @@ async def list_file_pages(filename: str):
     except Exception as e:
         print(f"List Pages Error: {e}")
         raise HTTPException(status_code=500, detail=str(e))
+
+# ==========================================
+#  MTG Review Endpoints (Video/Audio Upload)
+# ==========================================
+
+@router.post("/consulting/upload-url")
+def get_consulting_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
+    """
+    Generates a PUT Signed URL for uploading directly to GCS (Shared/Similar to English Review).
+    """
+    # Use the same bucket as English Review or a new one?
+    # Provided instructions imply similar structure. Let's reuse GCS_BUCKET_NAME env if available,
+    # OR reuse the ENGLISH review bucket if not specifically separate.
+    # The existing GCS_BUCKET_NAME in this file seems to be loaded from 'GCS_BUCKET_NAME'.
+    # Check if we should use a specific one for consulting review. 
+    # Let's use the one imported as GCS_BUCKET_NAME (consulting-specific likely).
+    
+    if not GCS_BUCKET_NAME:
+        raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not configured")
+    
+    try:
+        # Generate with Standard Storage Client
+        # Note: If running on Cloud Run, default credentials should work.
+        g_client = get_storage_client()
+        bucket = g_client.bucket(GCS_BUCKET_NAME)
+
+        unique_name = f"consulting_uploads/{uuid.uuid4()}_{filename}"
+        blob = bucket.blob(unique_name)
+        
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(minutes=15),
+            method="PUT",
+            content_type=content_type,
+        )
+        
+        return {
+            "upload_url": url,
+            "gcs_path": f"gs://{GCS_BUCKET_NAME}/{unique_name}",
+            "expires_in": 900
+        }
+    except Exception as e:
+        print(f"Signed URL Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to generate upload URL: {str(e)}")
+
+
+@router.post("/consulting/review", response_model=ConsultingReviewTask)
+async def create_consulting_review(req: ConsultingReviewCreateRequest):
+    """
+    Analyzes an uploaded MTG audio/video file and provides feedback for Mr. Ushikoshi.
+    """
+    try:
+        print(f"DEBUG: Processing Consulting Review for {req.gcs_path}")
+        client = get_genai_client()
+        
+        # 1. Create Part from GCS URI
+        # Auto-detect mime-type roughly
+        mime_type = "video/mp4" # Default fallback
+        path_lower = req.media_filename.lower()
+        if path_lower.endswith(".mp3"): mime_type = "audio/mpeg"
+        elif path_lower.endswith(".wav"): mime_type = "audio/wav"
+        elif path_lower.endswith(".m4a"): mime_type = "audio/mp4"
+        elif path_lower.endswith(".aac"): mime_type = "audio/aac"
+        elif path_lower.endswith(".webm"): mime_type = "video/webm"
+        
+        part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
+        
+        # 2. Define Prompt for Ushikoshi-san
+        # Background: Data/AI Consultant in MTG. User is "Ushikoshi".
+        # Feedback: Corrections, Additional Info, Manner, Good/Bad remarks (Only for Ushikoshi).
+        # Constraint: Concise, Source URLs required.
+        
+        prompt = """
+        あなたはData・AI領域の専門コンサルタントチームの長です。
+        添付の音声/動画は、「牛越（うしこし）」さん（あなたの部下、またはレビュー対象者）が参加しているMTGの記録です。
+        
+        このMTGの内容を分析し、牛越さんの今後の業務改善に役立つフィードバックをMarkdown形式で作成してください。
+        
+        ## 制約事項
+        1. **「牛越」さんの発言・行動のみ** にフォーカスしてフィードバックを行ってください（他者の発言への批評は不要）。
+        2. 短時間で確認できるよう、**簡潔に** まとめてください（些末な内容は省略）。
+        3. 情報の訂正や追加情報には、**必ず信頼できるソースURL** を付記してください。
+        4. 間違った内容や不明確な指摘は絶対にしないでください。
+        
+        ## 出力フォーマット
+        
+        ### 1. 情報の訂正 (Corrections)
+        * 会議で出た情報に誤りがある場合、正しい情報とソースを提示してください。
+          * **誤**: (発言内容) -> **正**: (正しい情報) [Source URL]
+        * 該当なしの場合は「特になし」としてください。
+
+        ### 2. 知っておくべき追加情報 (Additional Insights)
+        * 議論の内容に関連して、知っておくと有利になる追加情報（最新のAIトレンド、技術仕様など）を提示してください。
+        * 必ずソースを付けてください。
+          * (情報内容) [Source URL]
+
+        ### 3. MTGの進め方・話し方 (Communication Style)
+        * 牛越さんのファシリテーション、説明の仕方、質問の仕方で改善すべき点。
+        
+        ### 4. 発言レビュー (Remarks Review)
+        * **Good**: 牛越さんの良かった発言（論理的、的確、価値ある貢献など）。
+        * **Bad/Improvement**: 改善すべき発言、または「こう言った方がよかった」という追加すべきだった発言。
+        
+        """
+        
+        # 3. Call Gemini
+        # Use Flash for speed/cost, or Pro for quality? "Geminiから示唆出し" implies intelligence.
+        # User wants "Source URLs", so we might need Grounding? 
+        # The prompt asks for Source URLs explicitly. 
+        # Since I cannot easily enable Google Search retrieval in this standard call without extra config (Tools),
+        # I rely on the model's internal knowledge to provide URLs, or I should enable Search Tool if possible.
+        # Check if `tools` param is supported in `get_genai_client` wrapper or if I should add it.
+        # The current wrapper returns a raw `genai.Client`. 
+        # Let's try attempting to use `google_search_retrieval` tool if supported by the SDK version used.
+        # However, purely relying on model knowledge for URLs often leads to hallucinations.
+        # For now, I will ask the model to provide URLs it knows, but caution that enabling Search is better.
+        # Given "Data or AI consultant", hallucinated URLs are bad.
+        # I will attempt to add the `tools` config for Google Search if the SDK allows standard `tools=[...]`.
+        
+        # Let's try without explicit search tool first (Standard Model Knowledge), 
+        # but prompt emphasizes "Must have source URL".
+        # If I can, I'll instantiate a tool config.
+        
+        google_search_tool = types.Tool(
+            google_search=types.GoogleSearch()
+        )
+        
+        # Calling generated_content with tool
+        response = client.models.generate_content(
+            model="gemini-3-pro-preview", # Use Pro for high quality reasoning
+            contents=[prompt, part],
+            config=types.GenerateContentConfig(
+                tools=[google_search_tool], 
+                response_modalities=["TEXT"]
+            )
+        )
+        
+        feedback_content = response.text
+        
+        # 4. Save to Firestore
+        db = get_firestore_client()
+        doc_ref = db.collection("consulting_review").document()
+        
+        task = ConsultingReviewTask(
+            id=doc_ref.id,
+            media_filename=req.media_filename,
+            feedback=feedback_content,
+            created_at=datetime.datetime.now()
+        )
+        
+        doc_ref.set(task.dict())
+        
+        return task
+
+    except Exception as e:
+        print(f"Consulting Review Error: {e}")
+        # traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"Review Analysis Failed: {str(e)}")
+
+
+@router.get("/consulting/review", response_model=List[ConsultingReviewTask])
+def get_consulting_reviews():
+    try:
+        db = get_firestore_client()
+        docs = db.collection("consulting_review").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
+        return [ConsultingReviewTask(**d.to_dict()) for d in docs]
+    except Exception as e:
+        print(f"Get Reviews Error: {e}")
+        return []
+
+# ==========================================
+#  MTG SME Endpoints (Live API WebSocket)
+# ==========================================
+
+@router.websocket("/consulting/sme/ws")
+async def consulting_sme_websocket(websocket: WebSocket):
+    await websocket.accept()
+    print("DEBUG: SME WebSocket connected", flush=True)
+
+    client = get_genai_client() # Re-use client
+    
+    # Config for Live API
+    # We want AUDIO input, but TEXT output (as user requested text-based output).
+    # "Roleplay (Live) のようなLiveAPIを用い... 情報をテキストベースで表示したい"
+    # Live API usually is Audio-to-Audio. 
+    # Can we ask for TEXT response modality in Live API? 
+    # Yes, `response_modalities=["TEXT"]` is supported in Multimodal Live API.
+    
+    config = {
+        "model": "gemini-2.0-flash-exp", # Use 2.0 Flash Exp for Live API
+        "response_modalities": ["TEXT"] # We only want text back to display on screen
+    }
+    
+    try:
+        # 1. Initial Handshake / Setup
+        init_data = await websocket.receive_json() # Wait for client ready or setup
+        print(f"DEBUG: SME Setup data: {init_data}", flush=True)
+        
+        system_instruction = """
+        あなたはMTGを傍聴している「AI・データ領域の専門家(SME)」です。
+        会議の音声を聞き、以下の役割を果たしてください。
+        
+        **あなたの振る舞い:**
+        1. 基本的に**黙っていてください**（傍聴）。
+        2. ただし、以下の状況が発生した時だけ、**テキストで**割って入って指摘してください。
+           - 会議で出た情報（特に技術的あるいは事実的内容）に**間違いがある**時。
+           - 議論の文脈において、**どうしても知っておくべき追加情報**（最新トレンド、競合情報、リスク等）がある時。
+        
+        **出力時のルール:**
+        - テキストのみを出力してください（音声発話はしない）。
+        - 指摘をする際は、必ず**信頼できるソースURL**を併記してください。
+        - 些末な内容や、単なる感想では発言しないでください。
+        - 簡潔に事実のみを述べてください。
+        """
+
+        # 2. Connect to Gemini Live
+        async with client.aio.live.connect(
+            model=config["model"],
+            config=types.LiveConnectConfig(
+                response_modalities=config["response_modalities"],
+                system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+                # Enable Google Search if valid for Live API? 
+                # Live API support for tools (grounding) is evolving. 
+                # For "gemini-2.0-flash-exp", let's try adding GoogleSearch tool if signature allows.
+                # Types signature check: LiveConnectConfig(tools=[Tool(google_search=...)])
+                tools=[types.Tool(google_search=types.GoogleSearch())]
+            )
+        ) as session:
+            print("DEBUG: Connected to Gemini Live API (SME)", flush=True)
+
+            # Parallel Tasks
+            async def send_to_client():
+                try:
+                    async for response in session.receive():
+                        server_content = response.server_content
+                        if server_content is None: continue
+                        
+                        model_turn = server_content.model_turn
+                        if model_turn is None: continue
+
+                        # Collect text parts
+                        text_output = ""
+                        for part in model_turn.parts:
+                            if part.text:
+                                text_output += part.text
+                        
+                        if text_output:
+                            print(f"DEBUG: Gemini SME says: {text_output[:50]}...", flush=True)
+                            await websocket.send_json({"text": text_output, "turn_complete": server_content.turn_complete})
+                            
+                except Exception as e:
+                    print(f"Error sending to client: {e}")
+
+            async def receive_from_client():
+                try:
+                    while True:
+                        message = await websocket.receive_json()
+                        if "audio" in message:
+                            # User sends base64 audio (microphone input)
+                            data = base64.b64decode(message["audio"])
+                            if len(data) > 0:
+                                await session.send_realtime_input(
+                                    media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                                )
+                except WebSocketDisconnect:
+                    print("DEBUG: Client disconnected")
+                    raise
+                except Exception as e:
+                    print(f"Error receiving from client: {e}")
+                    raise
+
+            # Run both
+            send_task = asyncio.create_task(send_to_client())
+            receive_task = asyncio.create_task(receive_from_client())
+            
+            done, pending = await asyncio.wait(
+                [send_task, receive_task],
+                return_when=asyncio.FIRST_COMPLETED
+            )
+            
+            for t in pending: t.cancel()
+
+    except Exception as e:
+        print(f"SME WebSocket Error: {e}")
+        traceback.print_exc()
+    finally:
+        await websocket.close()
+

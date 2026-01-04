@@ -38,11 +38,7 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip check for WebSocket endpoint (Browser limitations for custom headers)
-        if request.url.path.startswith("/api/roleplay/ws"):
-            return await call_next(request)
-
-        # Skip check for WebSocket endpoint (Browser limitations for custom headers)
-        if request.url.path.startswith("/api/roleplay/ws"):
+        if request.url.path.startswith("/api/roleplay/ws") or request.url.path.startswith("/api/consulting/sme/ws"):
             return await call_next(request)
 
         # Retrieve API Key from header
