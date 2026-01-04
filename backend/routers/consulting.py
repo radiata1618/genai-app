@@ -623,7 +623,7 @@ async def slide_polisher(req: SlidePolisherRequest):
              image_bytes = base64.b64decode(req.image)
              contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
              contents.append("Refine the layout of this slide sketch/draft.")
-        response = client.models.generate_content(model="gemini-3-pro-preview", contents=contents)
+        response = client.models.generate_content(model="gemini-1.5-pro-002", contents=contents)
         html_content = response.text
         if html_content.startswith("```html"): html_content = html_content.replace("```html", "").replace("```", "")
         elif html_content.startswith("```"): html_content = html_content.replace("```", "")
@@ -706,7 +706,18 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
     """
     try:
         print(f"DEBUG: Processing Consulting Review for {req.gcs_path}")
-        client = get_genai_client()
+        
+        # Initialize Client similar to english.py to ensure model visibility
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+        if api_key:
+            api_key = api_key.strip()
+            
+        client = genai.Client(
+            vertexai=True,
+            api_key=api_key,
+            http_options={'api_version': 'v1beta1'}
+        )
+        # client = get_genai_client() # Replaced with local init for consistency
         
         # 1. Create Part from GCS URI
         # Auto-detect mime-type roughly
@@ -758,34 +769,10 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
         
         """
         
-        # 3. Call Gemini
-        # Use Flash for speed/cost, or Pro for quality? "Geminiから示唆出し" implies intelligence.
-        # User wants "Source URLs", so we might need Grounding? 
-        # The prompt asks for Source URLs explicitly. 
-        # Since I cannot easily enable Google Search retrieval in this standard call without extra config (Tools),
-        # I rely on the model's internal knowledge to provide URLs, or I should enable Search Tool if possible.
-        # Check if `tools` param is supported in `get_genai_client` wrapper or if I should add it.
-        # The current wrapper returns a raw `genai.Client`. 
-        # Let's try attempting to use `google_search_retrieval` tool if supported by the SDK version used.
-        # However, purely relying on model knowledge for URLs often leads to hallucinations.
-        # For now, I will ask the model to provide URLs it knows, but caution that enabling Search is better.
-        # Given "Data or AI consultant", hallucinated URLs are bad.
-        # I will attempt to add the `tools` config for Google Search if the SDK allows standard `tools=[...]`.
-        
-        # Let's try without explicit search tool first (Standard Model Knowledge), 
-        # but prompt emphasizes "Must have source URL".
-        # If I can, I'll instantiate a tool config.
-        
-        google_search_tool = types.Tool(
-            google_search=types.GoogleSearch()
-        )
-        
-        # Calling generated_content with tool
-        response = client.models.generate_content(
-            model="gemini-3-pro-preview", # Use Pro for high quality reasoning
+        response = await client.aio.models.generate_content(
+            model="gemini-3-flash-preview", 
             contents=[prompt, part],
             config=types.GenerateContentConfig(
-                tools=[google_search_tool], 
                 response_modalities=["TEXT"]
             )
         )
