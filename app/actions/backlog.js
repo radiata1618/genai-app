@@ -115,24 +115,22 @@ export async function addBacklogItem(data) {
 }
 
 // Sync Logic: Backlog -> Daily
-async function syncBacklogUpdateToDaily(sourceId, title, isHighlighted) {
+async function syncBacklogUpdateToDaily(sourceId, updates) {
     try {
-        const todayStr = new Date().toISOString().split('T')[0];
+        // We do NOT filter by date anymore.
+        // If a backlog item is modified, we want all linked daily tasks (even overdue ones) to reflect that.
+        // E.g. if we mark it DONE in backlog, the overdue daily task from yesterday should also become DONE.
 
         const snap = await db.collection('daily_tasks')
             .where('source_id', '==', sourceId)
             .where('source_type', '==', 'BACKLOG')
-            .where('target_date', '>=', todayStr)
             .get();
 
         if (snap.empty) return;
 
         const batch = db.batch();
         snap.docs.forEach(doc => {
-            batch.update(doc.ref, {
-                title: title,
-                is_highlighted: isHighlighted
-            });
+            batch.update(doc.ref, updates);
         });
         await batch.commit();
     } catch (e) {
@@ -156,20 +154,72 @@ export async function updateBacklogItem(id, data) {
 
     await docRef.update(updates);
 
-    // Sync if title or highlight changed
-    if (data.title || 'is_highlighted' in data) {
-        // Determine new values (use provided or fallback to existing?) 
-        // For simplicity, we assume 'data' contains the changes. 
-        // If partial update, we might need current values.
-        // Let's rely on what was passed or fetch fresh? 
-        // Actually, simpler to just use what we have if available.
-        const current = snap.data();
-        const newTitle = data.title || current.title;
-        const newHighlight = 'is_highlighted' in data ? data.is_highlighted : current.is_highlighted;
+    // Sync if title, highlight, or STATUS changed, OR scheduled_date changed
+    const syncUpdates = {};
+    if (data.title) syncUpdates.title = data.title;
+    if ('is_highlighted' in data) syncUpdates.is_highlighted = data.is_highlighted;
 
-        // Fire and forget (await but don't block return heavily?) 
-        // Server Actions must complete for client to return.
-        await syncBacklogUpdateToDaily(id, newTitle, newHighlight);
+    // Handle Scheduled Date Sync (Move Daily Task)
+    if (updates.scheduled_date !== undefined) { // Check undefined because it could be set to null
+        const oldDate = snap.data().scheduled_date;
+        const newDate = updates.scheduled_date;
+
+        // Simple check: if dates are different
+        const oldDateStr = oldDate ? oldDate.toDate().toISOString().split('T')[0] : null; // Firestore timestamp -> Date -> YYYY-MM-DD
+        const newDateStr = newDate ? newDate.toISOString().split('T')[0] : null;
+
+        if (oldDateStr !== newDateStr) {
+            const batch = db.batch();
+
+            // 1. Delete Old Daily Task if it exists
+            if (oldDateStr) {
+                const oldDailyId = `${id}_${oldDateStr}`;
+                const oldRef = db.collection('daily_tasks').doc(oldDailyId);
+                batch.delete(oldRef);
+            }
+
+            // 2. Create New Daily Task if new date is set
+            if (newDateStr) {
+                const newDailyId = `${id}_${newDateStr}`;
+                const newRef = db.collection('daily_tasks').doc(newDailyId);
+
+                // Get existing data to copy relevant fields
+                const backlogData = { ...snap.data(), ...updates }; // merged
+
+                // Check if daily task already exists? (Maybe user picked it manually?)
+                // Strategy: Overwrite/Set to ensure it exists.
+                batch.set(newRef, {
+                    id: newDailyId,
+                    source_id: id,
+                    source_type: 'BACKLOG',
+                    target_date: newDateStr,
+                    status: 'TODO', // Reset status on move? Or keep? Usually TODO for new day.
+                    created_at: new Date(),
+                    title: backlogData.title,
+                    order: 9999, // Push to end
+                    is_highlighted: backlogData.is_highlighted || false
+                });
+            }
+            await batch.commit();
+        }
+    }
+
+    if (data.status) {
+        // Map Backlog status to Daily status
+        // Backlog: STOCK, PENDING, DONE
+        // Daily: TODO, DONE, SKIPPED
+        if (data.status === 'DONE') {
+            syncUpdates.status = 'DONE';
+            syncUpdates.completed_at = new Date(); // Set completed time for Daily
+        } else {
+            // If reverting to STOCK/PENDING, make it TODO
+            syncUpdates.status = 'TODO';
+            syncUpdates.completed_at = null;
+        }
+    }
+
+    if (Object.keys(syncUpdates).length > 0) {
+        await syncBacklogUpdateToDaily(id, syncUpdates);
     }
 
     return serialize({ ...snap.data(), ...updates, id });

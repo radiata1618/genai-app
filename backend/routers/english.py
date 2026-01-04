@@ -59,8 +59,6 @@ class PreparationTask(BaseModel):
     topic: str
     content: str
     created_at: datetime
-    content: str
-    created_at: datetime
     status: int = 0 # 0: Unlearned, 1: Learned Once, 2: Mastered
 
 class ReviewCreateRequest(BaseModel):
@@ -71,10 +69,10 @@ class ReviewTask(BaseModel):
     id: str
     video_filename: str
     content: str
-    created_at: datetime
-    content: str
+    script: Optional[str] = None
     created_at: datetime
     status: int = 0
+
 
 class YouTubePrepRequest(BaseModel):
     url: str
@@ -117,6 +115,15 @@ class Phrase(BaseModel):
     is_memorized: bool = False
     status: int = 0
     created_at: datetime
+    
+class ChatMessage(BaseModel):
+    role: str # "user" or "model"
+    content: str
+
+class ChatRequest(BaseModel):
+    messages: List[ChatMessage]
+    context: Optional[str] = None
+
     
 # --- Helpers ---
 
@@ -521,7 +528,7 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
 
 
 @router.post("/review", response_model=ReviewTask)
-def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_db)):
+async def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_db)):
     if not GCS_BUCKET_NAME:
         raise HTTPException(status_code=500, detail="GCS_BUCKET_NAME not configured")
 
@@ -566,8 +573,12 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
         
         part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
 
+    except Exception as e:
+        print(f"Error creating Part from URI: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to process media file: {str(e)}")
 
-        prompt = """
+    # Define prompts
+    prompt_review = """
         この音声は、ある英語学習者（TOEIC900点程度、海外在住経験あり）がオンライン英会話レッスンを受けている際の録音データです。
         あなたは熟練した英語教師として、この生徒の英語力をさらに向上させるための詳細なフィードバックレポートを作成してください。
 
@@ -599,9 +610,19 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
 
         解説はすべて日本語で行い、学習者が納得感を持てるよう論理的かつ具体的な内容にしてください。
         """
-        
-        print(f"DEBUG: STARTING GEMINI GENERATION")
-        
+
+    prompt_script = """
+        この音声は英語のレッスンまたは会話の録音です。
+        内容を書き起こして、読みやすいスクリプト（Transcript）を作成してください。
+
+        **制約事項:**
+        1. **英語で**書き起こしてください。
+        2. 話者（Teacher/Studentなど）が区別できる場合は、行頭に `Teacher:` `Student:` のようにラベルを付けてください。不明な場合は `Speaker A:` 等でも構いません。
+        3. 読みやすさを重視し、適度に段落分けを行ってください。
+        4. 冒頭の挨拶やメタコメントは不要です。スクリプトのみを出力してください。
+        """
+
+    async def generate_content(p_prompt, p_part, p_model="gemini-3-pro-preview"):
         # Retry logic for 429 RESOURCE_EXHAUSTED
         import time
         max_retries = 3
@@ -610,12 +631,10 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
         for attempt in range(max_retries):
             try:
                 response = client.models.generate_content(
-                    model="gemini-3-pro-preview",
-                    contents=[prompt, part]
+                    model=p_model,
+                    contents=[p_prompt, p_part]
                 )
-                content = response.text
-                print(f"DEBUG: GEMINI GENERATION COMPLETE")
-                break # Success, exit loop
+                return response.text
             except Exception as e:
                 error_str = str(e)
                 if "429" in error_str or "RESOURCE_EXHAUSTED" in error_str:
@@ -627,25 +646,60 @@ def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends(get_d
                 else:
                     raise e # Re-raise other errors immediately
 
+    try:
+        print(f"DEBUG: STARTING GEMINI GENERATION (Parallel)")
+        import asyncio
+
+        # Run review generation and script generation in parallel
+        # Note: Using asyncio.get_event_loop().run_in_executor might be needed if client.models.generate_content is synchronous.
+        # However, the user provided code in create_youtube_prep used await client.aio.models.generate_content.
+        # But here we used the sync client in previous turn. Let's switch to async call for parallel execution if possible, 
+        # OR use ThreadPoolExecutor for sync calls.
+        # For simplicity and consistency with previous turn effectively being sync inside async def (FastAPI runs it in threadpool?), 
+        # let's try to use client.aio if available or just run sequentially if not strict performance.
+        # BUT the plan explicitly said "parallel".
+        
+        # Let's use the async client method if available on the `client` object we initialized. 
+        # The `client` was initialized as `genai.Client(...)`.
+        # Assuming `client.aio` exists as in `create_youtube_prep`.
+
+        async def run_parallel():
+             task_review = client.aio.models.generate_content(
+                model="gemini-3-pro-preview",
+                contents=[prompt_review, part]
+             )
+             task_script = client.aio.models.generate_content(
+                model="gemini-3-flash-preview", # Use Flash for script to save cost/time
+                contents=[prompt_script, part]
+             )
+             return await asyncio.gather(task_review, task_script)
+
+        results = await run_parallel()
+        content_review = results[0].text
+        content_script = results[1].text
+
+        print(f"DEBUG: GEMINI GENERATION COMPLETE")
+
     except Exception as e:
         print(f"Review Processing Error: {e}")
         error_detail = str(e)
         if "429" in error_detail or "RESOURCE_EXHAUSTED" in error_detail:
              error_detail = "AI Service Busy (Rate Limit). Please try again in a few minutes."
         raise HTTPException(status_code=500, detail=f"Processing Failed: {error_detail}")
-    # No finally block needed as no local files are created
     
     # 4. Save to Firestore
     doc_ref = db.collection("english_review").document()
     task = ReviewTask(
         id=doc_ref.id,
         video_filename=req.video_filename,
-        content=content,
+        content=content_review,
+        script=content_script,
         created_at=datetime.now()
     )
     doc_ref.set(task.dict())
     
     return task
+
 
 @router.get("/review", response_model=List[ReviewTask])
 def get_review_list(db: firestore.Client = Depends(get_db)):
@@ -786,3 +840,58 @@ def update_phrase_status(phrase_id: str, status: int, db: firestore.Client = Dep
 def delete_phrase(phrase_id: str, db: firestore.Client = Depends(get_db)):
     db.collection("english_phrases").document(phrase_id).delete()
     return {"status": "deleted"}
+
+
+# --- Chat Endpoint ---
+
+@router.post("/chat")
+def chat_with_context(req: ChatRequest):
+    """
+    Chat with Gemini 3 Flash using the provided context (e.g. review content).
+    """
+    try:
+        # Construct the prompt
+        system_instruction = """
+        あなたは有能な英語学習アシスタントです。
+        ユーザーは現在、英語のレビュー資料（context）を見ています。
+        この資料の内容に基づいて、ユーザーの質問に答えてください。
+        
+        回答のガイドライン:
+        1. **コンテキスト重視**: 質問が資料に関するものであれば、必ず資料の内容を根拠に答えてください。
+        2. **簡潔さ**: 回答は長くなりすぎないように、要点をまとめてください。
+        3. **日本語**: 基本的に日本語で答えてください（英語の解説が必要な場合は英語を交えても構いません）。
+        4. **親しみやすさ**: 丁寧ですが、硬すぎないトーンで話してください。
+        """
+        
+        contents = []
+        
+        # Add context as the first user message part if provided
+        if req.context:
+             contents.append(types.Content(
+                 role="user",
+                 parts=[types.Part.from_text(text=f"【以下の資料（Context）を前提に回答してください】\n\n{req.context}")]
+             ))
+        
+        # Add history
+        for msg in req.messages:
+            contents.append(types.Content(
+                role=msg.role,
+                parts=[types.Part.from_text(text=msg.content)]
+            ))
+            
+        print(f"DEBUG: sending chat request with {len(req.messages)} messages")
+        
+        response = client.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7,
+            )
+        )
+        
+        return {"response": response.text}
+
+    except Exception as e:
+        print(f"Chat Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Chat Failed: {str(e)}")
