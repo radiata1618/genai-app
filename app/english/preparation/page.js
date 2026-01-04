@@ -249,6 +249,12 @@ export default function PreparationPage() {
                                 type="text"
                                 value={newTopic}
                                 onChange={(e) => setNewTopic(e.target.value)}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.nativeEvent.isComposing && newTopic.trim() && !isLoading) {
+                                        e.preventDefault();
+                                        handleCreate();
+                                    }
+                                }}
                                 placeholder="e.g. Job Interview for Google, Talking about AI trends"
                                 disabled={isLoading}
                                 className="w-full p-4 border border-gray-300 rounded-xl mb-6 focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"

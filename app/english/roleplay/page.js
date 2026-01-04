@@ -136,12 +136,30 @@ export default function RoleplayPage() {
 
         audioWorkletNodeRef.current.port.onmessage = (event) => {
             // Received Float32 chunk from Worklet
-            const float32Data = event.data;
+            const rawFloat32Data = event.data;
+            let finalFloat32Data = rawFloat32Data;
+
+            // Downsample to 16000Hz (Linear Interpolation)
+            const targetRate = 16000;
+            const currentRate = ctx.sampleRate;
+            if (currentRate > targetRate) {
+                const ratio = currentRate / targetRate;
+                const newLength = Math.floor(rawFloat32Data.length / ratio);
+                finalFloat32Data = new Float32Array(newLength);
+                for (let i = 0; i < newLength; i++) {
+                    const inputIndex = i * ratio;
+                    const index0 = Math.floor(inputIndex);
+                    const index1 = Math.min(index0 + 1, rawFloat32Data.length - 1);
+                    const fraction = inputIndex - index0;
+                    // Linear interpolation
+                    finalFloat32Data[i] = rawFloat32Data[index0] * (1 - fraction) + rawFloat32Data[index1] * fraction;
+                }
+            }
 
             // Convert to Int16
-            const int16Chunk = new Int16Array(float32Data.length);
-            for (let i = 0; i < float32Data.length; i++) {
-                let s = Math.max(-1, Math.min(1, float32Data[i]));
+            const int16Chunk = new Int16Array(finalFloat32Data.length);
+            for (let i = 0; i < finalFloat32Data.length; i++) {
+                let s = Math.max(-1, Math.min(1, finalFloat32Data[i]));
                 int16Chunk[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
@@ -151,8 +169,8 @@ export default function RoleplayPage() {
             newBuffer.set(int16Chunk, inputBuffer.length);
             inputBuffer = newBuffer;
 
-            // Send if >= 2048 samples (4096 bytes, ~128ms)
-            const CHUNK_SIZE = 2048;
+            // Send if >= 1024 samples (2048 bytes, ~64ms) - Low latency
+            const CHUNK_SIZE = 1024;
             if (inputBuffer.length >= CHUNK_SIZE) {
                 // Extract chunks
                 while (inputBuffer.length >= CHUNK_SIZE) {

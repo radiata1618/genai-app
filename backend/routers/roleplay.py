@@ -76,8 +76,14 @@ async def websocket_endpoint(websocket: WebSocket):
                 print("DEBUG: Starting send_to_client loop", flush=True)
                 try:
                     async for response in session.receive():
-                        # print("DEBUG: Received response from Gemini", flush=True) 
                         server_content = response.server_content
+                        if server_content is None:
+                            continue
+                        
+                        if server_content.turn_complete:
+                             print("DEBUG: Gemini indicates turn_complete", flush=True)
+
+                        model_turn = server_content.model_turn
                         if server_content is None:
                             continue
                         
@@ -120,15 +126,18 @@ async def websocket_endpoint(websocket: WebSocket):
                             is_silence = all(b == 0 for b in audio_data[:100])
                             print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                            # Send using standard session.send with LiveClientRealtimeInput structure
-                            # Content object failed, so we use the specific dict structure for verify Live API input.
+                            # Send using send_realtime_input (Native Live API)
                             try:
-                                await session.send(input={"media_chunks": [{"mime_type": "audio/pcm;rate=16000", "data": audio_data}]}, end_of_turn=False)
+                                # await session.send(input={"media_chunks": [{"mime_type": "audio/pcm;rate=16000", "data": audio_data}]}, end_of_turn=False)
+                                await session.send_realtime_input(
+                                    media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
+                                )
                             except Exception as send_err:
-                                print(f"Error in session.send: {send_err}", flush=True)
+                                print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)
+                                break # Stop receiving to close connection
                         
                         if "control" in message:
-                            pass
+                             pass
                             
                 except WebSocketDisconnect:
                      print("DEBUG: Client disconnected (WebSocketDisconnect)", flush=True)
@@ -138,7 +147,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     print("DEBUG: receive_from_client loop finished", flush=True)
 
             # Run tasks
-            await asyncio.gather(send_to_client(), receive_from_client())
+            # Run tasks with cancellation on first failure
+            tasks = [asyncio.create_task(send_to_client()), asyncio.create_task(receive_from_client())]
+            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
+            
+            print(f"DEBUG: One of the loops finished/failed. Cancelling the other.", flush=True)
+            for task in pending:
+                task.cancel()
+                try:
+                    await task
+                except asyncio.CancelledError:
+                    pass
 
     except Exception as e:
         print(f"Gemini Live API Error: {e}", flush=True)
