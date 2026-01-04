@@ -268,8 +268,14 @@ export default function RoleplayPage() {
 
         // Scheduling
         const now = ctx.currentTime;
-        // Schedule slightly in future to prevent gaps, or immediately if fell behind
-        const start = Math.max(now, nextStartTimeRef.current);
+        let start = nextStartTimeRef.current;
+
+        // If we fell behind (buffer underrun) or it's the start, add a larger jitter buffer
+        // Note: Increasing this to 1.0s to allow for backend reconnection time during jitter.
+        if (start < now) {
+            start = now + 1.0; // 1000ms buffering latency to smooth jitter
+        }
+
         source.start(start);
         nextStartTimeRef.current = start + audioBuffer.duration;
     };

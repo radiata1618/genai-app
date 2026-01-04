@@ -14,7 +14,7 @@ export default function YouTubePrepPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
-    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false);
     const [activeTab, setActiveTab] = useState("notes"); // "video", "notes", "script"
 
     useEffect(() => {
@@ -22,8 +22,10 @@ export default function YouTubePrepPage() {
         const handleResize = () => {
             if (window.innerWidth < 1024) {
                 setIsSidebarOpen(false);
+                setIsChatSidebarOpen(false); // Close chat on smaller screens
             } else {
                 setIsSidebarOpen(true);
+                setIsChatSidebarOpen(true); // Open chat on desktop
             }
         };
 
