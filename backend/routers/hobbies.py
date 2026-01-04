@@ -10,6 +10,7 @@ import json
 from google import genai
 from google.genai import types
 import asyncio
+from google.oauth2 import service_account
 
 router = APIRouter(
     prefix="/hobbies",
@@ -93,7 +94,26 @@ class FinanceAnalysisResult(BaseModel):
 def get_photo_upload_url(filename: str, content_type: str = "image/jpeg"):
     """Generates a PUT Signed URL for uploading photo directly to GCS."""
     try:
-        bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        # Check for service account key in env (injected from Secret Manager)
+        service_account_info_str = os.getenv("SERVICE_ACCOUNT_KEY")
+        if service_account_info_str:
+            try:
+                # Handle potential quoting issues if raw json was stringified weirdly
+                if service_account_info_str.startswith("'") and service_account_info_str.endswith("'"):
+                     service_account_info_str = service_account_info_str[1:-1]
+                
+                info = json.loads(service_account_info_str)
+                creds = service_account.Credentials.from_service_account_info(info)
+                # Create a specific client with these creds
+                current_storage_client = storage.Client(credentials=creds)
+                bucket = current_storage_client.bucket(GCS_BUCKET_NAME)
+            except Exception as json_e:
+                print(f"Warning: Failed to parse SERVICE_ACCOUNT_KEY: {json_e}")
+                # Fallback to default
+                bucket = storage_client.bucket(GCS_BUCKET_NAME)
+        else:
+             bucket = storage_client.bucket(GCS_BUCKET_NAME)
+
         unique_name = f"hobbies/photos/{uuid.uuid4()}_{filename}"
         blob = bucket.blob(unique_name)
         
@@ -260,9 +280,26 @@ def get_photo_image_url(photo_id: str, db: firestore.Client = Depends(get_db)):
             
         bucket_name, blob_name = parts
         
-        # Check if bucket matches env one, or just use the one in path?
-        # Use the one in path to be safe if multiple buckets used.
-        bucket = storage_client.bucket(bucket_name)
+        # Check for service account key in env (injected from Secret Manager)
+        service_account_info_str = os.getenv("SERVICE_ACCOUNT_KEY")
+        if service_account_info_str:
+            try:
+                # Handle potential quoting issues if raw json was stringified weirdly
+                if service_account_info_str.startswith("'") and service_account_info_str.endswith("'"):
+                     service_account_info_str = service_account_info_str[1:-1]
+                
+                info = json.loads(service_account_info_str)
+                creds = service_account.Credentials.from_service_account_info(info)
+                # Create a specific client with these creds
+                current_storage_client = storage.Client(credentials=creds)
+                bucket = current_storage_client.bucket(bucket_name)
+            except Exception as json_e:
+                print(f"Warning: Failed to parse SERVICE_ACCOUNT_KEY: {json_e}")
+                # Fallback to default
+                bucket = storage_client.bucket(bucket_name)
+        else:
+             bucket = storage_client.bucket(bucket_name)
+
         blob = bucket.blob(blob_name)
         
         url = blob.generate_signed_url(

@@ -97,18 +97,36 @@ function DashboardContent() {
     const initialized = useRef(false);
 
     useEffect(() => {
-        if (initialized.current) return;
-        initialized.current = true;
+        // Initial setup only once
+        if (!initialized.current) {
+            initialized.current = true;
 
-        const currentTodayStr = getBusinessDateJST();
-        setTodayStr(currentTodayStr);
-        loadCache(); // Load cache first
-        init(currentTodayStr); // Then fetch fresh
+            const currentTodayStr = getBusinessDateJST();
+            setTodayStr(currentTodayStr);
+            loadCache(); // Load cache first
+            init(currentTodayStr); // Then fetch fresh
 
-        // Check for focus param (from shortcut)
-        if (searchParams.get('focus') === 'input') {
-            setTimeout(() => inputRef.current?.focus(), 500);
+            // Check for focus param (from shortcut)
+            if (searchParams.get('focus') === 'input') {
+                setTimeout(() => inputRef.current?.focus(), 500);
+            }
         }
+
+        // Re-fetch on visibility change (e.g. switching tabs, app foreground)
+        const handleVisibilityChange = () => {
+            if (document.visibilityState === 'visible') {
+                const freshTodayStr = getBusinessDateJST();
+                setTodayStr(freshTodayStr);
+                // We don't necessarily clear cache here, just update on top of it
+                init(freshTodayStr);
+            }
+        };
+
+        document.addEventListener('visibilitychange', handleVisibilityChange);
+
+        return () => {
+            document.removeEventListener('visibilitychange', handleVisibilityChange);
+        };
     }, []);
 
     const handleToggle = async (id, currentStatus) => {
