@@ -17,6 +17,7 @@ export default function SprintPage() {
 
     // Reschedule Modal
     const [rescheduleModalOpen, setRescheduleModalOpen] = useState(false);
+    const [rescheduleMode, setRescheduleMode] = useState('UPDATE'); // 'UPDATE' or 'SKIP'
     const [taskToReschedule, setTaskToReschedule] = useState(null);
     const [rescheduleDate, setRescheduleDate] = useState(null);
 
@@ -180,13 +181,14 @@ export default function SprintPage() {
         }
     };
 
-    const handleRemoveTask = async (taskId) => {
+    const handleRemoveTask = (taskId) => {
         const task = sprintTasks.find(t => t.id === taskId);
         if (!task) return;
 
-        // Skip button always just confirms removal
-        if (!confirm('Remove from Sprint (Skip)?')) return;
-        executeRemoveTask(taskId);
+        setTaskToReschedule(task);
+        setRescheduleDate(task.scheduled_date ? new Date(task.scheduled_date) : null);
+        setRescheduleMode('SKIP');
+        setRescheduleModalOpen(true);
     };
 
     const executeRemoveTask = async (taskId, scheduleUpdate = undefined) => {
@@ -630,6 +632,7 @@ export default function SprintPage() {
                                                 onClick={() => {
                                                     setTaskToReschedule(task);
                                                     setRescheduleDate(task.scheduled_date ? new Date(task.scheduled_date) : null);
+                                                    setRescheduleMode('UPDATE');
                                                     setRescheduleModalOpen(true);
                                                 }}
                                                 className="text-slate-400 hover:text-indigo-600 p-2 transition-colors"
@@ -705,7 +708,9 @@ export default function SprintPage() {
                         <div className="p-6 space-y-6">
                             <div>
                                 <div className="flex justify-between items-center mb-2">
-                                    <label className="text-xs font-bold text-slate-500 uppercase">Reschedule Task</label>
+                                    <label className="text-xs font-bold text-slate-500 uppercase">
+                                        {rescheduleMode === 'SKIP' ? 'Remove & Reschedule' : 'Reschedule Task'}
+                                    </label>
                                     <button
                                         onClick={() => setRescheduleDate(null)}
                                         className={`text-xs font-bold px-2 py-1 rounded transition-colors ${!rescheduleDate ? 'bg-indigo-100 text-indigo-700' : 'text-slate-400 hover:bg-slate-100'}`}
@@ -725,19 +730,25 @@ export default function SprintPage() {
                             </div>
 
                             <div className="flex flex-col gap-3">
-                                {/* Option 1: Just Change Date (Keep in Sprint) */}
-                                <button
-                                    onClick={() => handleDateUpdateOnly(taskToReschedule.id, rescheduleDate)}
-                                    className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
-                                >
-                                    <span>📅</span> Update Date (Keep in Sprint)
-                                </button>
-
-                                {/* Option 2: Remove from Sprint (Skip) is done via the other button on the list, but we could offer it here too? 
-                                    User asked for separate buttons. Let's keep this modal simple for DATE changes mainly. 
-                                    But wait, the 'Skip' button calls handleRemoveTask which checked for scheduled_date and opened this modal effectively?
-                                    Actually I changed handleRemoveTask logic.
-                                */}
+                                {rescheduleMode === 'UPDATE' ? (
+                                    <button
+                                        onClick={() => handleDateUpdateOnly(taskToReschedule.id, rescheduleDate)}
+                                        className="w-full py-3 bg-indigo-600 hover:bg-indigo-700 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                                    >
+                                        <span>📅</span> Update Date (Keep in Sprint)
+                                    </button>
+                                ) : (
+                                    <button
+                                        onClick={() => executeRemoveTask(taskToReschedule.id, { date: rescheduleDate })}
+                                        className="w-full py-3 bg-red-500 hover:bg-red-600 text-white font-bold rounded-xl shadow-md transition-all flex items-center justify-center gap-2"
+                                    >
+                                        {rescheduleDate ? (
+                                            <><span>👋</span> Remove & Change Date</>
+                                        ) : (
+                                            <><span>🗑️</span> Remove from Sprint</>
+                                        )}
+                                    </button>
+                                )}
 
                                 <button
                                     onClick={() => setRescheduleModalOpen(false)}

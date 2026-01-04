@@ -6,7 +6,7 @@ import "react-datepicker/dist/react-datepicker.css";
 // Register Japanese locale
 registerLocale('ja', ja);
 
-const CustomDatePicker = ({ selected, onChange, placeholderText, className }) => {
+const CustomDatePicker = ({ selected, onChange, placeholderText, className, ...props }) => {
     return (
         <div className="custom-datepicker-wrapper">
             <DatePicker
@@ -36,6 +36,7 @@ const CustomDatePicker = ({ selected, onChange, placeholderText, className }) =>
                 calendarStartDay={1} // Monday start
                 isClearable
                 showPopperArrow={false}
+                {...props}
             />
         </div>
     );
