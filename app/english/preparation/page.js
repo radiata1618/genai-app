@@ -2,6 +2,7 @@
 import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import MobileMenuButton from "../../../components/MobileMenuButton";
+import AiChatSidebar from "../../../components/AiChatSidebar";
 
 export default function PreparationPage() {
     const [tasks, setTasks] = useState([]);
@@ -13,6 +14,7 @@ export default function PreparationPage() {
 
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
+    const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(true);
 
     useEffect(() => {
         fetchTasks();
@@ -231,6 +233,18 @@ export default function PreparationPage() {
                     <span className="font-semibold text-slate-700 lg:hidden line-clamp-1">
                         {isCreating ? "New Topic" : selectedTask ? selectedTask.topic : "Preparation"}
                     </span>
+
+                    <div className="flex-1" />
+
+                    {selectedTask && !isCreating && (
+                        <button
+                            onClick={() => setIsChatSidebarOpen(!isChatSidebarOpen)}
+                            className={`p-2 rounded-full hover:bg-gray-100 transition-colors ${isChatSidebarOpen ? "text-cyan-600 bg-cyan-50" : "text-gray-400"}`}
+                            title="AI Assistant"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={1.5} d="M8 12h.01M12 12h.01M16 12h.01M21 12c0 4.418-4.03 8-9 8a9.863 9.863 0 01-4.255-.949L3 20l1.395-3.72C3.512 15.042 3 13.574 3 12c0-4.418 4.03-8 9-8s9 3.582 9 8z" /></svg>
+                        </button>
+                    )}
                 </div>
 
                 {/* Mobile FAB */}
@@ -386,6 +400,16 @@ export default function PreparationPage() {
                     </div>
                 )}
             </div>
-        </div>
+
+            {/* Right Sidebar */}
+            < AiChatSidebar
+                isOpen={isChatSidebarOpen && selectedTask && !isCreating
+                }
+                onClose={() => setIsChatSidebarOpen(false)}
+                context={selectedTask?.content}
+                contextTitle={selectedTask?.topic}
+                apiEndpoint="/api/english/chat"
+            />
+        </div >
     );
 }

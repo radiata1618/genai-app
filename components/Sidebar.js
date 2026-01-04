@@ -28,6 +28,13 @@ const navItems = [
         ],
     },
     {
+        category: "Hobbies",
+        items: [
+            { name: "Photos", icon: "📸", href: "/hobbies/photos" },
+            { name: "Financial Assets", icon: "💰", href: "/hobbies/finance" },
+        ],
+    },
+    {
         category: "Consulting Support",
         items: [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },

@@ -2,7 +2,7 @@
 import React, { useState, useRef, useEffect } from 'react';
 import ReactMarkdown from 'react-markdown';
 
-export default function AiChatSidebar({ isOpen, onClose, context, contextTitle }) {
+export default function AiChatSidebar({ isOpen, onClose, context, contextTitle, apiEndpoint = "/api/english/chat" }) {
     const [messages, setMessages] = useState([
         { role: 'model', content: 'こんにちは！このレビュー資料について何か質問はありますか？' }
     ]);
@@ -18,7 +18,7 @@ export default function AiChatSidebar({ isOpen, onClose, context, contextTitle }
         scrollToBottom();
     }, [messages]);
 
-    // Reset chat when context changes (optional, but good practice if switching tasks)
+    // Reset chat when context changes
     useEffect(() => {
         if (context) {
             setMessages([
@@ -37,13 +37,9 @@ export default function AiChatSidebar({ isOpen, onClose, context, contextTitle }
         setIsLoading(true);
 
         try {
-            // Build message history for API
-            // Filter out initial greeting if it wasn't a real interaction, or just keep it (Gemini handles it fine usually)
-            // Ideally we send the conversation history.
-
             const conversationHistory = messages.filter(m => m.role !== 'system').concat(userMessage);
 
-            const res = await fetch("/api/english/chat", {
+            const res = await fetch(apiEndpoint, {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({

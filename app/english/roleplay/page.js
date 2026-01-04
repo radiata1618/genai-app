@@ -52,10 +52,19 @@ export default function RoleplayPage() {
             // Gemini 2.0 Flash Live API actually handles 48k fine usually, or we downsample.
             // Let's try native sample rate.
 
+            // 1. Audio Context Setup (Robust Check)
             const AudioContext = window.AudioContext || window.webkitAudioContext;
-            audioContextRef.current = new AudioContext({ sampleRate: 16000 }); // Try to ask for 16k
 
+            if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
+                audioContextRef.current = new AudioContext({ sampleRate: 16000 });
+            }
             const ctx = audioContextRef.current;
+
+            // Resume if suspended (browser autoplay policy)
+            if (ctx.state === 'suspended') {
+                await ctx.resume();
+            }
+
             addLog(`AudioContext started: ${ctx.sampleRate}Hz`);
 
             // 2. Microphone Access
@@ -127,10 +136,26 @@ export default function RoleplayPage() {
     };
 
     const startAudioInput = async (ctx, stream) => {
-        await ctx.audioWorklet.addModule("/pcm-processor.js");
+        try {
+            await ctx.audioWorklet.addModule("/pcm-processor.js");
+        } catch (e) {
+            console.error("Failed to load audio worklet:", e);
+            return;
+        }
+
+        // Safety check: Context might have closed while awaiting addModule
+        if (ctx.state === 'closed') {
+            console.warn("AudioContext invalid (closed) after loading worklet. Aborting input setup.");
+            return;
+        }
 
         sourceNodeRef.current = ctx.createMediaStreamSource(stream);
-        audioWorkletNodeRef.current = new AudioWorkletNode(ctx, "pcm-processor");
+        try {
+            audioWorkletNodeRef.current = new AudioWorkletNode(ctx, "pcm-processor");
+        } catch (e) {
+            console.error("Failed to create AudioWorkletNode:", e);
+            return;
+        }
 
         let inputBuffer = new Int16Array(0);
 

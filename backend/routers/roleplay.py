@@ -59,105 +59,124 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # 2. Connect to Gemini Live API
     try:
-        print(f"DEBUG: Attempting to connect to Gemini Live API with model: {config['model']}", flush=True)
-        async with client.aio.live.connect(
-            model=config["model"],
-            config=types.LiveConnectConfig(
-                response_modalities=config["response_modalities"],
-                system_instruction=types.Content(parts=[types.Part(text=system_instruction)])
-            )
-        ) as session:
-            print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
+        await websocket.accept()
+        
+        while True:
+            # print("DEBUG: Establishing new Gemini Live API session...", flush=True)
+            try:
+                # 2. Initialize Gemini Live API Session
+                # Best Practice: Enable session_resumption
+                async with client.aio.live.connect(
+                    model=config["model"],
+                    config=types.LiveConnectConfig(
+                        response_modalities=config["response_modalities"],
+                        system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+                        session_resumption=True
+                    )
+                ) as session:
+                    print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
 
-            # 3. Bi-directional Streaming Loop
-            
-            # Task to receive from Gemini and send to Client
-            async def send_to_client():
-                print("DEBUG: Starting send_to_client loop", flush=True)
-                try:
-                    async for response in session.receive():
-                        server_content = response.server_content
-                        if server_content is None:
-                            continue
-                        
-                        if server_content.turn_complete:
-                             print("DEBUG: Gemini indicates turn_complete", flush=True)
+                    # 3. Bi-directional Streaming Loop
+                    
+                    # Task to receive from Gemini and send to Client
+                    async def send_to_client():
+                        print("DEBUG: Starting send_to_client loop", flush=True)
+                        try:
+                            async for response in session.receive():
+                                server_content = response.server_content
+                                if server_content is None:
+                                    continue
+                                
+                                if server_content.turn_complete:
+                                     print("DEBUG: Gemini indicates turn_complete", flush=True)
 
-                        model_turn = server_content.model_turn
-                        if server_content is None:
-                            continue
-                        
-                        model_turn = server_content.model_turn
-                        if model_turn is None:
-                            continue
+                                model_turn = server_content.model_turn
+                                if model_turn is None:
+                                    continue
 
-                        parts = model_turn.parts
-                        for part in parts:
-                            if part.inline_data:
-                                print(f"DEBUG: Sending audio chunk to client (len={len(part.inline_data.data)})", flush=True)
-                                import base64
-                                b64_audio = base64.b64encode(part.inline_data.data).decode("utf-8")
-                                await websocket.send_json({"audio": b64_audio})
-                except Exception as e:
-                    print(f"Error sending to client: {e}", flush=True)
-                finally:
-                    print("DEBUG: send_to_client loop finished", flush=True)
+                                parts = model_turn.parts
+                                for part in parts:
+                                    if part.inline_data:
+                                        print(f"DEBUG: Sending audio chunk to client (len={len(part.inline_data.data)})", flush=True)
+                                        import base64
+                                        b64_audio = base64.b64encode(part.inline_data.data).decode("utf-8")
+                                        await websocket.send_json({"audio": b64_audio})
+                        except Exception as e:
+                            print(f"Error sending to client: {e}", flush=True)
+                        finally:
+                            print("DEBUG: send_to_client loop finished", flush=True)
 
-            # Task to receive from Client and send to Gemini
-            async def receive_from_client():
-                print("DEBUG: Starting receive_from_client loop", flush=True)
-                try:
-                    while True:
-                        # print("DEBUG: Waiting for client message", flush=True) 
-                        message = await websocket.receive_json()
-                        
-                        if "audio" in message:
-                            # Forward to Gemini
-                            import base64
-                            audio_data = base64.b64decode(message["audio"])
-                            
-                            # print(f"DEBUG: Received audio from client (len={len(audio_data)})", flush=True)
-                            
-                            if len(audio_data) == 0:
-                                print("DEBUG: Received empty audio chunk", flush=True)
-                                continue
+                    # Task to receive from Client and send to Gemini
+                    async def receive_from_client():
+                        print("DEBUG: Starting receive_from_client loop", flush=True)
+                        try:
+                            while True:
+                                message = await websocket.receive_json()
+                                
+                                if "audio" in message:
+                                    import base64
+                                    audio_data = base64.b64decode(message["audio"])
+                                    
+                                    if len(audio_data) == 0:
+                                        continue
 
-                            # Basic silence check (first 100 bytes)
-                            is_silence = all(b == 0 for b in audio_data[:100])
-                            print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
+                                    # Basic silence check 
+                                    is_silence = all(b == 0 for b in audio_data[:100])
+                                    print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                            # Send using send_realtime_input (Native Live API)
-                            try:
-                                # await session.send(input={"media_chunks": [{"mime_type": "audio/pcm;rate=16000", "data": audio_data}]}, end_of_turn=False)
-                                await session.send_realtime_input(
-                                    media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
-                                )
-                            except Exception as send_err:
-                                print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)
-                                break # Stop receiving to close connection
-                        
-                        if "control" in message:
-                             pass
-                            
-                except WebSocketDisconnect:
-                     print("DEBUG: Client disconnected (WebSocketDisconnect)", flush=True)
-                except Exception as e:
-                    print(f"Error receiving from client: {e}", flush=True)
-                finally:
-                    print("DEBUG: receive_from_client loop finished", flush=True)
+                                    # Best Practice: send_realtime_input for low-latency streaming
+                                    # Best Practice: send_realtime_input for low-latency streaming
+                                    try:
+                                        await session.send_realtime_input(
+                                            media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
+                                        )
+                                    except Exception as send_err:
+                                        print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)
+                                        break 
+                                
+                                if "control" in message:
+                                     pass
+                                    
+                        except WebSocketDisconnect:
+                             print("DEBUG: Client disconnected (WebSocketDisconnect)", flush=True)
+                             raise # Propagate to trigger outer break
+                        except Exception as e:
+                            print(f"Error receiving from client: {e}", flush=True)
+                            raise # Propagate errors to restart or exit
+                        finally:
+                            print("DEBUG: receive_from_client loop finished", flush=True)
 
-            # Run tasks
-            # Run tasks with cancellation on first failure
-            tasks = [asyncio.create_task(send_to_client()), asyncio.create_task(receive_from_client())]
-            done, pending = await asyncio.wait(tasks, return_when=asyncio.FIRST_COMPLETED)
-            
-            print(f"DEBUG: One of the loops finished/failed. Cancelling the other.", flush=True)
-            for task in pending:
-                task.cancel()
-                try:
-                    await task
-                except asyncio.CancelledError:
-                    pass
+                    # Run tasks
+                    send_task = asyncio.create_task(send_to_client())
+                    receive_task = asyncio.create_task(receive_from_client())
+                    
+                    done, pending = await asyncio.wait(
+                        [send_task, receive_task], 
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+
+                    # Cancel pending tasks
+                    for task in pending:
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                    
+                    # Check who finished
+                    if receive_task in done:
+                        # Client disconnected or error -> Stop everything
+                        print("DEBUG: Client side closed/failed. Ending session.", flush=True)
+                        break 
+                    else:
+                        # Gemini side closed -> Loop will continue and Reconnect
+                        print("DEBUG: Gemini side closed. Reconnecting...", flush=True)
+                        continue
+
+            except Exception as gemini_err:
+                 print(f"Gemini Connection Error: {gemini_err}. Reconnecting in 1s...", flush=True)
+                 await asyncio.sleep(1)
+                 continue # Retry loop
 
     except Exception as e:
         print(f"Gemini Live API Error: {e}", flush=True)
