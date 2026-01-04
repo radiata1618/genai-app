@@ -59,19 +59,21 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # 2. Connect to Gemini Live API
     try:
-        await websocket.accept()
+        # await websocket.accept() - ALREADY ACCEPTED AT START
         
         while True:
             # print("DEBUG: Establishing new Gemini Live API session...", flush=True)
             try:
                 # 2. Initialize Gemini Live API Session
                 # Best Practice: Enable session_resumption
+                print(f"DEBUG: Connecting with session_resumption=types.SessionResumptionConfig(transparent=True)", flush=True)
+
                 async with client.aio.live.connect(
                     model=config["model"],
                     config=types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=True
+                        session_resumption=types.SessionResumptionConfig(transparent=True)
                     )
                 ) as session:
                     print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
@@ -82,9 +84,13 @@ async def websocket_endpoint(websocket: WebSocket):
                     async def send_to_client():
                         print("DEBUG: Starting send_to_client loop", flush=True)
                         try:
+                            # Add explicit iterator for debugging? No, keep simple.
                             async for response in session.receive():
+                                # print(f"DEBUG: Session received response: {response}", flush=True) 
                                 server_content = response.server_content
                                 if server_content is None:
+                                    # Could be other types of messages? tool_call etc?
+                                    # print(f"DEBUG: Non-content response: {response}", flush=True)
                                     continue
                                 
                                 if server_content.turn_complete:
@@ -104,7 +110,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         except Exception as e:
                             print(f"Error sending to client: {e}", flush=True)
                         finally:
-                            print("DEBUG: send_to_client loop finished", flush=True)
+                            print("DEBUG: send_to_client loop finished - Server likely closed stream", flush=True)
 
                     # Task to receive from Client and send to Gemini
                     async def receive_from_client():
@@ -124,7 +130,6 @@ async def websocket_endpoint(websocket: WebSocket):
                                     is_silence = all(b == 0 for b in audio_data[:100])
                                     print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                                    # Best Practice: send_realtime_input for low-latency streaming
                                     # Best Practice: send_realtime_input for low-latency streaming
                                     try:
                                         await session.send_realtime_input(
