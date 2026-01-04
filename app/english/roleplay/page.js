@@ -271,9 +271,9 @@ export default function RoleplayPage() {
         let start = nextStartTimeRef.current;
 
         // If we fell behind (buffer underrun) or it's the start, add a larger jitter buffer
-        // Note: Increasing this to 1.0s to allow for backend reconnection time during jitter.
+        // Note: Increasing this to 2.0s as requested to maximize stability despite high-latency connection.
         if (start < now) {
-            start = now + 1.0; // 1000ms buffering latency to smooth jitter
+            start = now + 2.0; // 2000ms buffering latency to smooth jitter
         }
 
         source.start(start);
