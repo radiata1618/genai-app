@@ -841,7 +841,7 @@ async def consulting_sme_websocket(websocket: WebSocket):
     # Yes, `response_modalities=["TEXT"]` is supported in Multimodal Live API.
     
     config = {
-        "model": "gemini-2.0-flash-exp", # Use 2.0 Flash Exp for Live API
+        "model": "gemini-live-2.5-flash-preview-native-audio-09-2025", # Use the working Live API model
         "response_modalities": ["TEXT"] # We only want text back to display on screen
     }
     
