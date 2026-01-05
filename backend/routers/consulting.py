@@ -675,9 +675,30 @@ def get_consulting_upload_url(filename: str, content_type: Optional[str] = "vide
     
     try:
         # Generate with Standard Storage Client
-        # Note: If running on Cloud Run, default credentials should work.
-        g_client = get_storage_client()
-        bucket = g_client.bucket(GCS_BUCKET_NAME)
+        # Note: If running on Cloud Run, default credentials should    try:
+        # Check for service account key in env (Shared/Similar to English Review)
+        # This is CRITICAL for signing URLs on Cloud Run where ADC doesn't provide a private key suitable for signing
+        service_account_info_str = os.getenv("SERVICE_ACCOUNT_KEY")
+        if service_account_info_str:
+            try:
+                print("DEBUG: using SERVICE_ACCOUNT_KEY from env for Consulting Upload")
+                # Handle potential quoting issues if raw json was stringified weirdly
+                if service_account_info_str.startswith("'") and service_account_info_str.endswith("'"):
+                     service_account_info_str = service_account_info_str[1:-1]
+                
+                info = json.loads(service_account_info_str)
+                creds = service_account.Credentials.from_service_account_info(info)
+                # Create a specific client with these creds
+                current_storage_client = storage.Client(credentials=creds)
+                bucket = current_storage_client.bucket(GCS_BUCKET_NAME)
+            except Exception as json_e:
+                print(f"Warning: Failed to parse SERVICE_ACCOUNT_KEY: {json_e}")
+                # Fallback to default
+                g_client = get_storage_client()
+                bucket = g_client.bucket(GCS_BUCKET_NAME)
+        else:
+             g_client = get_storage_client()
+             bucket = g_client.bucket(GCS_BUCKET_NAME)
 
         unique_name = f"consulting_uploads/{uuid.uuid4()}_{filename}"
         blob = bucket.blob(unique_name)

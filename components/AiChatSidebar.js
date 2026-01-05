@@ -8,6 +8,7 @@ export default function AiChatSidebar({ isOpen, onClose, context, contextTitle, 
     ]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
+    const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
     const messagesEndRef = useRef(null);
 
     const scrollToBottom = () => {
@@ -44,7 +45,8 @@ export default function AiChatSidebar({ isOpen, onClose, context, contextTitle, 
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
                     messages: conversationHistory,
-                    context: context
+                    context: context,
+                    model: selectedModel
                 }),
             });
 
@@ -67,11 +69,22 @@ export default function AiChatSidebar({ isOpen, onClose, context, contextTitle, 
         <div className="w-full sm:w-96 border-l border-gray-200 bg-white flex flex-col h-full shadow-xl flex-shrink-0 absolute inset-y-0 right-0 z-20 lg:relative lg:shadow-none transition-all duration-300">
             {/* Header */}
             <div className="p-4 border-b border-gray-100 bg-gray-50 flex justify-between items-center">
-                <div className="flex items-center space-x-2">
-                    <span className="text-xl">✨</span>
-                    <h2 className="font-bold text-slate-700">Gemini Chat</h2>
+                <div className="flex flex-col space-y-2 w-full mr-8">
+                    <div className="flex items-center space-x-2">
+                        <span className="text-xl">✨</span>
+                        <h2 className="font-bold text-slate-700">Gemini Chat</h2>
+                    </div>
+                    <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        className="text-xs p-1 rounded border border-gray-200 bg-white text-slate-600 focus:outline-none focus:ring-1 focus:ring-cyan-500 w-full max-w-[200px]"
+                    >
+                        <option value="gemini-3-flash-preview">Gemini 3.0 Flash (Default)</option>
+                        <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                        <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
+                    </select>
                 </div>
-                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 lg:hidden">
+                <button onClick={onClose} className="text-gray-400 hover:text-gray-600 lg:hidden absolute right-4 top-4">
                     ✕
                 </button>
             </div>
