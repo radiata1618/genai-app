@@ -83,9 +83,15 @@ class YouTubePrepTask(BaseModel):
     video_url: str
     topic: str
     content: str
+    # Legacy fields
     script: Optional[str] = None
     script_formatted: Optional[str] = None
     script_augmented: Optional[str] = None
+    # New Multi-tab fields
+    script_manual: Optional[str] = None
+    script_manual_augmented: Optional[str] = None
+    script_auto: Optional[str] = None
+    script_auto_augmented: Optional[str] = None
     created_at: datetime
     status: int = 0
 # --- Models ---
@@ -127,6 +133,54 @@ class ChatRequest(BaseModel):
 
     
 # --- Helpers ---
+
+def clean_roll_up_captions(transcript_items) -> str:
+    """
+    Deduplicates "roll-up" captions where each line often contains 
+    the end of the previous line.
+    """
+    if not transcript_items:
+        return ""
+    
+    lines = []
+    prev_text = ""
+    
+    for item in transcript_items:
+        text = item.text.replace("\n", " ").strip()
+        # Remove metadata like >>>
+        text = text.replace(">>>", "").strip()
+        
+        if not text:
+            continue
+            
+        if not prev_text:
+            lines.append(text)
+            prev_text = text
+            continue
+            
+        # Find common overlap between prev_text and current text
+        # Roll-up usually repeats the last 1-2 words or even more.
+        # Simple approach: if current text starts with a suffix of prev_text, 
+        # remove that suffix from current text.
+        
+        words = text.split()
+        overlap_found = False
+        for i in range(len(words), 0, -1):
+            prefix = " ".join(words[:i])
+            if prev_text.endswith(prefix):
+                # Found overlap
+                remaining = " ".join(words[i:])
+                if remaining:
+                    lines.append(remaining)
+                overlap_found = True
+                break
+        
+        if not overlap_found:
+            lines.append(text)
+            
+        prev_text = text
+        
+    return " ".join(lines)
 
 
 
@@ -236,205 +290,134 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
         raise HTTPException(status_code=500, detail="youtube_transcript_api not installed")
 
     # 1. Extract Video ID
-    # Support various formats: youtube.com/watch?v=ID, youtu.be/ID
     import re
     video_id_match = re.search(r"(?:v=|\/)([0-9A-Za-z_-]{11}).*", req.url)
     if not video_id_match:
         raise HTTPException(status_code=400, detail="Invalid YouTube URL")
     video_id = video_id_match.group(1)
 
-    # 2. Fetch Transcript
+    # 2. Fetch Transcripts
     try:
-        # Prefer English, then Japanese, then auto properties
-        # Support proxy if configured via environment variable
-        
         proxy_url = os.getenv("YOUTUBE_PROXY")
         proxy_config = None
         if proxy_url:
-            # Handle raw format: host:port:user:pass (Smartproxy copy usage)
+            # (Proxy formatting logic omitted for brevity but preserved)
             if "://" not in proxy_url and proxy_url.count(":") >= 3:
                 try:
                     parts = proxy_url.split(":")
                     if len(parts) >= 4:
-                        # host:port:user:pass
-                        p_host = parts[0]
-                        p_port = parts[1]
-                        p_user = parts[2]
-                        p_pass = ":".join(parts[3:]) # Handle potential colons in password
-                        
+                        p_host, p_port, p_user, p_pass = parts[0], parts[1], parts[2], ":".join(parts[3:])
                         import urllib.parse
-                        p_user = urllib.parse.quote(p_user)
-                        p_pass = urllib.parse.quote(p_pass)
-                        
+                        p_user, p_pass = urllib.parse.quote(p_user), urllib.parse.quote(p_pass)
                         proxy_url = f"http://{p_user}:{p_pass}@{p_host}:{p_port}"
-                        print(f"DEBUG: Auto-formatted raw proxy to: {proxy_url}")
-                except Exception as e:
-                    print(f"WARNING: Failed to parse raw proxy string: {e}")
+                except Exception: pass
 
-            print(f"DEBUG: Using YouTube Proxy: {proxy_url}")
             if GenericProxyConfig:
                 proxy_config = GenericProxyConfig(http_url=proxy_url, https_url=proxy_url)
-            else:
-                print("WARNING: GenericProxyConfig not available despite youtube_transcript_api being present.")
-        else:
-             print("DEBUG: No YouTube Proxy configured, connecting directly.")
 
-        # Instantiate API with proxy config if present
         ytt = YouTubeTranscriptApi(proxy_config=proxy_config)
-        transcript_list = ytt.fetch(video_id, languages=['en', 'ja'])
+        track_list = ytt.list(video_id)
         
-        # Combine text
-        full_text = " ".join([t.text for t in transcript_list])
+        manual_raw = ""
+        auto_raw = ""
+        
+        # Identify tracks
+        manual_track = None
+        auto_track = None
+        
+        for t in track_list:
+            if t.is_generated:
+                if not auto_track: auto_track = t # Take first auto
+            else:
+                if t.language_code.startswith('en') and not manual_track:
+                    manual_track = t # Take first English manual
+                    
+        # Fetch data
+        if manual_track:
+            manual_items = manual_track.fetch()
+            manual_raw = clean_roll_up_captions(manual_items)
+            
+        if auto_track:
+            auto_items = auto_track.fetch()
+            # Auto-generated doesn't usually need roll-up cleaning, but whitespace normalize is good
+            auto_raw = " ".join([item.text.replace("\n", " ").strip() for item in auto_items])
+            
+        if not manual_raw and not auto_raw:
+            raise Exception("No English transcripts found (Manual or Auto)")
+
+        # Use the best available for "full_text" which goes to Summary
+        full_text = auto_raw if auto_raw else manual_raw
+
     except Exception as e:
         print(f"Transcript Error: {e}")
         raise HTTPException(status_code=400, detail=f"Failed to fetch transcript: {str(e)}")
 
-    # 3. Generate Content with Gemini (Parallel Execution)
     import asyncio
 
-    # Prompt for Notes (Main Content)
-    # Improved to avoid excessive bolding and ensure proper structure
+    # Prompts
     prompt_notes = f"""
-    あなたはTOEIC900点以上を取得し、ネイティブレベルの英語力を目指している学習者のためのプロの英語教師です。
-    以下はYouTube動画の字幕テキストです。この動画を視聴して学習するための、妥協のない高度な予習資料を作成してください。
+    あなたはTOEIC900点以上を目指す学習者のためのプロ英語教師です。
+    以下はYouTube動画の字幕です。学習用の予習資料（Summary, Advanced Vocabulary, Phrases, Listening Points）をMarkdown日本語で作成してください。
+    冒頭挨拶不要。タイトルは `# タイトル` 形式。
 
     **字幕テキスト:**
-    {full_text[:20000]} 
-    (テキストが長すぎる場合は切り詰められています)
-
-    **出力形式:**
-    Markdown形式（日本語）で出力してください。
-    **冒頭の挨拶や前置きは不要です。**
-    **最初の行に、この動画の内容を表す適切なタイトル（日本語）を `# タイトル` の形式で書いてください。**
-    **重要: タイトルの直後は必ず改行し、各セクションの間にも必ず空行を入れてください。**
-
-    ## 構成案
-    1. **概要 (Summary)**
-       - 動画の内容を3行程度で要約。
-
-    2. **発展的語彙・専門用語 (Advanced & Niche Vocabulary)**
-       - 動画内で使われている、TOEIC等の試験範囲を超えた難解な単語、専門用語、文学的な表現などを**可能な限りすべて（少なくとも20個以上）**リストアップしてください。
-       - **形式**:
-         - **Word**: 意味 - 解説
-         - **Word**: 意味 - 解説
-       - **注意:** 見出し語（Word）のみを太字 `**Word**` にしてください。説明文全体を太字にしないように注意してください。
-
-    3. **高度なフレーズ・慣用句 (Sophisticated Phrases & Idioms)**
-       - ネイティブが使うこなれた言い回し、スラング、教養ある表現などを**徹底的に（10個以上）**ピックアップしてください。
-       - **形式**:
-         - **Phrase**: 意味 - 解説
-         - **Phrase**: 意味 - 解説
-       - **注意:** 見出し語（Phrase）のみを太字 `**Phrase**` にしてください。
-
-    4. **リスニング、理解のポイント (Listening Points)**
-       - 特に聞き取るべき箇所や、話の展開のポイント。難易度が高い箇所があれば解説。
+    {full_text[:20000]}
     """
 
-    # Prompt for Script Formatting
-    prompt_format_script = f"""
-    以下のYouTube動画の字幕テキスト（Transcript）を、読みやすい英語のスクリプトに整形してください。
-
-    **処理内容:**
-    1. 意味のまとまりごとに改行を入れて段落（Paragraph）に分けてください。
-    2. 話題が変わるタイミングなどで、適切な見出し（Heading 2: ## 見出し名 [英語]）を挿入してください。
-    3. `>>` やタイムスタンプなどの不要なメタデータはすべて削除してください。
-    4. テキストの内容（単語など）は絶対に変更しないでください。
-
-    **Input Script:**
-    {full_text[:25000]}
-
-    **Output:**
-    - 整形されたMarkdownテキストのみを出力してください。
-    - 冒頭の挨拶などは不要です。
-    """
-
-    async def generate_notes():
+    async def get_augmented_script(text):
+        if not text: return "", ""
+        
+        prompt_format = f"""
+        以下のYouTube字幕を、読みやすい英語スクリプトに整形してください（段落分け、## 見出し挿入）。
+        `>>>` などの不要な記号は削除。テキスト内容は変更禁止。
+        {text[:25000]}
+        """
+        
         try:
-            # Reverting to 3.0 Pro for better formatting quality (fixing bolding issue)
-            response = await client.aio.models.generate_content(
+            res_format = await client.aio.models.generate_content(
                 model="gemini-3-flash-preview",
-                contents=prompt_notes,
+                contents=prompt_format,
             )
-            return response.text
-        except Exception as e:
-            print(f"Notes Generation Error: {e}")
-            raise e
-
-    async def generate_scripts():
-        try:
-            # 1. Format Script
-            response_format = await client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=prompt_format_script,
-            )
-            formatted_text = response_format.text
-
-            # 2. Augment Script (Vocabulary Analysis)
-            # Improved prompt for broader coverage and detailed explanations
-            prompt_augment_script = f"""
-            以下の英語スクリプト（整形済み）を読み、英語学習者のために語彙の補足を追加してください。
-
-            **処理内容:**
-            1. 以下の基準に該当する語彙・表現を**幅広く**特定してください（単なる難単語だけでなく、文脈理解に必要なものを含む）。
-               - 英検准1級〜1級、TOEIC 800点以上のレベルの単語
-               - ニュース特有の表現、固有名詞（人名、地名、イベント名などで背景知識が必要なもの）
-               - カジュアルな口語表現、比喩、イディオム
-               - 文脈によって特殊な意味を持つ語
-               - 具体例: "MAMMOGRAMS", "ROSE PARADE", "LEGACY CELEBRATED" など
-
-            2. 特定した語・表現を **太字** (`**word**`) に変更してください。
-
-            3. 太字にした語の直後に、カッコ書き `(意味: 解説)` で補足を追加してください。
-               - 単なる日本語訳だけでなく、**なぜその言葉が使われているか、背景知識、ニュアンス**などを含めて少し詳しく解説してください。
-               - 形式: `**word** (意味: 解説)`
-
-            4. 元のテキストの段落構成や見出しは維持してください。
-            5. 元の英文自体は変更しないでください（挿入のみ）。
-
-            **Formatted Script:**
-            {formatted_text}
-
-            **Output:**
-            - 補足追加済みのMarkdownテキストのみを出力してください。
-            - 冒頭の挨拶などは不要です。
-            """
-
-            response_augment = await client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=prompt_augment_script,
-            )
-            augmented_text = response_augment.text
+            formatted = res_format.text
             
-            return formatted_text, augmented_text
+            prompt_augment = f"""
+            以下の英語スクリプトを読み、重要語彙・表現を **太字** (`**word**`) にし、直後に `(意味: 解説)` を追加してください。
+            解説は背景知識やニュアンスを含めて日本語で詳しく。段落構成は維持。
+            {formatted}
+            """
+            
+            res_augment = await client.aio.models.generate_content(
+                model="gemini-3-flash-preview",
+                contents=prompt_augment,
+            )
+            return formatted, res_augment.text
         except Exception as e:
-            print(f"Script Generation Error: {e}")
-            raise e
+            print(f"Gemini processing error: {e}")
+            return text, f"Error processing script: {e}"
 
     try:
-        # Execute in parallel
-        notes_content, (script_formatted, script_augmented) = await asyncio.gather(
-            generate_notes(),
-            generate_scripts()
+        # Parallel Execution: Notes + Manual Script + Auto Script
+        task_notes = client.aio.models.generate_content(
+            model="gemini-3-flash-preview",
+            contents=prompt_notes,
         )
         
-        content = notes_content
+        results = await asyncio.gather(
+            task_notes,
+            get_augmented_script(manual_raw),
+            get_augmented_script(auto_raw)
+        )
         
-        # Extract title from the first line if present
-        topic = "YouTube Video Study" # Default
-        lines = content.strip().splitlines()
-        if lines:
-            first_line = lines[0].strip()
-            if first_line.startswith('# '):
-                candidate_topic = first_line.replace('# ', '').strip()
-                # Safety check: If "topic" is too long, it's likely the whole text. 
-                # Titles shouldn't be excessively long.
-                if len(candidate_topic) < 100:
-                    topic = candidate_topic
-                    # Optional: Remove title from content to avoid duplication, or keep it.
-                    # Keeping it is fine as it acts as a header.
-                else:
-                    print("Extracted topic too long, ignoring:", candidate_topic[:50])
-                    topic = "Video Analysis"
+        notes_content = results[0].text
+        manual_fmt, manual_aug = results[1]
+        auto_fmt, auto_aug = results[2]
+
+        # Extract title
+        topic = "YouTube Video Study"
+        lines = notes_content.strip().splitlines()
+        if lines and lines[0].startswith('# '):
+            candidate = lines[0].replace('# ', '').strip()
+            if len(candidate) < 100: topic = candidate
 
     except Exception as e:
         print(f"Gemini Error (Parallel): {e}")
@@ -447,11 +430,16 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
         video_id=video_id,
         video_url=req.url,
         topic=topic,
-        content=content,
-        script=full_text,
-        script_formatted=script_formatted,
-        # script_augmented=script_augmented, # Fix: variable usage
-        script_augmented=script_augmented,
+        content=notes_content,
+        # Legacy
+        script=manual_raw or auto_raw,
+        script_formatted=manual_fmt or auto_fmt,
+        script_augmented=manual_aug or auto_aug,
+        # New fields
+        script_manual=manual_raw,
+        script_manual_augmented=manual_aug,
+        script_auto=auto_raw,
+        script_auto_augmented=auto_aug,
         created_at=datetime.now()
     )
     doc_ref.set(task.dict())
@@ -579,6 +567,14 @@ async def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends
              mime_type = "audio/mp4"
         elif req.video_filename.lower().endswith(".aac"):
              mime_type = "audio/aac"
+        elif req.video_filename.lower().endswith(".amr"):
+             mime_type = "audio/amr"
+        elif req.video_filename.lower().endswith(".3gp"):
+             mime_type = "video/3gpp"
+        elif req.video_filename.lower().endswith(".mkv"):
+             mime_type = "video/x-matroska"
+        elif req.video_filename.lower().endswith(".avi"):
+             mime_type = "video/x-msvideo"
         
         part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
 

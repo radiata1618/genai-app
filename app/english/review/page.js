@@ -126,11 +126,12 @@ export default function ReviewPage() {
             let contentType = file.type;
             if (!contentType) {
                 const ext = file.name.split('.').pop().toLowerCase();
-                if (['mp4', 'm4v', 'mov'].includes(ext)) contentType = 'video/mp4';
+                if (['mp4', 'm4v', 'mov', '3gp', 'mkv', 'avi'].includes(ext)) contentType = 'video/mp4';
                 else if (['mp3', 'mpeg'].includes(ext)) contentType = 'audio/mpeg';
                 else if (ext === 'wav') contentType = 'audio/wav';
-                else if (ext === 'm4a') contentType = 'audio/mp4';
+                else if (ext === 'm4a' || ext === 'aac') contentType = 'audio/mp4';
                 else if (ext === 'webm') contentType = 'video/webm';
+                else if (ext === 'amr') contentType = 'audio/amr';
                 else contentType = 'application/octet-stream';
             }
 
