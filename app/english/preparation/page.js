@@ -447,7 +447,7 @@ export default function PreparationPage() {
                 isOpen={isChatSidebarOpen && selectedTask && !isCreating
                 }
                 onClose={() => setIsChatSidebarOpen(false)}
-                context={selectedTask?.content}
+                context={selectedTask ? `**Topic**: ${selectedTask.topic}\n\n${selectedTask.content}` : ""}
                 contextTitle={selectedTask?.topic}
                 apiEndpoint="/api/english/chat"
             />
