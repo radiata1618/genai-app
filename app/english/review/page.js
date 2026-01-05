@@ -502,7 +502,14 @@ export default function ReviewPage() {
             <AiChatSidebar
                 isOpen={isChatSidebarOpen && selectedTask && !isCreating}
                 onClose={() => setIsChatSidebarOpen(false)}
-                context={selectedTask ? `[CORRECTION REPORT]\n${selectedTask.content}\n\n[TRANSCRIPT]\n${selectedTask.script || "(No script available)"}` : ""}
+                context={selectedTask ? `**File**: ${selectedTask.video_filename}
+**Date**: ${new Date(selectedTask.created_at).toLocaleString()}
+
+[CORRECTION REPORT]
+${selectedTask.content}
+
+[TRANSCRIPT]
+${selectedTask.script || "(No script available)"}` : ""}
                 contextTitle={selectedTask?.video_filename}
             />
         </div>

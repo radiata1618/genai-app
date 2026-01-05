@@ -326,7 +326,11 @@ export default function ConsultingReviewPage() {
             <AiChatSidebar
                 isOpen={isChatSidebarOpen && selectedTask && !isCreating}
                 onClose={() => setIsChatSidebarOpen(false)}
-                context={selectedTask ? `[MTG REVIEW ANALYSIS]\n${selectedTask.feedback}` : ""}
+                context={selectedTask ? `**File**: ${selectedTask.media_filename}
+**Date**: ${new Date(selectedTask.created_at).toLocaleString()}
+
+[MTG REVIEW ANALYSIS]
+${selectedTask.feedback}` : ""}
                 contextTitle={selectedTask?.media_filename}
             />
         </div>

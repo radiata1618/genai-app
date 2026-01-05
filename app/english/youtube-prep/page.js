@@ -537,7 +537,23 @@ export default function YouTubePrepPage() {
             <AiChatSidebar
                 isOpen={isChatSidebarOpen && selectedTask && !isCreating}
                 onClose={() => setIsChatSidebarOpen(false)}
-                context={selectedTask ? `**Topic**: ${selectedTask.topic}\n\n**Notes**:\n${selectedTask.content}\n\n**Script**:\n${selectedTask.script || "(No script)"}` : ""}
+                context={selectedTask ? `**Topic**: ${selectedTask.topic}
+
+**[Notes / Summary]**
+${selectedTask.content || "(No notes)"}
+
+**[Manual Script (Raw)]**
+${selectedTask.script_manual || "(No manual script)"}
+
+**[Manual Script (Augmented)]**
+${selectedTask.script_manual_augmented || "(No augmented manual script)"}
+
+**[Auto Script (Raw)]**
+${selectedTask.script_auto || "(No auto script)"}
+
+**[Auto Script (Augmented)]**
+${selectedTask.script_auto_augmented || "(No augmented auto script)"}
+` : ""}
                 contextTitle={selectedTask?.topic || "YouTube Video"}
                 apiEndpoint="/api/english/chat"
             />

@@ -416,7 +416,12 @@ export default function PhotosPage() {
             <AiChatSidebar
                 isOpen={isChatSidebarOpen && selectedTask && !isCreating}
                 onClose={() => setIsChatSidebarOpen(false)}
-                context={selectedTask?.advice}
+                context={selectedTask ? `**File**: ${selectedTask.filename}
+**Camera**: ${selectedTask.camera_model}
+**Date**: ${new Date(selectedTask.created_at).toLocaleString()}
+
+[ADVICE]
+${selectedTask.advice}` : ""}
                 contextTitle={selectedTask?.filename}
                 apiEndpoint="/api/hobbies/photos/chat"
             />
