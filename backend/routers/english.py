@@ -367,30 +367,47 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
     async def get_augmented_script(text):
         if not text: return "", ""
         
-        prompt_format = f"""
-        以下のYouTube字幕を、読みやすい英語スクリプトに整形してください（段落分け、## 見出し挿入）。
-        `>>>` などの不要な記号は削除。テキスト内容は変更禁止。
+        # Combined Verbatim Prompt
+        prompt = f"""
+        あなたは、提供されたトランスクリプトを一切の情報の欠落なく、学習用に整形・注釈する専門のエディターです。
+        
+        **使命:**
+        入力されたテキストを【一言一句漏らさず（Verbatim）】そのまま維持してください。
+        「要約」「言い換え」「一部の省略」「文の短縮」はすべて【致命的な失敗】とみなします。
+        出力される英単語の並びは、入力テキストと100%完全に一致している必要があります。
+        
+        **処理手順:**
+        1. **一切の単語を削除・変更せず**、読みやすくするために適切な段落分けと、## による適切な見出し（英語）を挿入してください。
+        2. 重要語彙・表現を特定し、その単語を **太字** (`**word**`) に変更してください。
+        3. 太字にした語の直後に、カッコ書きで日本語の解説 `(意味: 背景知識やニュアンスを含む日本語解説)` を追加してください。
+        4. 出力はMarkdown形式とし、挨拶などは一切不要です。
+        
+        **制約事項:**
+        - 「ニュースの後半部分をまとめる」ようなことは絶対にしないでください。最後まで全ての文章を出力してください。
+        - 固有名詞、専門用語、時事キーワード、イディオムを積極的に注釈してください。
+        
+        **Input Transcript:**
         {text[:25000]}
         """
         
         try:
-            res_format = await client.aio.models.generate_content(
+            # Using 1.5 Flash for long text processing with high attention to constraints
+            response = await client.aio.models.generate_content(
                 model="gemini-3-flash-preview",
-                contents=prompt_format,
+                contents=prompt,
+                config=types.GenerateContentConfig(
+                    temperature=0.0, # Minimize creativity to ensure verbatim matching
+                )
             )
-            formatted = res_format.text
+            augmented = response.text
             
-            prompt_augment = f"""
-            以下の英語スクリプトを読み、重要語彙・表現を **太字** (`**word**`) にし、直後に `(意味: 解説)` を追加してください。
-            解説は背景知識やニュアンスを含めて日本語で詳しく。段落構成は維持。
-            {formatted}
-            """
-            
-            res_augment = await client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
-                contents=prompt_augment,
-            )
-            return formatted, res_augment.text
+            # Since we combined them, the 'formatted' version for legacy purposes
+            # can be either the same or we can just return the augmented as formatted.
+            # But the UI sometimes expects both. I'll return augmented for both to ensure richness.
+            return augmented, augmented
+        except Exception as e:
+            print(f"Gemini processing error: {e}")
+            return text, f"Error processing script: {e}"
         except Exception as e:
             print(f"Gemini processing error: {e}")
             return text, f"Error processing script: {e}"
