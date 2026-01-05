@@ -828,14 +828,36 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
 
 
 @router.get("/consulting/review", response_model=List[ConsultingReviewTask])
-def get_consulting_reviews():
+def get_consulting_reviews(db: firestore.Client = Depends(get_firestore_client)):
     try:
-        db = get_firestore_client()
         docs = db.collection("consulting_review").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
-        return [ConsultingReviewTask(**d.to_dict()) for d in docs]
+        tasks = []
+        for d in docs:
+            data = d.to_dict()
+            # Migration: handle legacy status if needed
+            if isinstance(data.get("status"), str):
+                 if data["status"] == "DONE":
+                     data["status"] = 2
+                 else:
+                     data["status"] = 0
+            tasks.append(ConsultingReviewTask(**data))
+        return tasks
     except Exception as e:
         print(f"Get Reviews Error: {e}")
         return []
+
+@router.patch("/consulting/review/{task_id}/status")
+def update_consulting_review_status(task_id: str, status: int, db: firestore.Client = Depends(get_firestore_client)):
+    doc_ref = db.collection("consulting_review").document(task_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    doc_ref.update({"status": status})
+    return {"status": "updated", "new_status": status}
+
+@router.delete("/consulting/review/{task_id}")
+def delete_consulting_review(task_id: str, db: firestore.Client = Depends(get_firestore_client)):
+    db.collection("consulting_review").document(task_id).delete()
+    return {"status": "deleted"}
 
 # ==========================================
 #  MTG SME Endpoints (Live API WebSocket)
