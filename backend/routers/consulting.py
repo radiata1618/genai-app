@@ -22,7 +22,8 @@ from fastapi.responses import StreamingResponse
 from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 from google import genai
-from google.cloud import firestore
+from google.cloud import firestore, storage
+from google.oauth2 import service_account
 import traceback
 
 # --- Import from Services ---
@@ -689,7 +690,7 @@ def get_consulting_upload_url(filename: str, content_type: Optional[str] = "vide
                 info = json.loads(service_account_info_str)
                 creds = service_account.Credentials.from_service_account_info(info)
                 # Create a specific client with these creds
-                current_storage_client = storage.Client(credentials=creds)
+                current_storage_client = storage.Client(project=PROJECT_ID, credentials=creds)
                 bucket = current_storage_client.bucket(GCS_BUCKET_NAME)
             except Exception as json_e:
                 print(f"Warning: Failed to parse SERVICE_ACCOUNT_KEY: {json_e}")
@@ -748,8 +749,12 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
         elif path_lower.endswith(".wav"): mime_type = "audio/wav"
         elif path_lower.endswith(".m4a"): mime_type = "audio/mp4"
         elif path_lower.endswith(".aac"): mime_type = "audio/aac"
+        elif path_lower.endswith(".amr"): mime_type = "audio/amr"
         elif path_lower.endswith(".mov"): mime_type = "video/quicktime"
         elif path_lower.endswith(".webm"): mime_type = "video/webm"
+        elif path_lower.endswith(".3gp"): mime_type = "video/3gpp"
+        elif path_lower.endswith(".mkv"): mime_type = "video/x-matroska"
+        elif path_lower.endswith(".avi"): mime_type = "video/x-msvideo"
         
         part = types.Part.from_uri(file_uri=req.gcs_path, mime_type=mime_type)
         
@@ -886,25 +891,42 @@ async def consulting_sme_websocket(websocket: WebSocket):
         async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:
             print("DEBUG: Connected to Gemini Live API!", flush=True)
             
+            # Send a primer message to establishing the session state like the debug script
+            try:
+                print("DEBUG: Sending primer message...", flush=True)
+                await session.send(input=".", end_of_turn=True)
+                print("DEBUG: Primer sent.", flush=True)
+            except Exception as e:
+                print(f"DEBUG: Failed to send primer: {e}", flush=True)
+
+
             # 3. Concurrent Handling: Send (Audio) & Receive (Transcript)
             
             async def send_audio_loop():
+                print("DEBUG: send_audio_loop started", flush=True)
                 try:
                     while True:
                         msg = await websocket.receive_json()
                         if "audio" in msg:
                             # Frontend sends base64 PCM/WAV
                             data = base64.b64decode(msg["audio"])
-                            # Send raw bytes to Gemini Live API
-                            # Note: Gemini Live typically expects PCM 16kHz or 24kHz. 
-                            # Frontend usually sends PCM.
-                            await session.send(input=data, end_of_turn=False)
+                            
+                            # Use send_realtime_input for low-latency audio streaming
+                            # Wrap in types.Blob as required by the SDK
+                            # Frontend provides PCM 16kHz usually
+                            await session.send_realtime_input(
+                                media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                            )
                 except WebSocketDisconnect:
-                    print("DEBUG: Client disconnected from send loop")
+                    print("DEBUG: Client disconnected from send loop", flush=True)
                 except Exception as e:
-                    print(f"Send Loop Error: {e}")
+                    print(f"DEBUG: Send Loop Error: {e}", flush=True)
+                finally:
+                    print("DEBUG: send_audio_loop finished", flush=True)
             
             async def receive_response_loop():
+                print("DEBUG: receive_response_loop started", flush=True)
+                transcript_buffer = ""
                 try:
                     async for response in session.receive():
                         server_content = response.server_content
@@ -912,34 +934,34 @@ async def consulting_sme_websocket(websocket: WebSocket):
                             continue
 
                         # Extract Transcription (The "Text" output)
-                        transcript = None
                         if hasattr(server_content, "output_transcription") and server_content.output_transcription:
-                            transcript = server_content.output_transcription.text
+                            part = server_content.output_transcription.text
+                            if part:
+                                transcript_buffer += part
                         
-                        # Fallback check (sometimes it might end up in model_turn if modality mixed?)
-                        # But our debug confirmed `output_transcription`.
-                        
-                        if transcript:
-                            print(f"DEBUG: SME Transcript: {transcript}", flush=True)
-                            if transcript.strip():
-                                # Send text to frontend
-                                await websocket.send_json({"text": transcript})
-                        
-                        # We ignore AUDIO data in the response (server_content.model_turn.parts inline_data)
-                        # because we only want the text device.
-                        
+                        # Only send when the turn is complete to avoid fragmented UI bubbles
+                        if server_content.turn_complete:
+                            if transcript_buffer.strip():
+                                print(f"DEBUG: SME Transcript (Complete): {transcript_buffer}", flush=True)
+                                await websocket.send_json({"text": transcript_buffer})
+                            transcript_buffer = "" # Reset buffer
+                            
                 except Exception as e:
-                    print(f"Receive Loop Error: {e}")
+                    print(f"DEBUG: Receive Loop Error: {e}", flush=True)
+                finally:
+                    print("DEBUG: receive_response_loop finished", flush=True)
 
             # Run loops
             # When send_audio_loop finishes (disconnect), we should cancel receive_loop
             send_task = asyncio.create_task(send_audio_loop())
             receive_task = asyncio.create_task(receive_response_loop())
             
+            print("DEBUG: Waiting for tasks...", flush=True)
             done, pending = await asyncio.wait(
                 [send_task, receive_task], 
                 return_when=asyncio.FIRST_COMPLETED
             )
+            print(f"DEBUG: Tasks completed. Done: {len(done)}, Pending: {len(pending)}", flush=True)
             
             for task in pending:
                 task.cancel()
