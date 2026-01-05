@@ -3,6 +3,7 @@ import React, { useState, useEffect } from "react";
 import ReactMarkdown from "react-markdown";
 import MobileMenuButton from "../../../components/MobileMenuButton";
 import AiChatSidebar from "../../../components/AiChatSidebar";
+import PhraseRegisterModal from "../../../components/english/PhraseRegisterModal";
 
 export default function PreparationPage() {
     const [tasks, setTasks] = useState([]);
@@ -15,6 +16,44 @@ export default function PreparationPage() {
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false); // Default closed for mobile safety
+
+    // Phrase Registration State
+    const [modalOpen, setModalOpen] = useState(false);
+    const [selectedText, setSelectedText] = useState("");
+    const [selectionRect, setSelectionRect] = useState(null); // { top, left }
+
+    const handleMouseUp = () => {
+        const selection = window.getSelection();
+        if (!selection || selection.isCollapsed) {
+            setSelectionRect(null);
+            return;
+        }
+
+        const text = selection.toString().trim();
+        // Only show for reasonably short texts (e.g., < 200 chars) to avoid accidental large selections
+        if (text && text.length < 200) {
+            const range = selection.getRangeAt(0);
+            const rect = range.getBoundingClientRect();
+            setSelectionRect({
+                top: rect.top - 40, // Navigate above
+                left: rect.left + (rect.width / 2) // Center horizontally
+            });
+            setSelectedText(text);
+        } else {
+            setSelectionRect(null);
+        }
+    };
+
+    // Clear selection UI when scrolling or clicking elsewhere
+    useEffect(() => {
+        const handleClear = () => setSelectionRect(null);
+        window.addEventListener('scroll', handleClear);
+        window.addEventListener('resize', handleClear);
+        return () => {
+            window.removeEventListener('scroll', handleClear);
+            window.removeEventListener('resize', handleClear);
+        };
+    }, []);
 
     useEffect(() => {
         fetchTasks();
@@ -302,7 +341,7 @@ export default function PreparationPage() {
                                     {getStatusLabel(selectedTask.status || 0)}
                                 </span>
                             </div>
-                            <article className="prose prose-slate lg:prose-lg max-w-none">
+                            <article className="prose prose-slate lg:prose-lg max-w-none" onMouseUp={handleMouseUp}>
                                 <ReactMarkdown
                                     components={{
                                         blockquote: ({ node, ...props }) => (
@@ -411,6 +450,32 @@ export default function PreparationPage() {
                 context={selectedTask?.content}
                 contextTitle={selectedTask?.topic}
                 apiEndpoint="/api/english/chat"
+            />
+
+            {/* Selection Tooltip */}
+            {selectionRect && !modalOpen && (
+                <button
+                    style={{ top: selectionRect.top, left: selectionRect.left }}
+                    className="fixed z-50 bg-slate-900 text-white text-xs px-3 py-1.5 rounded-full shadow-lg font-bold animate-fadeIn -translate-x-1/2 hover:scale-105 transition-transform"
+                    onMouseDown={(e) => {
+                        e.preventDefault(); // Prevent clearing selection
+                        setModalOpen(true);
+                        setSelectionRect(null);
+                    }}
+                >
+                    Add to Bank
+                </button>
+            )}
+
+            <PhraseRegisterModal
+                isOpen={modalOpen}
+                onClose={() => {
+                    setModalOpen(false);
+                    // Clear selection when closing
+                    window.getSelection()?.removeAllRanges();
+                    setSelectionRect(null);
+                }}
+                initialText={selectedText}
             />
         </div >
     );

@@ -123,6 +123,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     context: Optional[str] = None
+    model: Optional[str] = "gemini-3-flash-preview"
 
     
 # --- Helpers ---
@@ -741,26 +742,38 @@ def update_review_status(task_id: str, status: int, db: firestore.Client = Depen
 @router.post("/phrases/generate", response_model=PhraseGenerateResponse)
 def generate_phrases(req: PhraseGenerateRequest):
     prompt = f"""
-    あなたはプロの英語教師です。以下の日本語フレーズに対して、いくつかの英語のバリエーションと、関連するおすすめフレーズ（追加のトピックや会話の返しなど）を提案してください。
-    
-    日本語: {req.japanese}
-    
+    あなたはプロの英語教師です。以下のフレーズに対して、語彙の解説とバリエーションを提案してください。
+
+    Input Phrase: {req.japanese}
+
+    **ルール:**
+    1. **入力が日本語の場合:**
+       - その日本語に対応する自然な英語フレーズを提案してください。
+       - "english": 英語フレーズ
+       - "explanation": その英語のニュアンス解説（日本語）
+
+    2. **入力が英語の場合:**
+       - その英語フレーズの意味、ニュアンス、使い方を解説してください。
+       - "english": 入力された英語フレーズ（またはより自然な修正版）
+       - "explanation": 日本語訳と、なぜその表現が使われるか、どんな場面で使うかの解説
+       - "type": "variation" として扱ってください。
+
     以下のJSON形式で出力してください。Markdownのコードブロックは不要です。
     [
       {{
-        "japanese": "{req.japanese}",
+        "japanese": "元の日本語（入力が英語の場合はその和訳）",
         "english": "英語フレーズ1",
         "type": "variation",
-        "explanation": "ニュアンス解説"
+        "explanation": "解説"
       }},
       {{
-         "japanese": "{req.japanese}",
+         "japanese": "...",
          "english": "英語フレーズ2",
          "type": "variation",
-         "explanation": "ニュアンス解説"
+         "explanation": "..."
       }},
       {{
-         "japanese": "関連する日本語",
+         "japanese": "関連語/対義語など",
          "english": "英語フレーズ3",
          "type": "recommendation",
          "explanation": "なぜこれがおすすめか"
@@ -768,7 +781,6 @@ def generate_phrases(req: PhraseGenerateRequest):
     ]
     
     バリエーションは3つ程度、おすすめは2つ程度提案してください。
-    学習者が微妙なニュアンスの違いを理解できるように解説を含めてください。
     """
     
     try:
@@ -890,7 +902,7 @@ def chat_with_context(req: ChatRequest):
         print(f"DEBUG: sending chat request with {len(req.messages)} messages")
         
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=req.model or "gemini-3-flash-preview",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
