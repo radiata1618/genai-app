@@ -230,31 +230,38 @@ export default function AiChatPage() {
         }
     };
 
+    const speak = (text) => {
+        window.speechSynthesis.cancel();
+        const utterance = new SpeechSynthesisUtterance(text);
+        utterance.lang = "ja-JP";
+        window.speechSynthesis.speak(utterance);
+    };
+
     return (
         <div className="flex h-full w-full bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Left Main Area */}
             <div className="flex-1 flex flex-col min-h-0 bg-white relative overflow-hidden">
                 {/* Header */}
-                <div className="flex-none flex items-center p-3 border-b border-gray-100 bg-white gap-3 z-10">
+                <div className="flex-none flex items-center p-3 border-b border-gray-100 bg-white gap-2 sm:gap-3 z-10">
                     <MobileMenuButton />
                     <div className="flex items-center gap-2">
                         <span className="text-xl">✨</span>
                         <h1 className="font-bold text-slate-700 hidden sm:block">AI Chat</h1>
                     </div>
 
-                    <div className="flex-1 px-4 flex items-center gap-4">
+                    <div className="flex-1 px-2 sm:px-4 flex items-center gap-2 sm:gap-4 justify-end sm:justify-start">
                         <select
                             value={selectedModel}
                             onChange={(e) => setSelectedModel(e.target.value)}
-                            className="text-sm p-1.5 rounded-lg border border-gray-200 bg-gray-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full max-w-[150px]"
+                            className="text-sm p-1.5 rounded-lg border border-gray-200 bg-gray-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full max-w-[120px] sm:max-w-[180px]"
                         >
                             <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
                             <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
                             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                         </select>
 
-                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 whitespace-nowrap bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
-                            <span>Google 検索</span>
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 whitespace-nowrap bg-gray-50 px-2 sm:px-3 py-1.5 rounded-lg border border-gray-100">
+                            <span className="hidden sm:inline">Google 検索</span>
                             <button
                                 onClick={() => setUseGrounding(!useGrounding)}
                                 className={`w-8 h-4 rounded-full relative transition-colors ${useGrounding ? "bg-cyan-500" : "bg-gray-300"}`}
@@ -319,8 +326,17 @@ export default function AiChatPage() {
                                         {msg.content}
                                     </ReactMarkdown>
                                 </div>
-                                <div className={`text-[10px] mt-1 opacity-50 ${msg.role === "user" ? "text-right" : "text-left"}`}>
-                                    {msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                <div className={`flex items-center justify-between mt-1 opacity-50 text-[10px] ${msg.role === "user" ? "text-right flex-row-reverse" : "text-left"}`}>
+                                    <span>{msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                                    {msg.role === "model" && (
+                                        <button
+                                            onClick={() => speak(msg.content)}
+                                            className="ml-2 hover:text-cyan-600 transition-colors p-1"
+                                            title="Read Aloud"
+                                        >
+                                            🔊
+                                        </button>
+                                    )}
                                 </div>
                             </div>
                         </div>
