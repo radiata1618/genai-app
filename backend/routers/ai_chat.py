@@ -36,6 +36,9 @@ class ChatSession(BaseModel):
 class ChatRequest(BaseModel):
     message: str
     model: str = "gemini-3-flash-preview"
+    image: Optional[str] = None # Base64 string
+    mimeType: Optional[str] = None
+    use_grounding: bool = True
 
 # --- Endpoints ---
 
@@ -125,8 +128,27 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
         if not client:
             raise HTTPException(status_code=500, detail="AI Client not initialized. Check environment variables.")
 
+        # Prepare system instruction
         system_instruction = "あなたは有能で親切なAIアシスタントです。ユーザーの質問に対して正確かつ丁寧に回答してください。"
         
+        # Prepare Tools
+        tools = []
+        if req.use_grounding:
+            tools.append(types.Tool(google_search=types.GoogleSearch()))
+            print("DEBUG: Google Search Grounding enabled")
+
+        # Handle Image in the current message if provided
+        if req.image and req.mimeType:
+            import base64
+            try:
+                image_data = base64.b64decode(req.image)
+                # Add image part to the LAST message (which should be the user's current query)
+                if contents and contents[-1].role == "user":
+                    contents[-1].parts.append(types.Part.from_bytes(data=image_data, mime_type=req.mimeType))
+                    print(f"DEBUG: Image attached to current message ({req.mimeType})")
+            except Exception as img_e:
+                print(f"DEBUG: Failed to decode image: {img_e}")
+
         print(f"DEBUG: Calling Gemini {req.model} (Async)...")
         import time
         start_ai = time.time()
@@ -136,6 +158,7 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 temperature=0.7,
+                tools=tools if tools else None
             )
         )
         model_content = response.text or "(No response)"

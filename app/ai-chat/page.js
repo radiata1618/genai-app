@@ -10,12 +10,16 @@ export default function AiChatPage() {
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
+    const [selectedImage, setSelectedImage] = useState(null); // {data, mimeType}
+    const [useGrounding, setUseGrounding] = useState(true);
+    const [isRecording, setIsRecording] = useState(false);
 
     // UI State
     const [isHistoryOpen, setIsHistoryOpen] = useState(true);
     const [isMobile, setIsMobile] = useState(false);
     const [mounted, setMounted] = useState(false);
     const messagesEndRef = useRef(null);
+    const fileInputRef = useRef(null);
 
     const scrollToBottom = () => {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -118,23 +122,85 @@ export default function AiChatPage() {
         }
     };
 
-    const handleSend = async (e) => {
-        e.preventDefault();
-        if (!input.trim() || isLoading) return;
+    const handleFileUpload = (e) => {
+        const file = e.target.files[0];
+        if (file && file.type.startsWith("image/")) {
+            const reader = new FileReader();
+            reader.onload = (event) => {
+                setSelectedImage({
+                    data: event.target.result.split(",")[1], // Base64 only
+                    mimeType: file.type,
+                    preview: event.target.result
+                });
+            };
+            reader.readAsDataURL(file);
+        }
+    };
 
-        let sessionId = selectedSessionId;
-        if (!sessionId) {
-            // Auto create session if none selected
-            // But for simplicity, let's assume one must be selected or we create one here
-            await handleCreateSession();
-            // Note: handleCreateSession updates selectedSessionId, but state update is async.
-            // In a real app, we'd handle this more robustly.
+    const handlePaste = (e) => {
+        const items = e.clipboardData.items;
+        for (let i = 0; i < items.length; i++) {
+            if (items[i].type.indexOf("image") !== -1) {
+                const file = items[i].getAsFile();
+                const reader = new FileReader();
+                reader.onload = (event) => {
+                    setSelectedImage({
+                        data: event.target.result.split(",")[1],
+                        mimeType: file.type,
+                        preview: event.target.result
+                    });
+                };
+                reader.readAsDataURL(file);
+            }
+        }
+    };
+
+    const handleVoiceInput = () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            alert("Voice recognition is not supported in this browser.");
             return;
         }
 
-        const userMsg = { role: "user", content: input, timestamp: new Date() };
+        const recognition = new SpeechRecognition();
+        recognition.lang = "ja-JP";
+        recognition.interimResults = false;
+
+        recognition.onstart = () => setIsRecording(true);
+        recognition.onend = () => setIsRecording(false);
+        recognition.onresult = (event) => {
+            const transcript = event.results[0][0].transcript;
+            setInput(prev => prev + transcript);
+        };
+
+        if (isRecording) {
+            recognition.stop();
+        } else {
+            recognition.start();
+        }
+    };
+
+    const handleSend = async (e) => {
+        e.preventDefault();
+        if ((!input.trim() && !selectedImage) || isLoading) return;
+
+        let sessionId = selectedSessionId;
+        if (!sessionId) {
+            await handleCreateSession();
+            return;
+        }
+
+        const userMsg = {
+            role: "user",
+            content: input,
+            image: selectedImage?.preview,
+            timestamp: new Date()
+        };
         setMessages(prev => [...prev, userMsg]);
+        const currentInput = input;
+        const currentImage = selectedImage;
         setInput("");
+        setSelectedImage(null);
         setIsLoading(true);
 
         try {
@@ -142,8 +208,11 @@ export default function AiChatPage() {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
                 body: JSON.stringify({
-                    message: input,
-                    model: selectedModel
+                    message: currentInput,
+                    model: selectedModel,
+                    image: currentImage?.data,
+                    mimeType: currentImage?.mimeType,
+                    use_grounding: useGrounding
                 }),
             });
 
@@ -162,27 +231,37 @@ export default function AiChatPage() {
     };
 
     return (
-        <div className="flex h-full bg-gray-50 text-slate-800 font-sans overflow-hidden">
+        <div className="flex h-full w-full bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Left Main Area */}
-            <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
+            <div className="flex-1 flex flex-col min-h-0 bg-white relative overflow-hidden">
                 {/* Header */}
-                <div className="flex items-center p-3 border-b border-gray-100 bg-white gap-3 sticky top-0 z-10">
+                <div className="flex-none flex items-center p-3 border-b border-gray-100 bg-white gap-3 z-10">
                     <MobileMenuButton />
                     <div className="flex items-center gap-2">
                         <span className="text-xl">✨</span>
                         <h1 className="font-bold text-slate-700 hidden sm:block">AI Chat</h1>
                     </div>
 
-                    <div className="flex-1 px-4">
+                    <div className="flex-1 px-4 flex items-center gap-4">
                         <select
                             value={selectedModel}
                             onChange={(e) => setSelectedModel(e.target.value)}
-                            className="text-sm p-1.5 rounded-lg border border-gray-200 bg-gray-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full max-w-[180px]"
+                            className="text-sm p-1.5 rounded-lg border border-gray-200 bg-gray-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full max-w-[150px]"
                         >
                             <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
                             <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
                             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                         </select>
+
+                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 whitespace-nowrap bg-gray-50 px-3 py-1.5 rounded-lg border border-gray-100">
+                            <span>Google 検索</span>
+                            <button
+                                onClick={() => setUseGrounding(!useGrounding)}
+                                className={`w-8 h-4 rounded-full relative transition-colors ${useGrounding ? "bg-cyan-500" : "bg-gray-300"}`}
+                            >
+                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${useGrounding ? "left-4.5" : "left-0.5"}`} />
+                            </button>
+                        </div>
                     </div>
 
                     <button
@@ -203,9 +282,9 @@ export default function AiChatPage() {
                 </div>
 
                 {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50/30">
+                <div className="flex-1 overflow-y-auto p-4 space-y-6 bg-gray-50/30 flex flex-col">
                     {messages.length === 0 && !isLoading && (
-                        <div className="h-full flex flex-col items-center justify-center text-gray-400 opacity-50">
+                        <div className="my-auto flex flex-col items-center justify-center text-gray-400 opacity-50">
                             <span className="text-6xl mb-4">🚀</span>
                             <p className="text-xl font-medium">How can I help you today?</p>
                         </div>
@@ -216,6 +295,11 @@ export default function AiChatPage() {
                                 ? "bg-cyan-600 text-white rounded-br-none"
                                 : "bg-white text-slate-700 border border-gray-100 rounded-bl-none"
                                 }`}>
+                                {msg.image && (
+                                    <div className="mb-2">
+                                        <img src={msg.image} alt="Uploaded" className="max-w-full rounded-lg max-h-60 object-contain border border-gray-100" />
+                                    </div>
+                                )}
                                 <div className="prose prose-sm max-w-none prose-slate">
                                     <ReactMarkdown
                                         components={{
@@ -254,29 +338,70 @@ export default function AiChatPage() {
                 </div>
 
                 {/* Input Area */}
-                <div className="p-4 bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
+                <div className="flex-none p-4 bg-white border-t border-gray-100 shadow-[0_-4px_12px_rgba(0,0,0,0.02)]">
                     <form onSubmit={handleSend} className="max-w-4xl mx-auto relative group">
-                        <textarea
-                            rows="1"
-                            value={input}
-                            onChange={(e) => setInput(e.target.value)}
-                            onKeyDown={(e) => {
-                                if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
-                                    e.preventDefault();
-                                    handleSend(e);
-                                }
-                            }}
-                            placeholder="Type a message..."
-                            className="w-full pl-5 pr-14 py-3.5 bg-gray-50 border border-gray-200 rounded-2xl focus:outline-none focus:ring-2 focus:ring-cyan-500 focus:bg-white transition-all text-sm resize-none"
-                            disabled={isLoading}
+                        {selectedImage && (
+                            <div className="absolute bottom-full mb-4 left-0 p-2 bg-white border border-gray-100 rounded-xl shadow-lg flex items-center gap-2 group/img">
+                                <img src={selectedImage.preview} className="w-16 h-16 object-cover rounded-lg" alt="Selected" />
+                                <button
+                                    type="button"
+                                    onClick={() => setSelectedImage(null)}
+                                    className="p-1 bg-red-500 text-white rounded-full hover:bg-red-600 shadow-sm"
+                                >
+                                    <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12" /></svg>
+                                </button>
+                            </div>
+                        )}
+                        <input
+                            type="file"
+                            ref={fileInputRef}
+                            onChange={handleFileUpload}
+                            accept="image/*"
+                            className="hidden"
                         />
-                        <button
-                            type="submit"
-                            disabled={!input.trim() || isLoading}
-                            className="absolute right-2.5 top-2.5 p-2 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md active:scale-95"
-                        >
-                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
-                        </button>
+                        <div className="relative flex items-end gap-2 bg-gray-50 border border-gray-200 rounded-2xl focus-within:ring-2 focus-within:ring-cyan-500 focus-within:bg-white transition-all overflow-hidden p-1">
+                            <button
+                                type="button"
+                                onClick={() => fileInputRef.current?.click()}
+                                className="p-2.5 text-gray-400 hover:text-cyan-600 transition-colors"
+                                title="Upload Image"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15.172 7l-6.586 6.586a2 2 0 102.828 2.828l6.414-6.586a4 4 0 00-5.656-5.656l-6.415 6.585a6 6 0 108.486 8.486L20.5 13" /></svg>
+                            </button>
+
+                            <textarea
+                                rows="1"
+                                value={input}
+                                onChange={(e) => setInput(e.target.value)}
+                                onPaste={handlePaste}
+                                onKeyDown={(e) => {
+                                    if (e.key === "Enter" && !e.shiftKey && !e.nativeEvent.isComposing) {
+                                        e.preventDefault();
+                                        handleSend(e);
+                                    }
+                                }}
+                                placeholder="Type a message or paste an image..."
+                                className="flex-1 py-3 bg-transparent border-none focus:outline-none focus:ring-0 text-sm resize-none"
+                                disabled={isLoading}
+                            />
+
+                            <button
+                                type="button"
+                                onClick={handleVoiceInput}
+                                className={`p-2.5 transition-colors ${isRecording ? "text-red-500 animate-pulse" : "text-gray-400 hover:text-cyan-600"}`}
+                                title="Voice Input"
+                            >
+                                <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 11v-4m0 0H9m3 0h3m-3-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" /></svg>
+                            </button>
+
+                            <button
+                                type="submit"
+                                disabled={(!input.trim() && !selectedImage) || isLoading}
+                                className="p-2.5 bg-cyan-600 text-white rounded-xl hover:bg-cyan-700 disabled:opacity-40 disabled:cursor-not-allowed transition-all shadow-md active:scale-95 m-1"
+                            >
+                                <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M5 10l7-7m0 0l7 7m-7-7v18" /></svg>
+                            </button>
+                        </div>
                     </form>
                     <p className="text-[10px] text-center text-gray-400 mt-2">
                         AI may provide inaccurate info. Verification is recommended.

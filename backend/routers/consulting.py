@@ -1,4 +1,15 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Body, BackgroundTasks, Depends
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    Body,
+    BackgroundTasks,
+    Depends,
+    WebSocket,
+    WebSocketDisconnect
+)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -19,7 +30,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="vertexai._model_
 warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_models._vision_models")
 
 from fastapi.responses import StreamingResponse
-from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 from google import genai
 from google.cloud import firestore, storage
