@@ -8,18 +8,14 @@ from google.genai import types
 from database import get_db
 # Helper to fetch context
 from routers.english import PreparationTask, Phrase
+from services.ai_shared import get_genai_client
 
 router = APIRouter(
     prefix="/roleplay",
     tags=["roleplay"],
 )
 
-client = genai.Client(
-    vertexai=True,
-    project=os.getenv("PROJECT_ID"),
-    location=os.getenv("LOCATION", "us-central1"),
-    http_options={'api_version': 'v1beta1'}
-)
+client = get_genai_client()
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -28,7 +24,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Session Config
     config = {
-        "model": "gemini-live-2.5-flash-preview-native-audio-09-2025", 
+        "model": "gemini-live-2.5-flash-native-audio", 
         "response_modalities": ["AUDIO"]
     }
     
@@ -68,6 +64,7 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Best Practice: Enable session_resumption
                 print(f"DEBUG: Connecting with session_resumption=types.SessionResumptionConfig(transparent=True)", flush=True)
 
+                client = get_genai_client()
                 async with client.aio.live.connect(
                     model=config["model"],
                     config=types.LiveConnectConfig(

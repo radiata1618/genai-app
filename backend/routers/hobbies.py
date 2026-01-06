@@ -11,6 +11,7 @@ from google import genai
 from google.genai import types
 import asyncio
 from google.oauth2 import service_account
+from services.ai_shared import get_genai_client
 
 router = APIRouter(
     prefix="/hobbies",
@@ -24,16 +25,8 @@ GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME_FOR_ENGLISH_REVIEW") # Reusing buck
 if not GCS_BUCKET_NAME:
     GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME", "your-default-bucket") 
 
-# Re-init client (Should ideally be a dependency/singleton, but following existing pattern)
-api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
-if api_key:
-    api_key = api_key.strip()
-
-client = genai.Client(
-    vertexai=True,
-    api_key=api_key,
-    http_options={'api_version': 'v1beta1'}
-)
+# Client is obtained via get_genai_client()
+client = get_genai_client()
 
 storage_client = storage.Client()
 
@@ -217,6 +210,7 @@ async def analyze_photo(req: PhotoAnalyzeRequest, db: firestore.Client = Depends
         """
         
         # 2. Call Gemini 3 Flash
+        client = get_genai_client()
         response = await client.aio.models.generate_content(
             model="gemini-3-flash-preview",
             contents=[prompt, part]
@@ -415,6 +409,7 @@ async def analyze_finance(req: FinanceAnalysisRequest, db: firestore.Client = De
         
         tools = [types.Tool(google_search=types.GoogleSearch())]
         
+        client = get_genai_client()
         response = await client.aio.models.generate_content(
             model="gemini-3-pro-preview",
             contents=prompt,

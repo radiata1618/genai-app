@@ -168,23 +168,23 @@ export default function ConsultingSmePage() {
     };
 
     return (
-        <div className="flex flex-col h-screen bg-slate-950 text-slate-200 font-sans overflow-hidden">
+        <div className="flex flex-col h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* Header */}
-            <header className="h-16 px-6 flex items-center justify-between border-b border-slate-800 bg-slate-900/50 backdrop-blur-md z-10">
+            <header className="h-16 px-6 flex items-center justify-between border-b border-gray-200 bg-white shadow-sm z-10">
                 <div className="flex items-center gap-4">
                     <MobileMenuButton />
-                    <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-400 to-cyan-400">
+                    <h1 className="text-xl font-bold bg-clip-text text-transparent bg-gradient-to-r from-emerald-600 to-cyan-600">
                         MTG SME (Live Monitor)
                     </h1>
                 </div>
                 <div className="flex items-center gap-3">
-                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${status === 'connected' ? 'bg-emerald-500/10 text-emerald-400 border border-emerald-500/20' :
-                        status === 'connecting' ? 'bg-yellow-500/10 text-yellow-400 border border-yellow-500/20' :
-                            'bg-slate-800 text-slate-500 border border-slate-700'
+                    <div className={`flex items-center gap-2 px-3 py-1 rounded-full text-xs font-semibold uppercase tracking-wider ${status === 'connected' ? 'bg-emerald-100 text-emerald-700 border border-emerald-200' :
+                        status === 'connecting' ? 'bg-yellow-100 text-yellow-700 border border-yellow-200' :
+                            'bg-gray-100 text-slate-500 border border-gray-200'
                         }`}>
                         <span className={`w-2 h-2 rounded-full ${status === 'connected' ? 'bg-emerald-500 animate-pulse' :
                             status === 'connecting' ? 'bg-yellow-500' :
-                                'bg-slate-500'
+                                'bg-gray-400'
                             }`}></span>
                         {status === 'connected' ? 'LISTENING' : status}
                     </div>
@@ -195,18 +195,18 @@ export default function ConsultingSmePage() {
             <main className="flex-1 flex flex-col relative max-w-5xl mx-auto w-full p-4 lg:p-6 overflow-hidden">
 
                 {/* Messages Area */}
-                <div className="flex-1 overflow-y-auto space-y-6 pb-20 scrollbar-hide">
+                <div className="flex-1 overflow-y-auto space-y-6 pb-24 px-2">
                     {messages.length === 0 && status === 'connected' && (
-                        <div className="flex flex-col items-center justify-center h-full text-center text-slate-500 animate-fadeIn">
+                        <div className="flex flex-col items-center justify-center h-full text-center text-slate-400 animate-fadeIn">
                             <div className="relative w-24 h-24 mb-6">
-                                <div className="absolute inset-0 bg-emerald-500/20 rounded-full animate-ping"></div>
+                                <div className="absolute inset-0 bg-emerald-500/10 rounded-full animate-ping"></div>
                                 <div className="absolute inset-0 flex items-center justify-center">
-                                    <svg className="w-10 h-10 text-emerald-500" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                    <svg className="w-10 h-10 text-emerald-500/50" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                         <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
                                     </svg>
                                 </div>
                             </div>
-                            <h3 className="text-xl font-medium text-slate-300">Monitoring Meeting...</h3>
+                            <h3 className="text-xl font-medium text-slate-600">Monitoring Meeting...</h3>
                             <p className="max-w-md mx-auto mt-2 text-sm">
                                 I am listening silently. I will interrupt (text only) if corrections or critical insights are needed.
                             </p>
@@ -214,9 +214,9 @@ export default function ConsultingSmePage() {
                     )}
 
                     {messages.length === 0 && status !== 'connected' && (
-                        <div className="flex flex-col items-center justify-center h-full text-center text-slate-600">
-                            <div className="w-20 h-20 mb-4 rounded-full bg-slate-900 border border-slate-800 flex items-center justify-center">
-                                <span className="text-3xl">🛡️</span>
+                        <div className="flex flex-col items-center justify-center h-full text-center text-slate-400">
+                            <div className="w-20 h-20 mb-4 rounded-full bg-white border border-gray-200 flex items-center justify-center shadow-sm">
+                                <span className="text-3xl opacity-70">🛡️</span>
                             </div>
                             <p className="text-lg">Connect to start monitoring.</p>
                         </div>
@@ -224,18 +224,18 @@ export default function ConsultingSmePage() {
 
                     {messages.map((msg, idx) => (
                         <div key={idx} className="animate-slideUp">
-                            <div className="flex gap-4 p-6 rounded-2xl bg-slate-800/50 border border-slate-700/50 shadow-xl backdrop-blur-sm">
+                            <div className="flex gap-4 p-6 rounded-2xl bg-white border border-gray-200 shadow-sm hover:shadow-md transition-shadow">
                                 <div className="flex-shrink-0">
-                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-lg">
+                                    <div className="w-10 h-10 rounded-full bg-gradient-to-br from-emerald-500 to-cyan-600 flex items-center justify-center shadow-md">
                                         <span className="text-white text-sm font-bold">AI</span>
                                     </div>
                                 </div>
                                 <div className="flex-1 space-y-2">
                                     <div className="flex justify-between items-baseline">
-                                        <h4 className="text-emerald-400 font-bold text-sm tracking-wide">SME INSIGHT</h4>
-                                        <span className="text-xs text-slate-500">{msg.timestamp.toLocaleTimeString()}</span>
+                                        <h4 className="text-emerald-600 font-bold text-sm tracking-wide">SME INSIGHT</h4>
+                                        <span className="text-xs text-slate-400">{msg.timestamp.toLocaleTimeString()}</span>
                                     </div>
-                                    <p className="text-slate-200 leading-relaxed whitespace-pre-wrap text-lg bg-slate-900/30 p-3 rounded-lg border border-slate-800/50">
+                                    <p className="text-slate-700 leading-relaxed whitespace-pre-wrap text-lg bg-gray-50 p-4 rounded-xl border border-gray-100">
                                         {msg.text}
                                     </p>
                                 </div>
@@ -251,7 +251,7 @@ export default function ConsultingSmePage() {
                         {!isConnected ? (
                             <button
                                 onClick={startSession}
-                                className="flex items-center gap-2 sm:gap-3 px-5 py-3 sm:px-8 sm:py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-emerald-500/30 text-xs sm:text-base whitespace-nowrap"
+                                className="flex items-center gap-2 sm:gap-3 px-6 py-3 sm:px-8 sm:py-4 bg-emerald-600 hover:bg-emerald-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-emerald-500/20 text-xs sm:text-base whitespace-nowrap"
                             >
                                 <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M14.752 11.168l-3.197-2.132A1 1 0 0010 9.87v4.263a1 1 0 001.555.832l3.197-2.132a1 1 0 000-1.664z" />
@@ -262,7 +262,7 @@ export default function ConsultingSmePage() {
                         ) : (
                             <button
                                 onClick={stopSession}
-                                className="flex items-center gap-2 sm:gap-3 px-5 py-3 sm:px-8 sm:py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-rose-500/30 text-xs sm:text-base whitespace-nowrap"
+                                className="flex items-center gap-2 sm:gap-3 px-6 py-3 sm:px-8 sm:py-4 bg-rose-600 hover:bg-rose-500 text-white rounded-full font-bold transition-all transform hover:scale-105 active:scale-95 shadow-lg shadow-rose-500/20 text-xs sm:text-base whitespace-nowrap"
                             >
                                 <svg className="w-5 h-5 sm:w-6 sm:h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                                     <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M21 12a9 9 0 11-18 0 9 9 0 0118 0z" />
@@ -276,5 +276,6 @@ export default function ConsultingSmePage() {
 
             </main>
         </div>
+
     );
 }

@@ -1,0 +1,173 @@
+from fastapi import APIRouter, HTTPException, Depends, Query
+from pydantic import BaseModel
+from typing import List, Optional
+from datetime import datetime
+from google.cloud import firestore
+from database import get_db
+import os
+from google.genai import types
+from services.ai_shared import get_genai_client
+import uuid
+
+router = APIRouter(
+    prefix="/ai-chat",
+    tags=["ai-chat"],
+)
+
+# Client is obtained via get_genai_client() inside endpoints or globally
+client = get_genai_client()
+
+# --- Models ---
+class ChatMessage(BaseModel):
+    role: str  # "user" or "model"
+    content: str
+    timestamp: Optional[datetime] = None
+
+class ChatSessionCreate(BaseModel):
+    title: Optional[str] = "New Chat"
+
+class ChatSession(BaseModel):
+    id: str
+    title: str
+    created_at: datetime
+    updated_at: datetime
+    last_message: Optional[str] = None
+
+class ChatRequest(BaseModel):
+    message: str
+    model: str = "gemini-3-flash-preview"
+
+# --- Endpoints ---
+
+@router.post("/sessions", response_model=ChatSession)
+async def create_session(req: ChatSessionCreate, db: firestore.Client = Depends(get_db)):
+    session_id = str(uuid.uuid4())
+    now = datetime.now()
+    
+    session_data = {
+        "id": session_id,
+        "title": req.title,
+        "created_at": now,
+        "updated_at": now,
+        "last_message": None
+    }
+    
+    db.collection("ai_chat_sessions").document(session_id).set(session_data)
+    return ChatSession(**session_data)
+
+@router.get("/sessions", response_model=List[ChatSession])
+async def get_sessions(db: firestore.Client = Depends(get_db)):
+    docs = db.collection("ai_chat_sessions").order_by("updated_at", direction=firestore.Query.DESCENDING).limit(50).stream()
+    sessions = []
+    for d in docs:
+        sessions.append(ChatSession(**d.to_dict()))
+    return sessions
+
+@router.delete("/sessions/{session_id}")
+async def delete_session(session_id: str, db: firestore.Client = Depends(get_db)):
+    # Delete session and messages
+    batch = db.batch()
+    session_ref = db.collection("ai_chat_sessions").document(session_id)
+    batch.delete(session_ref)
+    
+    messages = db.collection("ai_chat_sessions").document(session_id).collection("messages").stream()
+    for m in messages:
+        batch.delete(m.reference)
+    
+    batch.commit()
+    return {"status": "deleted"}
+
+@router.get("/sessions/{session_id}/messages", response_model=List[ChatMessage])
+async def get_messages(session_id: str, db: firestore.Client = Depends(get_db)):
+    docs = db.collection("ai_chat_sessions").document(session_id).collection("messages").order_by("timestamp").stream()
+    messages = []
+    for d in docs:
+        messages.append(ChatMessage(**d.to_dict()))
+    return messages
+
+@router.post("/sessions/{session_id}/messages")
+async def send_message(session_id: str, req: ChatRequest, db: firestore.Client = Depends(get_db)):
+    print(f"DEBUG: send_message started for session {session_id}, model {req.model}")
+    session_ref = db.collection("ai_chat_sessions").document(session_id)
+    session_doc = session_ref.get()
+    if not session_doc.exists:
+        print(f"DEBUG: Session {session_id} not found")
+        raise HTTPException(status_code=404, detail="Session not found")
+
+    # 1. Save User Message
+    user_msg_id = str(uuid.uuid4())
+    user_msg = {
+        "role": "user",
+        "content": req.message,
+        "timestamp": datetime.now()
+    }
+    session_ref.collection("messages").document(user_msg_id).set(user_msg)
+    print(f"DEBUG: User message saved: {user_msg_id}")
+
+    # 2. Prepare History for Gemini (Latest 20 messages)
+    history_docs = session_ref.collection("messages").order_by("timestamp", direction=firestore.Query.DESCENDING).limit(20).get()
+    
+    # Needs to be chronologically ordered for Gemini
+    history_list = list(reversed(list(history_docs)))
+    
+    contents = []
+    for d in history_list:
+        m = d.to_dict()
+        contents.append(types.Content(
+            role=m["role"],
+            parts=[types.Part.from_text(text=m["content"])]
+        ))
+    print(f"DEBUG: Prepared {len(contents)} messages for Gemini. Last role: {contents[-1].role if contents else 'N/A'}")
+
+    # 3. Call Gemini
+    try:
+        client = get_genai_client()
+        if not client:
+            raise HTTPException(status_code=500, detail="AI Client not initialized. Check environment variables.")
+
+        system_instruction = "あなたは有能で親切なAIアシスタントです。ユーザーの質問に対して正確かつ丁寧に回答してください。"
+        
+        print(f"DEBUG: Calling Gemini {req.model} (Async)...")
+        import time
+        start_ai = time.time()
+        response = await client.aio.models.generate_content(
+            model=req.model,
+            contents=contents,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                temperature=0.7,
+            )
+        )
+        model_content = response.text or "(No response)"
+        ai_duration = time.time() - start_ai
+        print(f"DEBUG: Gemini response received in {ai_duration:.2f}s: {len(model_content)} chars")
+    except Exception as e:
+        import traceback
+        traceback.print_exc()
+        print(f"Gemini AI Chat Error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
+    # 4. Save Model Response
+    model_msg_id = str(uuid.uuid4())
+    model_msg = {
+        "role": "model",
+        "content": model_content,
+        "timestamp": datetime.now()
+    }
+    session_ref.collection("messages").document(model_msg_id).set(model_msg)
+    print(f"DEBUG: Model message saved: {model_msg_id}")
+
+    # 5. Update Session (last message, updated_at, maybe auto-title)
+    update_data = {
+        "updated_at": datetime.now(),
+        "last_message": req.message[:100]
+    }
+    
+    # Auto-title if "New Chat"
+    if session_doc.to_dict().get("title") == "New Chat":
+        update_data["title"] = req.message[:30] + ("..." if len(req.message) > 30 else "")
+    
+    session_ref.update(update_data)
+    print(f"DEBUG: Session updated")
+
+    return {"response": model_content}
