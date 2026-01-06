@@ -1,4 +1,15 @@
-from fastapi import APIRouter, HTTPException, UploadFile, File, Form, Body, BackgroundTasks
+from fastapi import (
+    APIRouter,
+    HTTPException,
+    UploadFile,
+    File,
+    Form,
+    Body,
+    BackgroundTasks,
+    Depends,
+    WebSocket,
+    WebSocketDisconnect
+)
 from concurrent.futures import ThreadPoolExecutor, as_completed
 from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
@@ -19,7 +30,6 @@ warnings.filterwarnings("ignore", category=UserWarning, module="vertexai._model_
 warnings.filterwarnings("ignore", category=UserWarning, module="vertexai.vision_models._vision_models")
 
 from fastapi.responses import StreamingResponse
-from fastapi import WebSocket, WebSocketDisconnect
 from google.genai import types
 from google import genai
 from google.cloud import firestore, storage
@@ -729,17 +739,7 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
     try:
         print(f"DEBUG: Processing Consulting Review for {req.gcs_path}")
         
-        # Initialize Client similar to english.py to ensure model visibility
-        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
-        if api_key:
-            api_key = api_key.strip()
-            
-        client = genai.Client(
-            vertexai=True,
-            api_key=api_key,
-            http_options={'api_version': 'v1beta1'}
-        )
-        # client = get_genai_client() # Replaced with local init for consistency
+        client = get_genai_client()
         
         # 1. Create Part from GCS URI
         # Auto-detect mime-type roughly
@@ -878,7 +878,7 @@ async def consulting_sme_websocket(websocket: WebSocket):
 
     # Model Configuration
     # verified working model for Live API connection & transcription
-    MODEL_NAME = "gemini-live-2.5-flash-preview-native-audio-09-2025" 
+    MODEL_NAME = "gemini-live-2.5-flash-native-audio" 
     
     try:
         # 1. Initial Handshake / Setup

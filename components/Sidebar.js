@@ -6,6 +6,12 @@ import { usePathname } from "next/navigation";
 // Navigation Items Configuration
 const navItems = [
     {
+        category: "AI Chat",
+        items: [
+            { name: "AI Chat", icon: "✨", href: "/ai-chat" },
+        ],
+    },
+    {
         category: "タスク管理",
         items: [
             { name: "Today's Focus", icon: "☀️", href: "/dashboard" },

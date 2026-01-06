@@ -97,7 +97,7 @@ async def generate_car_list(request: GenerationRequest):
             )
         except Exception:
             # Fallback to 2.5 Pro if 3.0 fails
-            model_name = "gemini-2.5-pro"
+            model_name = "gemini-3-pro-preview"
             response = client.models.generate_content(
                 model=model_name,
                 contents=full_prompt,

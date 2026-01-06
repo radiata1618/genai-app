@@ -13,6 +13,7 @@ from google.genai import types
 import google.auth
 from google.oauth2 import service_account
 import json
+from services.ai_shared import get_genai_client
 
 try:
     from moviepy import VideoFileClip
@@ -36,16 +37,8 @@ UPLOAD_DIR = Path("uploads")
 UPLOAD_DIR.mkdir(exist_ok=True)
 GCS_BUCKET_NAME = os.getenv("GCS_BUCKET_NAME_FOR_ENGLISH_REVIEW")
 
-# Initialize GenAI Client (similar to generate_genai.py)
-api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
-if api_key:
-    api_key = api_key.strip()
-
-client = genai.Client(
-    vertexai=True,
-    api_key=api_key,
-    http_options={'api_version': 'v1beta1'}
-)
+# Client is obtained via get_genai_client()
+client = get_genai_client()
 
 storage_client = storage.Client()
 
@@ -129,7 +122,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     context: Optional[str] = None
-    model: Optional[str] = "gemini-3-flash-preview"
+    model: Optional[str] = "gemini-2.5-flash"
 
     
 # --- Helpers ---
@@ -233,6 +226,7 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     """
     
     try:
+        client = get_genai_client()
         response = client.models.generate_content(
             model="gemini-3-pro-preview",
             contents=prompt,
@@ -414,9 +408,10 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
 
     try:
         # Parallel Execution: Notes + Manual Script + Auto Script
+        client = get_genai_client()
         task_notes = client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
-            contents=prompt_notes,
+                model="gemini-3-flash-preview",
+                contents=prompt_notes,
         )
         
         results = await asyncio.gather(
@@ -686,6 +681,7 @@ async def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends
         # Assuming `client.aio` exists as in `create_youtube_prep`.
 
         async def run_parallel():
+             client = get_genai_client()
              task_review = client.aio.models.generate_content(
                 model="gemini-3-pro-preview",
                 contents=[prompt_review, part]
@@ -797,6 +793,7 @@ def generate_phrases(req: PhraseGenerateRequest):
     """
     
     try:
+        client = get_genai_client()
         response = client.models.generate_content(
             model="gemini-3-flash-preview",
             contents=prompt,
@@ -914,8 +911,9 @@ def chat_with_context(req: ChatRequest):
             
         print(f"DEBUG: sending chat request with {len(req.messages)} messages")
         
+        client = get_genai_client()
         response = client.models.generate_content(
-            model=req.model or "gemini-3-flash-preview",
+            model=req.model or "gemini-2.5-flash",
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,

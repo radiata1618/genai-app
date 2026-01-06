@@ -1,9 +1,13 @@
-from fastapi import FastAPI
-from fastapi.middleware.cors import CORSMiddleware
+from pathlib import Path
+from dotenv import load_dotenv
 import os
 
-from dotenv import load_dotenv
-from pathlib import Path
+env_path = Path(__file__).parent.parent / '.env.local'
+load_dotenv(dotenv_path=env_path)
+
+from fastapi import FastAPI
+from fastapi.middleware.cors import CORSMiddleware
+
 from routers import generate
 from routers import generate_genai 
 from routers import rag
@@ -12,9 +16,7 @@ from routers import tasks
 from routers import car_quiz
 from routers import projects
 from routers import consulting
-
-env_path = Path(__file__).parent.parent / '.env.local'
-load_dotenv(dotenv_path=env_path)
+from routers import ai_chat
 
 app = FastAPI()
 
@@ -87,6 +89,7 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(consulting.router, prefix="/api", tags=["consulting"])
+app.include_router(ai_chat.router, prefix="/api", tags=["ai-chat"])
 from routers import english
 from routers import roleplay
 app.include_router(english.router, prefix="/api", tags=["english"])

@@ -52,25 +52,57 @@ def get_genai_client():
     if _genai_client:
         return _genai_client
     
-    if PROJECT_ID and LOCATION:
+    api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+    p_id = os.getenv("PROJECT_ID")
+    p_loc = os.getenv("LOCATION", "us-central1")
+
+    # 1. Try Vertex AI with API Key (Working pattern in car_quiz.py / generate.py)
+    if api_key:
         try:
             _genai_client = genai.Client(
                 vertexai=True,
-                project=PROJECT_ID,
-                location="us-central1", # Force us-central1 for Model availability (Gemini 2.0/new models)
+                api_key=api_key.strip(),
                 http_options={'api_version': 'v1beta1'}
             )
+            print("DEBUG: GenAI Client initialized in Vertex AI mode with API Key")
             return _genai_client
         except Exception as e:
-            print(f"Error initializing GenAI Client: {e}")
-            return None
+            print(f"Error initializing GenAI Client with API Key: {e}")
+
+    # 2. Fallback to Vertex AI with Service Account / Project ID
+    if p_id:
+        try:
+            _genai_client = genai.Client(
+                vertexai=True,
+                project=p_id,
+                location=p_loc,
+                http_options={'api_version': 'v1beta1'}
+            )
+            print(f"DEBUG: GenAI Client initialized in Vertex AI mode (Project={p_id}, Location={p_loc})")
+            return _genai_client
+        except Exception as e:
+            print(f"Error initializing GenAI Client with Project ID: {e}")
+            
+    # 3. Last Fallback: Google AI Studio mode (not vertexai)
+    if api_key:
+        try:
+            _genai_client = genai.Client(
+                api_key=api_key.strip(),
+                http_options={'api_version': 'v1beta1'}
+            )
+            print("DEBUG: GenAI Client initialized in Google AI Studio mode")
+            return _genai_client
+        except Exception as e:
+            print(f"Error initializing GenAI Client in AI Studio mode: {e}")
+
+    print("WARNING: No GenAI Client could be initialized (missing Project ID or API Key)")
     return None
 
 def get_storage_client():
-    return storage.Client(project=PROJECT_ID)
+    return storage.Client(project=os.getenv("PROJECT_ID"))
 
 def get_firestore_client():
-    return firestore.Client(project=PROJECT_ID)
+    return firestore.Client(project=os.getenv("PROJECT_ID"))
 
 def get_embedding(text: str = None, image_bytes: bytes = None):
     """Generates embedding using the stable Vertex AI MultiModalEmbeddingModel."""
