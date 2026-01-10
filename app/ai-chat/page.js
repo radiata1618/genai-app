@@ -1,6 +1,7 @@
 "use client";
 import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
 import MobileMenuButton from "../../components/MobileMenuButton";
 
 export default function AiChatPage() {
@@ -309,18 +310,58 @@ export default function AiChatPage() {
                                 )}
                                 <div className="prose prose-sm max-w-none prose-slate">
                                     <ReactMarkdown
+                                        remarkPlugins={[remarkGfm]}
                                         components={{
-                                            p: ({ node, ...props }) => <p className="mb-2 last:mb-0" {...props} />,
+                                            h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2 text-slate-800" {...props} />,
+                                            h2: ({ node, ...props }) => <h2 className="text-lg font-bold mt-3 mb-2 text-slate-700 decoration-cyan-500 underline decoration-2 underline-offset-4" {...props} />,
+                                            h3: ({ node, ...props }) => <h3 className="text-base font-bold mt-3 mb-1 text-slate-700 border-l-4 border-cyan-400 pl-2" {...props} />,
+                                            h4: ({ node, ...props }) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-600" {...props} />,
+                                            h5: ({ node, ...props }) => <h5 className="text-xs font-bold mt-2 mb-1 text-slate-500" {...props} />,
+                                            h6: ({ node, ...props }) => <h6 className="text-[10px] font-bold mt-2 mb-1 text-slate-400 uppercase tracking-widest" {...props} />,
+                                            p: ({ node, ...props }) => <p className="mb-2 leading-relaxed text-slate-600" {...props} />,
+                                            ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-2 space-y-1 text-slate-600" {...props} />,
+                                            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-2 space-y-1 text-slate-600" {...props} />,
+                                            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
+                                            blockquote: ({ node, ...props }) => (
+                                                <div className="border-l-4 border-cyan-400 pl-4 py-1 my-2 bg-gray-50 text-slate-600 italic rounded-r">
+                                                    {props.children}
+                                                </div>
+                                            ),
+                                            table: ({ node, ...props }) => (
+                                                <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
+                                                    <table className="min-w-full divide-y divide-gray-200 text-sm" {...props} />
+                                                </div>
+                                            ),
+                                            thead: ({ node, ...props }) => <thead className="bg-gray-50" {...props} />,
+                                            tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
+                                            tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
+                                            th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" {...props} />,
+                                            td: ({ node, ...props }) => <td className="px-4 py-3 whitespace-nowrap text-slate-600" {...props} />,
+                                            hr: ({ node, ...props }) => <hr className="my-4 border-gray-200" {...props} />,
+                                            a: ({ node, ...props }) => <a className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
+                                            img: ({ node, ...props }) => <img className="max-w-full h-auto rounded-lg border border-gray-200 my-2" {...props} />,
                                             code: ({ node, inline, className, children, ...props }) => {
                                                 const match = /language-(\w+)/.exec(className || '')
                                                 return !inline ? (
-                                                    <div className="bg-gray-800 text-gray-100 p-3 rounded-lg my-2 overflow-x-auto">
-                                                        <code className={className} {...props}>{children}</code>
-                                                    </div>
+                                                    <span className="block bg-slate-800 text-slate-100 p-3 rounded-lg my-2 overflow-x-auto font-mono text-sm leading-relaxed relative">
+                                                        {match && (
+                                                            <span className="absolute top-1 right-2 text-[10px] text-gray-400 uppercase select-none">
+                                                                {match[1]}
+                                                            </span>
+                                                        )}
+                                                        <code className={className} {...props}>
+                                                            {children}
+                                                        </code>
+                                                    </span>
                                                 ) : (
-                                                    <code className="bg-gray-100 px-1.5 py-0.5 rounded text-cyan-600 font-mono text-xs" {...props}>{children}</code>
+                                                    <code className="bg-slate-100 text-cyan-700 px-1.5 py-0.5 rounded font-mono text-xs font-bold ring-1 ring-slate-200" {...props}>
+                                                        {children}
+                                                    </code>
                                                 )
-                                            }
+                                            },
+                                            pre: ({ node, ...props }) => (
+                                                <pre className="not-prose" {...props} />
+                                            ),
                                         }}
                                     >
                                         {msg.content}

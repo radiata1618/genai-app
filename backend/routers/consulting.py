@@ -878,7 +878,7 @@ async def consulting_sme_websocket(websocket: WebSocket):
 
     # Model Configuration
     # verified working model for Live API connection & transcription
-    MODEL_NAME = "gemini-live-2.5-flash-native-audio" 
+    MODEL_NAME = "gemini-live-2.5-flash-preview-native-audio-09-2025" 
     
     try:
         # 1. Initial Handshake / Setup
