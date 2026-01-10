@@ -298,88 +298,109 @@ export default function AiChatPage() {
                         </div>
                     )}
                     {messages.map((msg, idx) => (
-                        <div key={idx} className={`flex ${msg.role === "user" ? "justify-end" : "justify-start"}`}>
-                            <div className={`max-w-[85%] sm:max-w-[75%] rounded-2xl px-4 py-3 shadow-sm ${msg.role === "user"
-                                ? "bg-cyan-600 text-white rounded-br-none"
-                                : "bg-white text-slate-700 border border-gray-100 rounded-bl-none"
-                                }`}>
-                                {msg.image && (
-                                    <div className="mb-2">
-                                        <img src={msg.image} alt="Uploaded" className="max-w-full rounded-lg max-h-60 object-contain border border-gray-100" />
-                                    </div>
-                                )}
-                                <div className="prose prose-sm max-w-none prose-slate">
-                                    <ReactMarkdown
-                                        remarkPlugins={[remarkGfm]}
-                                        components={{
-                                            h1: ({ node, ...props }) => <h1 className="text-xl font-bold mt-4 mb-2 text-slate-800" {...props} />,
-                                            h2: ({ node, ...props }) => <h2 className="text-lg font-bold mt-3 mb-2 text-slate-700 decoration-cyan-500 underline decoration-2 underline-offset-4" {...props} />,
-                                            h3: ({ node, ...props }) => <h3 className="text-base font-bold mt-3 mb-1 text-slate-700 border-l-4 border-cyan-400 pl-2" {...props} />,
-                                            h4: ({ node, ...props }) => <h4 className="text-sm font-bold mt-2 mb-1 text-slate-600" {...props} />,
-                                            h5: ({ node, ...props }) => <h5 className="text-xs font-bold mt-2 mb-1 text-slate-500" {...props} />,
-                                            h6: ({ node, ...props }) => <h6 className="text-[10px] font-bold mt-2 mb-1 text-slate-400 uppercase tracking-widest" {...props} />,
-                                            p: ({ node, ...props }) => <p className="mb-2 leading-relaxed text-slate-600" {...props} />,
-                                            ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-2 space-y-1 text-slate-600" {...props} />,
-                                            ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-2 space-y-1 text-slate-600" {...props} />,
-                                            li: ({ node, ...props }) => <li className="pl-1" {...props} />,
-                                            blockquote: ({ node, ...props }) => (
-                                                <div className="border-l-4 border-cyan-400 pl-4 py-1 my-2 bg-gray-50 text-slate-600 italic rounded-r">
-                                                    {props.children}
-                                                </div>
-                                            ),
-                                            table: ({ node, ...props }) => (
-                                                <div className="overflow-x-auto my-3 rounded-lg border border-gray-200">
-                                                    <table className="min-w-full divide-y divide-gray-200 text-sm" {...props} />
-                                                </div>
-                                            ),
-                                            thead: ({ node, ...props }) => <thead className="bg-gray-50" {...props} />,
-                                            tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
-                                            tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
-                                            th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" {...props} />,
-                                            td: ({ node, ...props }) => <td className="px-4 py-3 whitespace-nowrap text-slate-600" {...props} />,
-                                            hr: ({ node, ...props }) => <hr className="my-4 border-gray-200" {...props} />,
-                                            a: ({ node, ...props }) => <a className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
-                                            img: ({ node, ...props }) => <img className="max-w-full h-auto rounded-lg border border-gray-200 my-2" {...props} />,
-                                            code: ({ node, inline, className, children, ...props }) => {
-                                                const match = /language-(\w+)/.exec(className || '')
-                                                return !inline ? (
-                                                    <span className="block bg-slate-800 text-slate-100 p-3 rounded-lg my-2 overflow-x-auto font-mono text-sm leading-relaxed relative">
-                                                        {match && (
-                                                            <span className="absolute top-1 right-2 text-[10px] text-gray-400 uppercase select-none">
-                                                                {match[1]}
-                                                            </span>
-                                                        )}
-                                                        <code className={className} {...props}>
-                                                            {children}
-                                                        </code>
-                                                    </span>
-                                                ) : (
-                                                    <code className="bg-slate-100 text-cyan-700 px-1.5 py-0.5 rounded font-mono text-xs font-bold ring-1 ring-slate-200" {...props}>
-                                                        {children}
-                                                    </code>
-                                                )
-                                            },
-                                            pre: ({ node, ...props }) => (
-                                                <pre className="not-prose" {...props} />
-                                            ),
-                                        }}
-                                    >
-                                        {msg.content}
-                                    </ReactMarkdown>
-                                </div>
-                                <div className={`flex items-center justify-between mt-1 opacity-50 text-[10px] ${msg.role === "user" ? "text-right flex-row-reverse" : "text-left"}`}>
-                                    <span>{msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
-                                    {msg.role === "model" && (
-                                        <button
-                                            onClick={() => speak(msg.content)}
-                                            className="ml-2 hover:text-cyan-600 transition-colors p-1"
-                                            title="Read Aloud"
-                                        >
-                                            🔊
-                                        </button>
+                        <div key={idx} className={`flex w-full ${msg.role === "user" ? "justify-end" : "justify-start"} mb-6`}>
+                            {msg.role === "user" ? (
+                                // User Message Bubble
+                                <div className="max-w-[85%] sm:max-w-[75%] bg-cyan-50 text-slate-800 border border-cyan-200 rounded-2xl rounded-br-none px-4 py-3 shadow-sm">
+                                    {msg.image && (
+                                        <div className="mb-2">
+                                            <img src={msg.image} alt="Uploaded" className="max-w-full rounded-lg max-h-60 object-contain border border-gray-100" />
+                                        </div>
                                     )}
+                                    <div className="prose prose-sm max-w-none prose-slate whitespace-pre-wrap">
+                                        {msg.content}
+                                    </div>
+                                    <div className="text-right mt-1 opacity-50 text-[10px]">
+                                        {msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                    </div>
                                 </div>
-                            </div>
+                            ) : (
+                                // Model Message (No Bubble, Full Width)
+                                <div className="flex gap-3 sm:gap-4 w-full max-w-5xl">
+                                    <div className="flex-none mt-1">
+                                        <div className="w-8 h-8 rounded-full bg-gradient-to-br from-cyan-400 to-blue-600 flex items-center justify-center shadow-sm">
+                                            <span className="text-white text-sm">✨</span>
+                                        </div>
+                                    </div>
+                                    <div className="flex-1 min-w-0">
+                                        <div className="prose prose-slate max-w-none prose-p:leading-relaxed prose-pre:p-0 prose-pre:border-none prose-pre:bg-transparent">
+                                            <ReactMarkdown
+                                                remarkPlugins={[remarkGfm]}
+                                                components={{
+                                                    h1: ({ node, ...props }) => <h1 className="text-2xl font-bold mt-6 mb-4 text-slate-900" {...props} />,
+                                                    h2: ({ node, ...props }) => <h2 className="text-xl font-bold mt-5 mb-3 text-slate-800 border-b border-gray-100 pb-1" {...props} />,
+                                                    h3: ({ node, ...props }) => <h3 className="text-lg font-bold mt-4 mb-2 text-slate-700" {...props} />,
+                                                    h4: ({ node, ...props }) => <h4 className="text-base font-bold mt-3 mb-1 text-slate-700" {...props} />,
+                                                    p: ({ node, ...props }) => <p className="mb-4 text-slate-700 leading-7" {...props} />,
+                                                    ul: ({ node, ...props }) => <ul className="list-disc pl-5 mb-4 space-y-1 text-slate-700" {...props} />,
+                                                    ol: ({ node, ...props }) => <ol className="list-decimal pl-5 mb-4 space-y-1 text-slate-700" {...props} />,
+                                                    li: ({ node, ...props }) => <li className="pl-1" {...props} />,
+                                                    blockquote: ({ node, ...props }) => (
+                                                        <div className="border-l-4 border-cyan-400 pl-4 py-1 my-4 bg-gray-50 text-slate-700 italic rounded-r">
+                                                            {props.children}
+                                                        </div>
+                                                    ),
+                                                    table: ({ node, ...props }) => (
+                                                        <div className="overflow-x-auto my-4 rounded-lg border border-gray-200">
+                                                            <table className="min-w-full divide-y divide-gray-200 text-sm" {...props} />
+                                                        </div>
+                                                    ),
+                                                    thead: ({ node, ...props }) => <thead className="bg-gray-50" {...props} />,
+                                                    tbody: ({ node, ...props }) => <tbody className="bg-white divide-y divide-gray-200" {...props} />,
+                                                    tr: ({ node, ...props }) => <tr className="hover:bg-gray-50 transition-colors" {...props} />,
+                                                    th: ({ node, ...props }) => <th className="px-4 py-3 text-left text-xs font-medium text-gray-500 uppercase tracking-wider" {...props} />,
+                                                    td: ({ node, ...props }) => <td className="px-4 py-3 whitespace-nowrap text-slate-700" {...props} />,
+                                                    hr: ({ node, ...props }) => <hr className="my-6 border-gray-200" {...props} />,
+                                                    a: ({ node, ...props }) => <a className="text-cyan-600 hover:text-cyan-700 hover:underline transition-colors" target="_blank" rel="noopener noreferrer" {...props} />,
+                                                    code: ({ node, inline, className, children, ...props }) => {
+                                                        const match = /language-(\w+)/.exec(className || '')
+                                                        return !inline ? (
+                                                            <div className="bg-slate-900 text-slate-50 p-4 rounded-xl my-4 overflow-x-auto font-mono text-sm leading-relaxed shadow-sm ring-1 ring-gray-900/5">
+                                                                {match && (
+                                                                    <div className="text-[10px] text-gray-400 uppercase mb-2 font-bold tracking-wider select-none border-b border-gray-700 pb-1">
+                                                                        {match[1]}
+                                                                    </div>
+                                                                )}
+                                                                <code className={className} {...props}>
+                                                                    {children}
+                                                                </code>
+                                                            </div>
+                                                        ) : (
+                                                            <code className="bg-gray-100 text-slate-800 px-1.5 py-0.5 rounded font-mono text-xs font-bold ring-1 ring-gray-200" {...props}>
+                                                                {children}
+                                                            </code>
+                                                        )
+                                                    },
+                                                    pre: ({ node, ...props }) => (
+                                                        <pre className="not-prose my-0 bg-transparent" {...props} />
+                                                    ),
+                                                }}
+                                            >
+                                                {msg.content}
+                                            </ReactMarkdown>
+                                        </div>
+                                        <div className="flex items-center gap-2 mt-2">
+                                            <button
+                                                onClick={() => speak(msg.content)}
+                                                className="text-gray-400 hover:text-cyan-600 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+                                                title="Read Aloud"
+                                            >
+                                                <span className="text-lg">🔊</span>
+                                            </button>
+                                            <button
+                                                onClick={() => navigator.clipboard.writeText(msg.content)}
+                                                className="text-gray-400 hover:text-cyan-600 transition-colors p-1.5 rounded-full hover:bg-gray-100"
+                                                title="Copy"
+                                            >
+                                                <span className="text-lg">�</span>
+                                            </button>
+                                            <span className="text-[10px] text-gray-300 ml-auto">
+                                                {msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                                            </span>
+                                        </div>
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     ))}
                     {isLoading && (
