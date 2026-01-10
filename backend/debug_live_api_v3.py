@@ -68,6 +68,9 @@ async def test_live_api_text_modality():
             # input_audio_transcription is for USER audio. We are sending text trigger now, but eventually user sends audio.
             config_dict["input_audio_transcription"] = types.AudioTranscriptionConfig()
         
+        # Test session_resumption
+        config_dict["session_resumption"] = types.SessionResumptionConfig(transparent=True)
+        
         config = types.LiveConnectConfig(**config_dict)
 
         print(f"Connecting to {model_name}...")

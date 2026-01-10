@@ -24,7 +24,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Session Config
     config = {
-        "model": "gemini-live-2.5-flash-native-audio", 
+        "model": "gemini-live-2.5-flash-preview-native-audio-09-2025", 
         "response_modalities": ["AUDIO"]
     }
     
@@ -62,7 +62,7 @@ async def websocket_endpoint(websocket: WebSocket):
             try:
                 # 2. Initialize Gemini Live API Session
                 # Best Practice: Enable session_resumption
-                print(f"DEBUG: Connecting with session_resumption=types.SessionResumptionConfig(transparent=True)", flush=True)
+                print(f"DEBUG: Connecting to Live API...", flush=True)
 
                 client = get_genai_client()
                 async with client.aio.live.connect(
@@ -70,7 +70,7 @@ async def websocket_endpoint(websocket: WebSocket):
                     config=types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=types.SessionResumptionConfig(transparent=True)
+                        # session_resumption=types.SessionResumptionConfig(transparent=True) # Causing 1007 error in Prod?
                     )
                 ) as session:
                     print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
