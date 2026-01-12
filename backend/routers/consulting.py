@@ -869,12 +869,14 @@ async def consulting_sme_websocket(websocket: WebSocket):
     await websocket.accept()
     print("DEBUG: SME WebSocket connected (Live API: Audio+Transcript Mode)", flush=True)
 
-    # Use Shared Vertex AI Client
-    client = get_genai_client()
-    if not client:
-        print("ERROR: Failed to get GenAI Client")
-        await websocket.close(code=1011)
-        return
+    # Use Direct GenAI Client (Fix for 1007 Error)
+    # Using same pattern as working roleplay.py
+    client = genai.Client(
+        vertexai=True,
+        project=os.getenv("PROJECT_ID"),
+        location=os.getenv("LOCATION", "us-central1"),
+        http_options={'api_version': 'v1beta1'}
+    )
 
     # Model Configuration
     # verified working model for Live API connection & transcription
@@ -906,8 +908,9 @@ async def consulting_sme_websocket(websocket: WebSocket):
             response_modalities=["AUDIO"], # Model requires AUDIO modality
             system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
             # Key Feature: Enable Transcription to get text output from the Audio model
+            # This allows us to receive text almost simultaneously with audio.
+            # We will DISCARD the audio and only send the text to the user as requested.
             output_audio_transcription=types.AudioTranscriptionConfig(),
-            input_audio_transcription=types.AudioTranscriptionConfig(), # Enable input transcription too for logs/future
         )
 
         async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:

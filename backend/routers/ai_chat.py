@@ -22,6 +22,7 @@ class ChatMessage(BaseModel):
     role: str  # "user" or "model"
     content: str
     timestamp: Optional[datetime] = None
+    grounding_metadata: Optional[dict] = None  # Using dict to store raw dynamic structure, or define specific Pydantic model
 
 class ChatSessionCreate(BaseModel):
     title: Optional[str] = "New Chat"
@@ -162,6 +163,42 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
             )
         )
         model_content = response.text or "(No response)"
+        
+        # Extract Grounding Metadata
+        grounding_metadata_dict = None
+        if response.candidates and response.candidates[0].grounding_metadata:
+            gm = response.candidates[0].grounding_metadata
+            
+            # Manually convert likely fields to dict
+            grounding_metadata_dict = {}
+            
+            # 1. Grounding Chunks (Web Sources)
+            if hasattr(gm, 'grounding_chunks') and gm.grounding_chunks:
+                chunks_list = []
+                for chunk in gm.grounding_chunks:
+                    c_dict = {}
+                    if hasattr(chunk, 'web') and chunk.web:
+                        c_dict["web"] = {
+                            "uri": chunk.web.uri,
+                            "title": chunk.web.title,
+                            "domain": getattr(chunk.web, "domain", "") # domain might be optional
+                        }
+                    chunks_list.append(c_dict)
+                grounding_metadata_dict["grounding_chunks"] = chunks_list
+
+            # 2. Search Entry Point (Widget HTML)
+            if hasattr(gm, 'search_entry_point') and gm.search_entry_point:
+                sep = gm.search_entry_point
+                grounding_metadata_dict["search_entry_point"] = {
+                    "rendered_content": sep.rendered_content
+                }
+            
+            # 3. Web Search Queries (Optional but good to have)
+            if hasattr(gm, 'web_search_queries') and gm.web_search_queries:
+                grounding_metadata_dict["web_search_queries"] = gm.web_search_queries
+
+            print(f"DEBUG: Grounding Metadata extracted: {list(grounding_metadata_dict.keys())}")
+
         ai_duration = time.time() - start_ai
         print(f"DEBUG: Gemini response received in {ai_duration:.2f}s: {len(model_content)} chars")
     except Exception as e:
@@ -175,7 +212,8 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
     model_msg = {
         "role": "model",
         "content": model_content,
-        "timestamp": datetime.now()
+        "timestamp": datetime.now(),
+        "grounding_metadata": grounding_metadata_dict
     }
     session_ref.collection("messages").document(model_msg_id).set(model_msg)
     print(f"DEBUG: Model message saved: {model_msg_id}")
@@ -193,4 +231,4 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
     session_ref.update(update_data)
     print(f"DEBUG: Session updated")
 
-    return {"response": model_content}
+    return {"response": model_content, "grounding_metadata": grounding_metadata_dict}
