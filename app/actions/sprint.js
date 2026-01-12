@@ -96,18 +96,69 @@ export async function addTasksToSprint(sprintId, taskIds) {
 
 // Remove task from Sprint
 export async function removeTaskFromSprint(taskId, scheduleUpdate = undefined) {
+    const taskRef = db.collection('backlog_items').doc(taskId);
+    const snap = await taskRef.get();
+    if (!snap.exists) throw new Error("Task not found");
+    const taskData = snap.data();
+
     const updatePayload = { sprintId: null };
+    const batch = db.batch();
 
     // scheduleUpdate: { date: Date | null }
+    let newDateStr = null;
+    let oldDateStr = taskData.scheduled_date ? taskData.scheduled_date.toDate().toISOString().split('T')[0] : null;
+
     if (scheduleUpdate) {
         if (scheduleUpdate.date) {
-            updatePayload.scheduled_date = new Date(scheduleUpdate.date);
+            const d = new Date(scheduleUpdate.date);
+            updatePayload.scheduled_date = d;
+            newDateStr = d.toISOString().split('T')[0];
         } else {
             updatePayload.scheduled_date = null; // Clear date
+            newDateStr = null;
+        }
+    } else {
+        // If not specified, keep existing date? 
+        // Usage in page.js implies removeTaskFromSprint is "Remove & Reschedule" (SKIP).
+        // If scheduleUpdate is undefined, we just remove from sprint but keep date?
+        // Actually executeRemoveTask calls with { date: ... } or undefined.
+        // If undefined, it means just remove from sprint. Dates don't change.
+        newDateStr = oldDateStr;
+    }
+
+    batch.update(taskRef, updatePayload);
+
+    // Sync Daily Tasks if date changed
+    if (oldDateStr !== newDateStr) {
+        // 1. Delete Old Daily Task if it exists
+        if (oldDateStr) {
+            const oldDailyId = `${taskId}_${oldDateStr}`;
+            const oldRef = db.collection('daily_tasks').doc(oldDailyId);
+            batch.delete(oldRef);
+        }
+
+        // 2. Create New Daily Task if new date is set
+        if (newDateStr) {
+            const newDailyId = `${taskId}_${newDateStr}`;
+            const newRef = db.collection('daily_tasks').doc(newDailyId);
+
+            // Check max order logic or just push to end
+            // We can do a quick check or just use 9999
+            batch.set(newRef, {
+                id: newDailyId,
+                source_id: taskId,
+                source_type: 'BACKLOG',
+                target_date: newDateStr,
+                status: 'TODO',
+                created_at: new Date(),
+                title: taskData.title, // Use existing title
+                order: 9999,
+                is_highlighted: taskData.is_highlighted || false
+            });
         }
     }
 
-    await db.collection('backlog_items').doc(taskId).update(updatePayload);
+    await batch.commit();
     return { status: 'removed', taskId, scheduled_date: updatePayload.scheduled_date };
 }
 

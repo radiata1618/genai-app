@@ -321,10 +321,12 @@ function DashboardContent() {
 
     // Manual Reorder Handlers
     const [reorderMenuId, setReorderMenuId] = useState(null);
+    const [actionMenuTaskId, setActionMenuTaskId] = useState(null);
 
     const handleMove = async (task, direction, e) => {
         e.stopPropagation();
         setReorderMenuId(null);
+        setActionMenuTaskId(null);
 
         const index = tasks.findIndex(t => t.id === task.id);
         if (index === -1) return;
@@ -393,7 +395,7 @@ function DashboardContent() {
                     </div>
 
                     {/* Tasks List - Scrollable Area */}
-                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setReorderMenuId(null); }}>
+                    <div className="flex-1 bg-white rounded-xl shadow-sm border border-slate-200 overflow-hidden flex flex-col" onClick={() => { setReorderMenuId(null); setActionMenuTaskId(null); }}>
                         <div className="h-1 bg-indigo-500 w-full flex-shrink-0" />
 
                         <div className="overflow-y-auto flex-1 p-1 space-y-0.5 custom-scrollbar pb-20 md:pb-1">
@@ -517,8 +519,10 @@ function DashboardContent() {
                                                 <span className="text-slate-300 font-mono uppercase tracking-wider group-hover:text-slate-400 transition-colors">
                                                     {t.source_type}
                                                 </span>
-                                                {/* Action Buttons - Fixed Width for Alignment */}
-                                                <div className="flex items-center gap-1 transition-opacity w-[88px] flex-none justify-start">
+                                                {/* Action Buttons - Responsive */}
+
+                                                {/* Desktop: Icons */}
+                                                <div className="hidden md:flex items-center gap-1 transition-opacity w-[88px] flex-none justify-start">
                                                     <button
                                                         onClick={(e) => handleSkip(t.id, e)}
                                                         className="p-1.5 rounded-md text-slate-400 hover:text-slate-600 hover:bg-slate-100 transition-colors"
@@ -543,6 +547,47 @@ function DashboardContent() {
                                                         >
                                                             📅
                                                         </button>
+                                                    )}
+                                                </div>
+
+                                                {/* Mobile: 3-Dot Menu */}
+                                                <div className="md:hidden relative flex-none">
+                                                    <button
+                                                        onClick={(e) => {
+                                                            e.stopPropagation();
+                                                            setActionMenuTaskId(actionMenuTaskId === t.id ? null : t.id);
+                                                            setReorderMenuId(null); // Close other menu if open
+                                                        }}
+                                                        className={`p-1.5 rounded-md text-slate-400 transition-colors ${actionMenuTaskId === t.id ? 'bg-slate-100 text-slate-600' : ''}`}
+                                                    >
+                                                        <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                                            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M12 5v.01M12 12v.01M12 19v.01M12 6a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2zm0 7a1 1 0 110-2 1 1 0 010 2z" />
+                                                        </svg>
+                                                    </button>
+
+                                                    {actionMenuTaskId === t.id && (
+                                                        <div className="absolute right-0 top-8 w-40 bg-white border border-slate-200 shadow-xl rounded-lg z-[60] overflow-hidden animate-in fade-in zoom-in-95 duration-100 origin-top-right">
+                                                            <button
+                                                                onClick={(e) => { handleSkip(t.id, e); setActionMenuTaskId(null); }}
+                                                                className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50"
+                                                            >
+                                                                <span>⏭️</span> Skip
+                                                            </button>
+                                                            <button
+                                                                onClick={(e) => { handleHighlight(t.id, t.is_highlighted, e); setActionMenuTaskId(null); }}
+                                                                className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3 border-b border-slate-50"
+                                                            >
+                                                                <span>{t.is_highlighted ? '⭐' : '☆'}</span> {t.is_highlighted ? 'Unhighlight' : 'Highlight'}
+                                                            </button>
+                                                            {t.source_type === 'BACKLOG' && (
+                                                                <button
+                                                                    onClick={(e) => { openPostponeModal(t, e); setActionMenuTaskId(null); }}
+                                                                    className="w-full text-left px-4 py-3 text-sm text-slate-700 hover:bg-slate-50 flex items-center gap-3"
+                                                                >
+                                                                    <span>📅</span> Postpone
+                                                                </button>
+                                                            )}
+                                                        </div>
                                                     )}
                                                 </div>
                                             </div>

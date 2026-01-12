@@ -219,7 +219,12 @@ export default function AiChatPage() {
 
             if (res.ok) {
                 const data = await res.json();
-                setMessages(prev => [...prev, { role: "model", content: data.response, timestamp: new Date() }]);
+                setMessages(prev => [...prev, {
+                    role: "model",
+                    content: data.response,
+                    timestamp: new Date(),
+                    grounding_metadata: data.grounding_metadata
+                }]);
                 // Refresh sessions to update title/updated_at
                 fetchSessions();
             }
@@ -399,6 +404,45 @@ export default function AiChatPage() {
                                             </span>
                                         </div>
                                     </div>
+                                    {/* Grounding Metadata Display */}
+                                    {msg.grounding_metadata && (
+                                        <div className="mt-4 pt-4 border-t border-gray-100">
+                                            {/* Sources List */}
+                                            {msg.grounding_metadata.grounding_chunks && msg.grounding_metadata.grounding_chunks.length > 0 && (
+                                                <div className="mb-4">
+                                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sources</h4>
+                                                    <div className="flex flex-wrap gap-2">
+                                                        {msg.grounding_metadata.grounding_chunks.map((chunk, chunkIdx) => (
+                                                            chunk.web && (
+                                                                <a
+                                                                    key={chunkIdx}
+                                                                    href={chunk.web.uri}
+                                                                    target="_blank"
+                                                                    rel="noopener noreferrer"
+                                                                    className="flex items-center gap-2 bg-white border border-gray-200 hover:border-cyan-300 hover:bg-cyan-50 px-3 py-1.5 rounded-full text-xs transition-all shadow-sm max-w-full"
+                                                                >
+                                                                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-none text-[8px] font-bold text-gray-500 uppercase">
+                                                                        {chunk.web.domain ? chunk.web.domain[0] : "W"}
+                                                                    </div>
+                                                                    <span className="truncate max-w-[150px] sm:max-w-[200px] text-slate-700 font-medium">
+                                                                        {chunk.web.title || chunk.web.uri}
+                                                                    </span>
+                                                                </a>
+                                                            )
+                                                        ))}
+                                                    </div>
+                                                </div>
+                                            )}
+
+                                            {/* Google Search Widget (Search Entry Point) */}
+                                            {msg.grounding_metadata.search_entry_point && (
+                                                <div
+                                                    className="mt-2"
+                                                    dangerouslySetInnerHTML={{ __html: msg.grounding_metadata.search_entry_point.rendered_content }}
+                                                />
+                                            )}
+                                        </div>
+                                    )}
                                 </div>
                             )}
                         </div>
@@ -548,12 +592,14 @@ export default function AiChatPage() {
             </div>
 
             {/* Overlay for mobile */}
-            {mounted && isHistoryOpen && isMobile && (
-                <div
-                    className="fixed inset-0 bg-black/20 z-30 lg:hidden"
-                    onClick={() => setIsHistoryOpen(false)}
-                />
-            )}
-        </div>
+            {
+                mounted && isHistoryOpen && isMobile && (
+                    <div
+                        className="fixed inset-0 bg-black/20 z-30 lg:hidden"
+                        onClick={() => setIsHistoryOpen(false)}
+                    />
+                )
+            }
+        </div >
     );
 }
