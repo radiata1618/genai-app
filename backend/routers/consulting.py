@@ -901,95 +901,131 @@ async def consulting_sme_websocket(websocket: WebSocket):
              if context.get("topic"):
                  system_instruction += f"\n\nTopic: {context['topic']}"
 
-        # 2. Live API Connection
-        print(f"DEBUG: Connecting to Live API {MODEL_NAME}...", flush=True)
-        
-        config = types.LiveConnectConfig(
-            response_modalities=["AUDIO"], # Model requires AUDIO modality
-            system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-            # Key Feature: Enable Transcription to get text output from the Audio model
-            # This allows us to receive text almost simultaneously with audio.
-            # We will DISCARD the audio and only send the text to the user as requested.
-            output_audio_transcription=types.AudioTranscriptionConfig(),
-        )
-
-        async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:
-            print("DEBUG: Connected to Gemini Live API!", flush=True)
-            
-            # Send a primer message to establishing the session state like the debug script
+        # 2. Live API Connection Loop (KeepAlive)
+        while True:
             try:
-                print("DEBUG: Sending primer message...", flush=True)
-                await session.send(input=".", end_of_turn=True)
-                print("DEBUG: Primer sent.", flush=True)
+                print(f"{datetime.datetime.now()} DEBUG: Connecting to Live API {MODEL_NAME}...", flush=True)
+                
+                config = types.LiveConnectConfig(
+                    response_modalities=["AUDIO"], # Model requires AUDIO modality
+                    system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
+                    # Key Feature: Enable Transcription to get text output from the Audio model
+                    # This allows us to receive text almost simultaneously with audio.
+                    # We will DISCARD the audio and only send the text to the user as requested.
+                    output_audio_transcription=types.AudioTranscriptionConfig(),
+                    # Enable session resumption for stability (same as roleplay.py)
+                    session_resumption=types.SessionResumptionConfig(transparent=True)
+                )
+
+                async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:
+                    print(f"{datetime.datetime.now()} DEBUG: Connected to Gemini Live API!", flush=True)
+                    
+                    # 3. Concurrent Handling: Send (Audio) & Receive (Transcript)
+                    print(f"{datetime.datetime.now()} DEBUG: Starting bidirectional loops...", flush=True)
+
+
+                    # 3. Concurrent Handling: Send (Audio) & Receive (Transcript)
+                    
+                    async def send_audio_loop():
+                        print(f"{datetime.datetime.now()} DEBUG: send_audio_loop started", flush=True)
+                        try:
+                            while True:
+                                msg = await websocket.receive_json()
+                                if "audio" in msg:
+                                    # Frontend sends base64 PCM/WAV
+                                    data = base64.b64decode(msg["audio"])
+                                    
+                                    # Use send_realtime_input for low-latency audio streaming
+                                    # Wrap in types.Blob as required by the SDK
+                                    # Frontend provides PCM 16kHz usually
+                                    await session.send_realtime_input(
+                                        media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
+                                    )
+                        except WebSocketDisconnect:
+                            print("DEBUG: Client disconnected from send loop", flush=True)
+                            raise # Re-raise to signal exit
+                        except Exception as e:
+                            print(f"DEBUG: Send Loop Error: {e}", flush=True)
+                            # raise # Optional: Raise to restart session?
+                        finally:
+                            print(f"{datetime.datetime.now()} DEBUG: send_audio_loop finished", flush=True)
+                    
+                    async def receive_response_loop():
+                        print(f"{datetime.datetime.now()} DEBUG: receive_response_loop started", flush=True)
+                        transcript_buffer = ""
+                        try:
+                            async for response in session.receive():
+                                server_content = response.server_content
+                                if not server_content:
+                                    continue
+
+                                # Extract Transcription (The "Text" output)
+                                if hasattr(server_content, "output_transcription") and server_content.output_transcription:
+                                    part = server_content.output_transcription.text
+                                    if part:
+                                        transcript_buffer += part
+                                
+                                # Only send when the turn is complete to avoid fragmented UI bubbles
+                                if server_content.turn_complete:
+                                    if transcript_buffer.strip():
+                                        print(f"DEBUG: SME Transcript (Complete): {transcript_buffer}", flush=True)
+                                        await websocket.send_json({"text": transcript_buffer})
+                                    transcript_buffer = "" # Reset buffer
+                                    
+                        except Exception as e:
+                            print(f"{datetime.datetime.now()} DEBUG: Receive Loop Error: {e}", flush=True)
+                            traceback.print_exc()
+                        else:
+                            print(f"{datetime.datetime.now()} DEBUG: session.receive() iterator exhausted naturally.", flush=True)
+                        finally:
+                            print(f"{datetime.datetime.now()} DEBUG: receive_response_loop finished (Session Context Exited?)", flush=True)
+                            # If receive loop finishes, the session is seemingly over.
+                            # We should probably notify the client or just let the ws close.
+
+                    # Run loops
+                    # When send_audio_loop finishes (disconnect), we should cancel receive_loop
+                    send_task = asyncio.create_task(send_audio_loop())
+                    receive_task = asyncio.create_task(receive_response_loop())
+                    
+                    print("DEBUG: Waiting for tasks...", flush=True)
+                    done, pending = await asyncio.wait(
+                        [send_task, receive_task], 
+                        return_when=asyncio.FIRST_COMPLETED
+                    )
+                    print(f"DEBUG: Tasks completed. Done: {len(done)}, Pending: {len(pending)}", flush=True)
+                    
+                    for task in pending:
+                        task.cancel()
+                        try:
+                            await task
+                        except asyncio.CancelledError:
+                            pass
+                    
+                    # Check exit condition
+                    if send_task in done:
+                         # Client disconnected or error -> Exit
+                         try:
+                             send_task.result() # Log exception if any
+                         except WebSocketDisconnect:
+                             print("DEBUG: Client websocket disconnected. Exiting loop.")
+                             break
+                         except Exception as e:
+                             print(f"DEBUG: Client send loop error: {e}. Exiting.")
+                             break
+                         
+                         print("DEBUG: Send task finished without exception (strange). Exiting.")
+                         break
+
+                    if receive_task in done:
+                         print("DEBUG: Gemini receive loop ended. Reconnecting session...", flush=True)
+                         # Continue to next iteration of while True -> Reconnect
+                         await asyncio.sleep(0.1) # Small delay
+            
             except Exception as e:
-                print(f"DEBUG: Failed to send primer: {e}", flush=True)
-
-
-            # 3. Concurrent Handling: Send (Audio) & Receive (Transcript)
-            
-            async def send_audio_loop():
-                print("DEBUG: send_audio_loop started", flush=True)
-                try:
-                    while True:
-                        msg = await websocket.receive_json()
-                        if "audio" in msg:
-                            # Frontend sends base64 PCM/WAV
-                            data = base64.b64decode(msg["audio"])
-                            
-                            # Use send_realtime_input for low-latency audio streaming
-                            # Wrap in types.Blob as required by the SDK
-                            # Frontend provides PCM 16kHz usually
-                            await session.send_realtime_input(
-                                media=types.Blob(data=data, mime_type="audio/pcm;rate=16000")
-                            )
-                except WebSocketDisconnect:
-                    print("DEBUG: Client disconnected from send loop", flush=True)
-                except Exception as e:
-                    print(f"DEBUG: Send Loop Error: {e}", flush=True)
-                finally:
-                    print("DEBUG: send_audio_loop finished", flush=True)
-            
-            async def receive_response_loop():
-                print("DEBUG: receive_response_loop started", flush=True)
-                transcript_buffer = ""
-                try:
-                    async for response in session.receive():
-                        server_content = response.server_content
-                        if not server_content:
-                            continue
-
-                        # Extract Transcription (The "Text" output)
-                        if hasattr(server_content, "output_transcription") and server_content.output_transcription:
-                            part = server_content.output_transcription.text
-                            if part:
-                                transcript_buffer += part
-                        
-                        # Only send when the turn is complete to avoid fragmented UI bubbles
-                        if server_content.turn_complete:
-                            if transcript_buffer.strip():
-                                print(f"DEBUG: SME Transcript (Complete): {transcript_buffer}", flush=True)
-                                await websocket.send_json({"text": transcript_buffer})
-                            transcript_buffer = "" # Reset buffer
-                            
-                except Exception as e:
-                    print(f"DEBUG: Receive Loop Error: {e}", flush=True)
-                finally:
-                    print("DEBUG: receive_response_loop finished", flush=True)
-
-            # Run loops
-            # When send_audio_loop finishes (disconnect), we should cancel receive_loop
-            send_task = asyncio.create_task(send_audio_loop())
-            receive_task = asyncio.create_task(receive_response_loop())
-            
-            print("DEBUG: Waiting for tasks...", flush=True)
-            done, pending = await asyncio.wait(
-                [send_task, receive_task], 
-                return_when=asyncio.FIRST_COMPLETED
-            )
-            print(f"DEBUG: Tasks completed. Done: {len(done)}, Pending: {len(pending)}", flush=True)
-            
-            for task in pending:
-                task.cancel()
+                print(f"Gemini Live Connection Error: {e}")
+                traceback.print_exc()
+                print("DEBUG: Retrying connection in 1s...")
+                await asyncio.sleep(1)
 
     except Exception as e:
         print(f"SME WebSocket Error: {e}")
