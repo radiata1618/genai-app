@@ -4,6 +4,18 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MobileMenuButton from "../../components/MobileMenuButton";
 
+const GoogleSearchWidget = ({ html }) => {
+    // Simple iframe to isolate styles
+    return (
+        <iframe
+            srcDoc={html}
+            className="w-full border-none overflow-hidden"
+            style={{ height: '140px' }} // Approximate height for the widget (chips + carousel)
+            title="Google Search Grounding"
+        />
+    );
+};
+
 export default function AiChatPage() {
     const [sessions, setSessions] = useState([]);
     const [selectedSessionId, setSelectedSessionId] = useState(null);
@@ -399,50 +411,46 @@ export default function AiChatPage() {
                                             >
                                                 <span className="text-lg">�</span>
                                             </button>
-                                            <span className="text-[10px] text-gray-300 ml-auto">
-                                                {msg.timestamp && new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                                            </span>
                                         </div>
-                                    </div>
-                                    {/* Grounding Metadata Display */}
-                                    {msg.grounding_metadata && (
-                                        <div className="mt-4 pt-4 border-t border-gray-100">
-                                            {/* Sources List */}
-                                            {msg.grounding_metadata.grounding_chunks && msg.grounding_metadata.grounding_chunks.length > 0 && (
-                                                <div className="mb-4">
-                                                    <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sources</h4>
-                                                    <div className="flex flex-wrap gap-2">
-                                                        {msg.grounding_metadata.grounding_chunks.map((chunk, chunkIdx) => (
-                                                            chunk.web && (
-                                                                <a
-                                                                    key={chunkIdx}
-                                                                    href={chunk.web.uri}
-                                                                    target="_blank"
-                                                                    rel="noopener noreferrer"
-                                                                    className="flex items-center gap-2 bg-white border border-gray-200 hover:border-cyan-300 hover:bg-cyan-50 px-3 py-1.5 rounded-full text-xs transition-all shadow-sm max-w-full"
-                                                                >
-                                                                    <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-none text-[8px] font-bold text-gray-500 uppercase">
-                                                                        {chunk.web.domain ? chunk.web.domain[0] : "W"}
-                                                                    </div>
-                                                                    <span className="truncate max-w-[150px] sm:max-w-[200px] text-slate-700 font-medium">
-                                                                        {chunk.web.title || chunk.web.uri}
-                                                                    </span>
-                                                                </a>
-                                                            )
-                                                        ))}
+                                        {/* Grounding Metadata Display */}
+                                        {msg.grounding_metadata && (
+                                            <div className="mt-4 pt-4 border-t border-gray-100">
+                                                {/* Sources List */}
+                                                {msg.grounding_metadata.grounding_chunks && msg.grounding_metadata.grounding_chunks.length > 0 && (
+                                                    <div className="mb-4">
+                                                        <h4 className="text-xs font-bold text-slate-500 uppercase tracking-wider mb-2">Sources</h4>
+                                                        <div className="flex flex-wrap gap-2">
+                                                            {msg.grounding_metadata.grounding_chunks.map((chunk, chunkIdx) => (
+                                                                chunk.web && (
+                                                                    <a
+                                                                        key={chunkIdx}
+                                                                        href={chunk.web.uri}
+                                                                        target="_blank"
+                                                                        rel="noopener noreferrer"
+                                                                        className="flex items-center gap-2 bg-white border border-gray-200 hover:border-cyan-300 hover:bg-cyan-50 px-3 py-1.5 rounded-full text-xs transition-all shadow-sm max-w-full"
+                                                                    >
+                                                                        <div className="w-4 h-4 rounded-full bg-gray-100 flex items-center justify-center flex-none text-[8px] font-bold text-gray-500 uppercase">
+                                                                            {chunk.web.domain ? chunk.web.domain[0] : "W"}
+                                                                        </div>
+                                                                        <span className="truncate max-w-[150px] sm:max-w-[200px] text-slate-700 font-medium">
+                                                                            {chunk.web.title || chunk.web.uri}
+                                                                        </span>
+                                                                    </a>
+                                                                )
+                                                            ))}
+                                                        </div>
                                                     </div>
-                                                </div>
-                                            )}
+                                                )}
 
-                                            {/* Google Search Widget (Search Entry Point) */}
-                                            {msg.grounding_metadata.search_entry_point && (
-                                                <div
-                                                    className="mt-2"
-                                                    dangerouslySetInnerHTML={{ __html: msg.grounding_metadata.search_entry_point.rendered_content }}
-                                                />
-                                            )}
-                                        </div>
-                                    )}
+                                                {/* Google Search Widget (Search Entry Point) */}
+                                                {msg.grounding_metadata.search_entry_point && (
+                                                    <div className="mt-2 w-full">
+                                                        <GoogleSearchWidget html={msg.grounding_metadata.search_entry_point.rendered_content} />
+                                                    </div>
+                                                )}
+                                            </div>
+                                        )}
+                                    </div>
                                 </div>
                             )}
                         </div>
