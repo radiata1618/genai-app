@@ -8,14 +8,19 @@ from google.genai import types
 from database import get_db
 # Helper to fetch context
 from routers.english import PreparationTask, Phrase
-from services.ai_shared import get_genai_client
+# from services.ai_shared import get_genai_client
 
 router = APIRouter(
     prefix="/roleplay",
     tags=["roleplay"],
 )
 
-client = get_genai_client()
+client = genai.Client(
+    vertexai=True,
+    project=os.getenv("PROJECT_ID"),
+    location=os.getenv("LOCATION", "us-central1"),
+    http_options={'api_version': 'v1beta1'}
+)
 
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
@@ -64,13 +69,13 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Best Practice: Enable session_resumption
                 print(f"DEBUG: Connecting to Live API...", flush=True)
 
-                client = get_genai_client()
+                # client = get_genai_client()
                 async with client.aio.live.connect(
                     model=config["model"],
                     config=types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        # session_resumption=types.SessionResumptionConfig(transparent=True) # Causing 1007 error in Prod?
+                        session_resumption=types.SessionResumptionConfig(transparent=True)
                     )
                 ) as session:
                     print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
