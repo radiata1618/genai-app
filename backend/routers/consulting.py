@@ -533,24 +533,20 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
         api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
         p_id = os.getenv("PROJECT_ID")
         p_loc = os.getenv("LOCATION", "us-central1")
+        # p_id = os.getenv("PROJECT_ID")
+        # p_loc = os.getenv("LOCATION", "us-central1")
         
         custom_client = None
         auth_mode = "Unknown"
         
-        # 1. Vertex AI with API Key
-        if not custom_client and api_key:
-            try:
-                custom_client = genai.Client(
-                    vertexai=True,
-                    api_key=api_key.strip()
-                )
-                auth_mode = "Vertex AI (API Key)"
-            except Exception as e:
-                print(f"DEBUGGING: Failed Init Vertex+APIKey: {e}")
-
-        # 2. Vertex AI with Project ID (ADC)
+        # 1. Vertex AI with Project ID (ADC) - PRIORITY 1 (Proven to work in debug script)
+        # FORCE HARDCODE for DEBUG
+        p_id = "trial-project-ushikoshi" 
+        p_loc = "us-central1"
+        
         if not custom_client and p_id:
             try:
+                print(f"DEBUGGING: Attempting Vertex AI with ADC (Project={p_id}, Location={p_loc})...")
                 custom_client = genai.Client(
                     vertexai=True,
                     project=p_id,
@@ -560,9 +556,22 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
             except Exception as e:
                 print(f"DEBUGGING: Failed Init Vertex+ADC: {e}")
 
-        # 3. AI Studio with API Key
+        # 2. Vertex AI with API Key - PRIORITY 2
         if not custom_client and api_key:
             try:
+                print("DEBUGGING: Attempting Vertex AI with API Key...")
+                custom_client = genai.Client(
+                    vertexai=True,
+                    api_key=api_key.strip()
+                )
+                auth_mode = "Vertex AI (API Key)"
+            except Exception as e:
+                print(f"DEBUGGING: Failed Init Vertex+APIKey: {e}")
+
+        # 3. AI Studio with API Key - PRIORITY 3
+        if not custom_client and api_key:
+            try:
+                print("DEBUGGING: Attempting AI Studio with API Key...")
                 custom_client = genai.Client(
                     api_key=api_key.strip()
                 )
@@ -596,8 +605,26 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
         """
         
         # Create Content explicitly
-        print(f"DEBUGGING: Creating Part from URI: {gcs_uri}, Mime: {file_type}")
-        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=file_type)
+        # DEBUG: Switching to Inline Bytes to bypass potential GCS permission issues with Vertex AI
+        print(f"DEBUGGING: Downloading bytes from GCS: {gcs_uri} to send inline...")
+        
+        try:
+            # Parse GCS URI
+            gcs_path_parts = gcs_uri.replace("gs://", "").split("/", 1)
+            bucket_name = gcs_path_parts[0]
+            blob_name = gcs_path_parts[1]
+            
+            storage_client = get_storage_client()
+            bucket = storage_client.bucket(bucket_name)
+            blob = bucket.blob(blob_name)
+            file_bytes = blob.download_as_bytes()
+            
+            file_part = types.Part.from_bytes(data=file_bytes, mime_type=file_type)
+        except Exception as dl_err:
+            print(f"CRITICAL: Failed to download bytes for inline sending: {dl_err}")
+            # Fallback to URI if download fails (unlikely if GCS client works)
+            file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=file_type)
+
         text_part = types.Part.from_text(text=prompt_text)
         
         user_content = types.Content(
@@ -605,12 +632,12 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
             parts=[text_part, file_part]
         )
         
-        print(f"DEBUGGING: Calling generate_content with model='gemini-2.5-flash-lite' and explicit Content structure...")
+        print(f"DEBUGGING: Calling generate_content with model='gemini-2.5-flash-lite' (Inline Bytes)...")
         
         start_time = time.time()
         
         try:
-            # Using default timeout logic (aligned with english.py)
+            # Using default timeout (proven to work in isolate_gemini_call.py with ADC)
             response = await custom_client.aio.models.generate_content(
                 model="gemini-2.5-flash-lite", 
                 contents=[user_content],
@@ -624,7 +651,7 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
              elapsed = time.time() - start_time
              print(f"DEBUGGING: API Call Failed after {elapsed:.2f}s. Error: {api_err}")
              raise api_err
-
+        
         extraction = json.loads(response.text)
         title = extraction.get("title", "Untitled")
         summary = extraction.get("summary", "")
