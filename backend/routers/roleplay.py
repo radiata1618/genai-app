@@ -34,6 +34,7 @@ async def websocket_endpoint(websocket: WebSocket):
     }
     
     # 1. Initial Setup Phase
+    current_session_handle = None
     try:
         # Wait for client to send configuration/context
         # Message format: { "type": "setup", "config": { ... }, "context": { ... } }
@@ -52,6 +53,11 @@ async def websocket_endpoint(websocket: WebSocket):
              if context.get("phrases"):
                  phrases_str = ", ".join([p.get('english', '') for p in context['phrases']])
                  system_instruction += f"\n\nTarget Phrases to use/check: {phrases_str}"
+             
+             # Restore session handle if provided by client
+             if init_data.get("session_handle"):
+                 current_session_handle = init_data.get("session_handle")
+                 print(f"DEBUG: Restoring session from client handle: {current_session_handle[:10]}...", flush=True)
 
     except Exception as e:
         print(f"Error during setup: {e}")
@@ -62,6 +68,8 @@ async def websocket_endpoint(websocket: WebSocket):
     try:
         # await websocket.accept() - ALREADY ACCEPTED AT START
         
+        # current_session_handle is now initialized above if provided
+
         while True:
             # print("DEBUG: Establishing new Gemini Live API session...", flush=True)
             try:
@@ -69,14 +77,23 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Best Practice: Enable session_resumption
                 print(f"DEBUG: Connecting to Live API...", flush=True)
 
-                # client = get_genai_client()
-                async with client.aio.live.connect(
-                    model=config["model"],
-                    config=types.LiveConnectConfig(
+                if current_session_handle:
+                    print(f"DEBUG: Resuming session with handle: {current_session_handle[:10]}...", flush=True)
+                    session_config = types.LiveConnectConfig(
+                        response_modalities=config["response_modalities"],
+                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle)
+                    )
+                else:
+                    session_config = types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
                         session_resumption=types.SessionResumptionConfig(transparent=True)
                     )
+
+                # client = get_genai_client()
+                async with client.aio.live.connect(
+                    model=config["model"],
+                    config=session_config
                 ) as session:
                     print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
 
@@ -84,12 +101,26 @@ async def websocket_endpoint(websocket: WebSocket):
                     
                     # Task to receive from Gemini and send to Client
                     async def send_to_client():
+                        nonlocal current_session_handle
                         print("DEBUG: Starting send_to_client loop", flush=True)
                         try:
                             # Add explicit iterator for debugging? No, keep simple.
                             async for response in session.receive():
                                 # print(f"DEBUG: Session received response: {response}", flush=True) 
                                 server_content = response.server_content
+
+                                # Check for Session Resumption Update
+                                if response.session_resumption_update:
+                                    # print(f"DEBUG: Received session resumption update: {response.session_resumption_update}", flush=True)
+                                    if response.session_resumption_update.new_handle:
+                                        current_session_handle = response.session_resumption_update.new_handle
+                                        print(f"DEBUG: Updated Session Handle: {current_session_handle[:10]}...", flush=True)
+                                        # Sync handle with Client
+                                        await websocket.send_json({
+                                            "type": "session_update",
+                                            "session_handle": current_session_handle
+                                        })
+
                                 if server_content is None:
                                     # Could be other types of messages? tool_call etc?
                                     # print(f"DEBUG: Non-content response: {response}", flush=True)

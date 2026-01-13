@@ -3,12 +3,28 @@ import React, { useState, useEffect, useRef } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MobileMenuButton from "../../components/MobileMenuButton";
+import Link from "next/link";
 
 const GoogleSearchWidget = ({ html }) => {
-    // Simple iframe to isolate styles
+    // Inject base target="_blank" to ensure links open in new tab (avoid x-frame-options issues)
+    const safeHtml = `
+        <!DOCTYPE html>
+        <html>
+            <head>
+                <base target="_blank">
+                <style>
+                    body { margin: 0; padding: 0; font-family: sans-serif; }
+                </style>
+            </head>
+            <body>
+                ${html}
+            </body>
+        </html>
+    `;
+
     return (
         <iframe
-            srcDoc={html}
+            srcDoc={safeHtml}
             className="w-full border-none overflow-hidden"
             style={{ height: '140px' }} // Approximate height for the widget (chips + carousel)
             title="Google Search Grounding"
@@ -24,7 +40,9 @@ export default function AiChatPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
     const [selectedImage, setSelectedImage] = useState(null); // {data, mimeType}
+
     const [useGrounding, setUseGrounding] = useState(true);
+    const [useRag, setUseRag] = useState(false);
     const [isRecording, setIsRecording] = useState(false);
 
     // UI State
@@ -225,7 +243,8 @@ export default function AiChatPage() {
                     model: selectedModel,
                     image: currentImage?.data,
                     mimeType: currentImage?.mimeType,
-                    use_grounding: useGrounding
+                    use_grounding: useGrounding,
+                    use_rag: useRag
                 }),
             });
 
@@ -278,32 +297,49 @@ export default function AiChatPage() {
                             <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
                         </select>
 
-                        <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 whitespace-nowrap bg-gray-50 px-2 sm:px-3 py-1.5 rounded-lg border border-gray-100">
-                            <span className="hidden sm:inline">Google 検索</span>
-                            <button
-                                onClick={() => setUseGrounding(!useGrounding)}
-                                className={`w-8 h-4 rounded-full relative transition-colors ${useGrounding ? "bg-cyan-500" : "bg-gray-300"}`}
-                            >
-                                <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${useGrounding ? "left-4.5" : "left-0.5"}`} />
-                            </button>
-                        </div>
+                        <button
+                            onClick={() => setUseGrounding(!useGrounding)}
+                            className={`w-8 h-4 rounded-full relative transition-colors ${useGrounding ? "bg-cyan-500" : "bg-gray-300"}`}
+                        >
+                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${useGrounding ? "left-4.5" : "left-0.5"}`} />
+                        </button>
                     </div>
 
-                    <button
-                        onClick={() => setIsHistoryOpen(!isHistoryOpen)}
-                        className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${isHistoryOpen ? "text-cyan-600 bg-cyan-50" : "text-gray-400"}`}
-                        title="History"
-                    >
-                        <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
-                    </button>
+                    <div className="flex items-center gap-2 text-xs font-semibold text-slate-500 whitespace-nowrap bg-gray-50 px-2 sm:px-3 py-1.5 rounded-lg border border-gray-100">
+                        <span className="hidden sm:inline">社内知識 (RAG)</span>
+                        <button
+                            onClick={() => setUseRag(!useRag)}
+                            className={`w-8 h-4 rounded-full relative transition-colors ${useRag ? "bg-emerald-500" : "bg-gray-300"}`}
+                        >
+                            <div className={`absolute top-0.5 w-3 h-3 bg-white rounded-full transition-all ${useRag ? "left-4.5" : "left-0.5"}`} />
+                        </button>
+                    </div>
 
-                    <button
-                        onClick={handleCreateSession}
-                        className="p-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
-                        title="New Chat"
-                    >
-                        <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
-                    </button>
+                    <div className="flex items-center gap-2">
+                        <button
+                            onClick={() => setIsHistoryOpen(!isHistoryOpen)}
+                            className={`p-2 rounded-lg hover:bg-gray-100 transition-colors ${isHistoryOpen ? "text-cyan-600 bg-cyan-50" : "text-gray-400"}`}
+                            title="History"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 8v4l3 3m6-3a9 9 0 11-18 0 9 9 0 0118 0z" /></svg>
+                        </button>
+
+                        <Link
+                            href="/ai-chat/settings"
+                            className="p-2 rounded-lg hover:bg-gray-100 transition-colors text-gray-400 hover:text-cyan-600"
+                            title="Settings"
+                        >
+                            <svg className="w-6 h-6" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M10.325 4.317c.426-1.756 2.924-1.756 3.35 0a1.724 1.724 0 002.573 1.066c1.543-.94 3.31.826 2.37 2.37a1.724 1.724 0 001.065 2.572c1.756.426 1.756 2.924 0 3.35a1.724 1.724 0 00-1.066 2.573c.94 1.543-.826 3.31-2.37 2.37a1.724 1.724 0 00-2.572 1.065c-.426 1.756-2.924 1.756-3.35 0a1.724 1.724 0 00-2.573-1.066c-1.543.94-3.31-.826-2.37-2.37a1.724 1.724 0 00-1.065-2.572c-1.756-.426-1.756-2.924 0-3.35a1.724 1.724 0 001.066-2.573c-.94-1.543.826-3.31 2.37-2.37.996.608 2.296.07 2.572-1.065z" /><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 12a3 3 0 11-6 0 3 3 0 016 0z" /></svg>
+                        </Link>
+
+                        <button
+                            onClick={handleCreateSession}
+                            className="p-2 bg-cyan-600 text-white rounded-lg hover:bg-cyan-700"
+                            title="New Chat"
+                        >
+                            <svg className="w-5 h-5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M12 4v16m8-8H4" /></svg>
+                        </button>
+                    </div>
                 </div>
 
                 {/* Messages Area */}
@@ -409,7 +445,7 @@ export default function AiChatPage() {
                                                 className="text-gray-400 hover:text-cyan-600 transition-colors p-1.5 rounded-full hover:bg-gray-100"
                                                 title="Copy"
                                             >
-                                                <span className="text-lg">�</span>
+                                                <span className="text-lg"></span>
                                             </button>
                                         </div>
                                         {/* Grounding Metadata Display */}
@@ -539,7 +575,6 @@ export default function AiChatPage() {
                 </div>
             </div>
 
-            {/* Right Sidebar (History) */}
             <div className={`
                 fixed inset-y-0 right-0 z-40 bg-white border-l border-gray-100 transform transition-all duration-300 ease-in-out shadow-2xl lg:shadow-none
                 lg:relative lg:translate-x-0
@@ -608,6 +643,6 @@ export default function AiChatPage() {
                     />
                 )
             }
-        </div >
+        </div>
     );
 }

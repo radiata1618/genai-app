@@ -44,6 +44,13 @@ export default function ConsultingIndexPage() {
             description: "Manage data ingestion batches.",
             icon: "📦",
             color: "from-slate-500 to-gray-500"
+        },
+        {
+            name: "Knowledge Base",
+            path: "/consulting/knowledge",
+            description: "Manage and search internal documents (RAG).",
+            icon: "📚",
+            color: "from-teal-500 to-green-500"
         }
     ];
 

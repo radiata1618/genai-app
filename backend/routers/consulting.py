@@ -273,6 +273,27 @@ class GenerateSignedUrlRequest(BaseModel):
 class RetryBatchRequest(BaseModel):
     item_ids: Optional[List[str]] = None 
 
+# --- Knowledge RAG Models ---
+
+class KnowledgeItem(BaseModel):
+    id: str
+    title: str
+    summary: str
+    content_text: str
+    # embedding is internal
+    gcs_uri: str
+    file_type: str
+    created_at: datetime.datetime
+    signed_url: Optional[str] = None
+
+class KnowledgeUploadResponse(BaseModel):
+    id: str
+    message: str
+
+class KnowledgeListResponse(BaseModel):
+    items: List[KnowledgeItem]
+    next_page_token: Optional[str] = None
+
 # --- Endpoints ---
 
 @router.get("/consulting/files")
@@ -482,6 +503,365 @@ async def cancel_batch(batch_id: str):
         batch_ref = db.collection(BATCH_COLLECTION_NAME).document(batch_id)
         batch_ref.update({"status": "cancelling"})
         return {"message": "Cancellation requested"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Knowledge RAG Endpoints ---
+
+async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
+    """
+    Async worker to process uploaded knowledge file:
+    1. Extract info using Gemini 2.5 Flash Lite
+    2. Vectorize text using Gemini Embedding 001
+    3. Store in Firestore
+    """
+    print(f"DEBUG: Starting Knowledge Processing for {doc_id} ({gcs_uri})")
+    db = get_firestore_client()
+    collection_name = os.getenv("FIRESTORE_COLLECTION_KNOWLEDGE", "consulting_knowledge")
+    doc_ref = db.collection(collection_name).document(doc_id)
+    
+    try:
+        doc_ref.update({"status": "processing"})
+        
+        # 1. Extraction with Gemini 2.5 Flash Lite
+        print(f"DEBUGGING: Initializing Custom GenAI client for {doc_id} to ensure correct Auth")
+        
+        # Mirroring logic from ai_shared.py
+        api_key = os.getenv("GOOGLE_CLOUD_API_KEY")
+        p_id = os.getenv("PROJECT_ID")
+        p_loc = os.getenv("LOCATION", "us-central1")
+        
+        custom_client = None
+        auth_mode = "Unknown"
+        
+        # 1. Vertex AI with API Key
+        if not custom_client and api_key:
+            try:
+                custom_client = genai.Client(
+                    vertexai=True,
+                    api_key=api_key.strip()
+                )
+                auth_mode = "Vertex AI (API Key)"
+            except Exception as e:
+                print(f"DEBUGGING: Failed Init Vertex+APIKey: {e}")
+
+        # 2. Vertex AI with Project ID (ADC)
+        if not custom_client and p_id:
+            try:
+                custom_client = genai.Client(
+                    vertexai=True,
+                    project=p_id,
+                    location=p_loc
+                )
+                auth_mode = f"Vertex AI (ADC, Project={p_id})"
+            except Exception as e:
+                print(f"DEBUGGING: Failed Init Vertex+ADC: {e}")
+
+        # 3. AI Studio with API Key
+        if not custom_client and api_key:
+            try:
+                custom_client = genai.Client(
+                    api_key=api_key.strip()
+                )
+                auth_mode = "AI Studio (API Key)"
+            except Exception as e:
+                print(f"DEBUGGING: Failed Init AI Studio: {e}")
+        
+        if not custom_client:
+             # Fallback to shared
+             print("DEBUGGING: Fallback to shared client (Auth failed locally)")
+             custom_client = get_genai_client()
+             auth_mode = "Shared Client (Fallback)"
+
+        print(f"DEBUGGING: Client initialized. Mode: {auth_mode}")
+        
+        # Prompt for extraction
+        prompt_text = """
+        Analyze the attached document/image for knowledge retrieval purposes.
+        1. Create a concise **Title** (max 10 words).
+        2. Create a **Summary** (max 2-3 sentences).
+        3. Extract the **Full Content** or describe the visual content in detail (if image). 
+           - For charts/graphs/images: Describe the visual structure, key data points, and insights in detail.
+           - For text documents: Extract the key full text content.
+           
+        Return as JSON:
+        {
+            "title": "...",
+            "summary": "...",
+            "content_text": "..."
+        }
+        """
+        
+        # Create Content explicitly
+        print(f"DEBUGGING: Creating Part from URI: {gcs_uri}, Mime: {file_type}")
+        file_part = types.Part.from_uri(file_uri=gcs_uri, mime_type=file_type)
+        text_part = types.Part.from_text(text=prompt_text)
+        
+        user_content = types.Content(
+            role="user",
+            parts=[text_part, file_part]
+        )
+        
+        print(f"DEBUGGING: Calling generate_content with model='gemini-2.5-flash-lite' and explicit Content structure...")
+        
+        start_time = time.time()
+        
+        try:
+            # Using default timeout logic (aligned with english.py)
+            response = await custom_client.aio.models.generate_content(
+                model="gemini-2.5-flash-lite", 
+                contents=[user_content],
+                config=types.GenerateContentConfig(
+                    response_mime_type="application/json"
+                )
+            )
+            elapsed = time.time() - start_time
+            print(f"DEBUGGING: generate_content response received in {elapsed:.2f}s. Status text len: {len(response.text) if response.text else 0}")
+        except Exception as api_err:
+             elapsed = time.time() - start_time
+             print(f"DEBUGGING: API Call Failed after {elapsed:.2f}s. Error: {api_err}")
+             raise api_err
+
+        extraction = json.loads(response.text)
+        title = extraction.get("title", "Untitled")
+        summary = extraction.get("summary", "")
+        content_text = extraction.get("content_text", "")
+        
+        # 2. Vectorization (Text Only)
+        # Combine title, summary, and content for rich vector
+        text_to_embed = f"Title: {title}\nSummary: {summary}\nContent: {content_text}"
+        
+        print(f"DEBUGGING: Embed Text Length: {len(text_to_embed)}. Calling embed_content...")
+        
+        # Use local client for embedding too for consistency
+        embed_response = await custom_client.aio.models.embed_content(
+            model="models/gemini-embedding-001", 
+            contents=text_to_embed
+        )
+        embedding_vector = embed_response.embeddings[0].values
+        print(f"DEBUGGING: Embedding received. Vector size: {len(embedding_vector)}")
+        
+        # 3. Store in Firestore
+        doc_ref.update({
+            "status": "completed",
+            "title": title,
+            "summary": summary,
+            "content_text": content_text,
+            "embedding": Vector(embedding_vector),
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+        print(f"DEBUG: Knowledge Processing Completed for {doc_id}")
+
+    except Exception as e:
+        import traceback
+        traceback_str = traceback.format_exc()
+        print(f"CRITICAL ERROR in process_knowledge_worker for {doc_id}: {e}")
+        print(f"TRACEBACK:\n{traceback_str}")
+        doc_ref.update({"status": "failed", "error": f"{str(e)}"})
+
+@router.post("/consulting/knowledge/upload")
+async def upload_knowledge(
+    background_tasks: BackgroundTasks,
+    file: UploadFile = File(...)
+):
+    try:
+        bucket_name = os.getenv("GCS_BUCKET_KNOWLEDGE", "genai-app-knowledge") # Default or Env
+        collection_name = os.getenv("FIRESTORE_COLLECTION_KNOWLEDGE", "consulting_knowledge")
+        
+        # 1. Upload to GCS
+        content = await file.read()
+        filename = f"{uuid.uuid4()}_{file.filename}"
+        filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        
+        g_client = get_storage_client()
+        # Ensure bucket exists or use main bucket if specific one not set up
+        # For safety in this environment, let's use the main GCS_BUCKET_NAME but with a subfolder
+        # unless GCS_BUCKET_KNOWLEDGE is explicitly set and different.
+        target_bucket_name = bucket_name if bucket_name != "genai-app-knowledge" else GCS_BUCKET_NAME
+        
+        bucket = g_client.bucket(target_bucket_name)
+        blob = bucket.blob(f"knowledge/{filename}")
+        blob.upload_from_string(content, content_type=file.content_type)
+        GCS_URI = f"gs://{target_bucket_name}/knowledge/{filename}"
+        
+        # 2. Create Initial Firestore Record
+        db = get_firestore_client()
+        doc_ref = db.collection(collection_name).document()
+        doc_id = doc_ref.id
+        
+        doc_ref.set({
+            "id": doc_id,
+            "gcs_uri": GCS_URI,
+            "original_filename": file.filename,
+            "file_type": file.content_type,
+            "status": "pending",
+            "created_at": firestore.SERVER_TIMESTAMP
+        })
+        
+        # 3. Trigger Async Processing
+        background_tasks.add_task(process_knowledge_worker, doc_id, GCS_URI, file.content_type)
+        
+        return {"id": doc_id, "message": "Upload started"}
+        
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/consulting/knowledge/{doc_id}")
+async def delete_knowledge(doc_id: str):
+    try:
+        db = get_firestore_client()
+        collection_name = os.getenv("FIRESTORE_COLLECTION_KNOWLEDGE", "consulting_knowledge")
+        doc_ref = db.collection(collection_name).document(doc_id)
+        
+        doc = doc_ref.get()
+        if not doc.exists:
+            raise HTTPException(status_code=404, detail="Knowledge item not found")
+        
+        data = doc.to_dict()
+        gcs_uri = data.get("gcs_uri")
+        
+        # Delete from GCS
+        if gcs_uri and gcs_uri.startswith("gs://"):
+            try:
+                g_client = get_storage_client()
+                # Parse gs://bucket/path
+                parts = gcs_uri.replace("gs://", "").split("/", 1)
+                if len(parts) == 2:
+                    bucket_name, blob_name = parts
+                    bucket = g_client.bucket(bucket_name)
+                    blob = bucket.blob(blob_name)
+                    blob.delete()
+            except Exception as e:
+                print(f"GCS Delete Warning: {e}")
+        
+        # Delete from Firestore
+        doc_ref.delete()
+        
+        return {"message": "Deleted successfully"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+def generate_signed_url(gcs_uri: str) -> str:
+    """Generates a v4 signed URL for the given GCS URI."""
+    try:
+        if not gcs_uri or not gcs_uri.startswith("gs://"):
+            return ""
+        
+        parts = gcs_uri.replace("gs://", "").split("/", 1)
+        if len(parts) != 2:
+            return ""
+            
+        bucket_name, blob_name = parts
+        g_client = get_storage_client()
+        bucket = g_client.bucket(bucket_name)
+        blob = bucket.blob(blob_name)
+        
+        url = blob.generate_signed_url(
+            version="v4",
+            expiration=datetime.timedelta(minutes=15),
+            method="GET",
+        )
+        return url
+    except Exception as e:
+        print(f"Signed URL Gen Error: {e}")
+        return ""
+
+@router.get("/consulting/knowledge")
+async def list_knowledge(limit: int = 50):
+    try:
+        db = get_firestore_client()
+        collection_name = os.getenv("FIRESTORE_COLLECTION_KNOWLEDGE", "consulting_knowledge")
+        docs = db.collection(collection_name).order_by("created_at", direction=firestore.Query.DESCENDING).limit(limit).stream()
+        
+        items = []
+        for d in docs:
+            data = d.to_dict()
+            gcs_uri = data.get("gcs_uri", "")
+            signed_url = ""
+            if gcs_uri:
+                signed_url = generate_signed_url(gcs_uri)
+
+            items.append({
+                "id": d.id,
+                "title": data.get("title", "Processing..."),
+                "summary": data.get("summary", ""),
+                "content_text": data.get("content_text", ""),
+                "gcs_uri": gcs_uri,
+                "file_type": data.get("file_type"),
+                "status": data.get("status"),
+                "created_at": data.get("created_at"),
+                "signed_url": signed_url
+            })
+        return {"items": items}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+class KnowledgeSearchRequest(BaseModel):
+    query: str
+    top_k: int = 3
+
+def search_knowledge_db(vector: List[float], top_k: int = 3) -> List[Dict[str, Any]]:
+    """Searches Consulting Knowledge Firestore using Vector Search."""
+    try:
+        db = get_firestore_client()
+        collection_name = os.getenv("FIRESTORE_COLLECTION_KNOWLEDGE", "consulting_knowledge")
+        collection = db.collection(collection_name)
+        
+        # Ensure Field Config exists/is created. 
+        # For now, assuming index exists or generic collection crawl. 
+        # Unlike 'slides', this is a new collection. 
+        # Using vector_query requires an index.
+        
+        vector_query = collection.find_nearest(
+            vector_field="embedding",
+            query_vector=Vector(vector),
+            distance_measure=firestore.VectorQuery.DistanceMeasure.COSINE,
+            limit=top_k
+        )
+        
+        docs = vector_query.get()
+        
+        results = []
+        for doc in docs:
+            data = doc.to_dict()
+            gcs_uri = data.get("gcs_uri")
+            signed_url = ""
+            if gcs_uri:
+                signed_url = generate_signed_url(gcs_uri)
+                
+            results.append({
+                "id": doc.id,
+                "score": 0.0, # Placeholder
+                "metadata": {
+                    "title": data.get("title"),
+                    "summary": data.get("summary"),
+                    "content_text": data.get("content_text"),
+                    "created_at": data.get("created_at"),
+                    "gcs_uri": gcs_uri,
+                    "signed_url": signed_url
+                }
+            })
+        return results
+    except Exception as e:
+        print(f"Knowledge Vector Search Error: {e}")
+        return []
+
+@router.post("/consulting/knowledge/search")
+async def search_knowledge(req: KnowledgeSearchRequest):
+    try:
+        client = get_genai_client()
+        # Embed Query
+        embed_response = await client.aio.models.embed_content(
+            model="models/gemini-embedding-001",
+            contents=req.query
+        )
+        vector = embed_response.embeddings[0].values
+        
+        results = search_knowledge_db(vector, req.top_k)
+        return {"results": results}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -1001,25 +1381,29 @@ async def consulting_sme_websocket(websocket: WebSocket):
                         except asyncio.CancelledError:
                             pass
                     
+                    
                     # Check exit condition
+                    # PRIORITY 1: Client Disconnect -> Stop Everything
                     if send_task in done:
                          # Client disconnected or error -> Exit
                          try:
                              send_task.result() # Log exception if any
                          except WebSocketDisconnect:
-                             print("DEBUG: Client websocket disconnected. Exiting loop.")
+                             print(f"{datetime.datetime.now()} DEBUG: Client websocket disconnected. Exiting loop.")
                              break
                          except Exception as e:
-                             print(f"DEBUG: Client send loop error: {e}. Exiting.")
+                             print(f"{datetime.datetime.now()} DEBUG: Client send loop error: {e}. Exiting.")
                              break
                          
-                         print("DEBUG: Send task finished without exception (strange). Exiting.")
+                         print(f"{datetime.datetime.now()} DEBUG: Send task finished without exception (strange). Exiting.")
                          break
 
+                    # PRIORITY 2: Gemini Disconnect (but Client still there) -> Reconnect
                     if receive_task in done:
-                         print("DEBUG: Gemini receive loop ended. Reconnecting session...", flush=True)
+                         print(f"{datetime.datetime.now()} DEBUG: Gemini receive loop ended. Reconnecting session...", flush=True)
                          # Continue to next iteration of while True -> Reconnect
-                         await asyncio.sleep(0.1) # Small delay
+                         await asyncio.sleep(0.1) 
+                         continue
             
             except Exception as e:
                 print(f"Gemini Live Connection Error: {e}")
