@@ -15,6 +15,7 @@ export default function RoleplayPage() {
     const audioWorkletNodeRef = useRef(null);
     const sourceNodeRef = useRef(null);
     const isRecordingRef = useRef(false);
+    const sessionHandleRef = useRef(null); // Keep session token for reconnection
 
     // Audio Queue for playback
     const nextStartTimeRef = useRef(0);
@@ -99,12 +100,16 @@ export default function RoleplayPage() {
                 const prep = preps.find(p => p.id === selectedPrepId);
                 const setupData = {
                     type: "setup",
+                    session_handle: sessionHandleRef.current, // Send stored token if valid
                     context: {
                         topic: prep?.topic || "Free Talk",
                         role: "English Tutor",
                         phrases: [] // Could fetch phrases too
                     }
                 };
+                if (sessionHandleRef.current) {
+                    addLog("Resuming Session...");
+                }
                 wsRef.current.send(JSON.stringify(setupData));
 
                 // Start Audio Flow
@@ -113,6 +118,14 @@ export default function RoleplayPage() {
 
             wsRef.current.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
+
+                // Handle session updates
+                if (data.type === "session_update" && data.session_handle) {
+                    sessionHandleRef.current = data.session_handle;
+                    console.log("Updated Session Handle:", data.session_handle);
+                    return; // Control message, no audio
+                }
+
                 if (data.audio) {
                     playAudioChunk(data.audio);
                 }

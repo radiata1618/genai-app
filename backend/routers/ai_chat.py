@@ -8,6 +8,7 @@ import os
 from google.genai import types
 from services.ai_shared import get_genai_client
 import uuid
+from routers.consulting import search_knowledge_db
 
 router = APIRouter(
     prefix="/ai-chat",
@@ -34,12 +35,19 @@ class ChatSession(BaseModel):
     updated_at: datetime
     last_message: Optional[str] = None
 
+class ChatSettings(BaseModel):
+    system_prompt: str = "あなたは有能で親切なAIアシスタントです。ユーザーの質問に対して正確かつ丁寧に回答してください。"
+    rag_top_k: int = 3
+    rag_threshold: float = 0.6
+    user_profile: str = "" # Career, Skills, etc.
+
 class ChatRequest(BaseModel):
     message: str
     model: str = "gemini-3-flash-preview"
     image: Optional[str] = None # Base64 string
     mimeType: Optional[str] = None
     use_grounding: bool = True
+    use_rag: bool = False
 
 # --- Endpoints ---
 
@@ -58,6 +66,18 @@ async def create_session(req: ChatSessionCreate, db: firestore.Client = Depends(
     
     db.collection("ai_chat_sessions").document(session_id).set(session_data)
     return ChatSession(**session_data)
+
+@router.get("/settings", response_model=ChatSettings)
+async def get_settings(db: firestore.Client = Depends(get_db)):
+    doc = db.collection("system_settings").document("ai_chat").get()
+    if doc.exists:
+        return ChatSettings(**doc.to_dict())
+    return ChatSettings() # Defaults
+
+@router.post("/settings", response_model=ChatSettings)
+async def save_settings(settings: ChatSettings, db: firestore.Client = Depends(get_db)):
+    db.collection("system_settings").document("ai_chat").set(settings.dict())
+    return settings
 
 @router.get("/sessions", response_model=List[ChatSession])
 async def get_sessions(db: firestore.Client = Depends(get_db)):
@@ -129,14 +149,59 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
         if not client:
             raise HTTPException(status_code=500, detail="AI Client not initialized. Check environment variables.")
 
-        # Prepare system instruction
-        system_instruction = "あなたは有能で親切なAIアシスタントです。ユーザーの質問に対して正確かつ丁寧に回答してください。"
+            raise HTTPException(status_code=500, detail="AI Client not initialized. Check environment variables.")
+
+        # Fetch Settings (System Prompt, Profile, etc.)
+        settings_doc = db.collection("system_settings").document("ai_chat").get()
+        settings = settings_doc.to_dict() if settings_doc.exists else {}
+        
+        base_system_prompt = settings.get("system_prompt", "あなたは有能で親切なAIアシスタントです。ユーザーの質問に対して正確かつ丁寧に回答してください。")
+        user_profile = settings.get("user_profile", "")
+        rag_top_k = settings.get("rag_top_k", 3)
+        
+        # Inject User Profile if exists
+        system_instruction = base_system_prompt
+        if user_profile:
+            system_instruction += f"\n\n[User Profile Context]\n{user_profile}\n"
         
         # Prepare Tools
         tools = []
         if req.use_grounding:
             tools.append(types.Tool(google_search=types.GoogleSearch()))
             print("DEBUG: Google Search Grounding enabled")
+
+        # RAG Context Injection
+        rag_context_str = ""
+        if req.use_rag:
+            try:
+                print("DEBUG: RAG Enabled. Searching Knowledge Base...")
+                # Embed Query
+                embed_res = await client.aio.models.embed_content(
+                    model="models/gemini-embedding-001",
+                    contents=req.message
+                )
+                query_vector = embed_res.embeddings[0].values
+                
+                # Search
+                # Only 3 top results to avoid context overflow/pollution
+                rag_results = search_knowledge_db(query_vector, top_k=rag_top_k)
+                
+                if rag_results:
+                    rag_context_str = "\n\n## Internal Knowledge Base (RAG)\nThe following internal documents were found relevant to the user's query. Use them to answer if applicable.\n"
+                    for i, r in enumerate(rag_results):
+                        meta = r["metadata"]
+                        title = meta.get("title", "Untitled")
+                        summary = meta.get("summary", "")
+                        content = meta.get("content_text", "")
+                        rag_context_str += f"\n[Document {i+1}]: {title}\nSummary: {summary}\nContent: {content}\n---\n"
+                    print(f"DEBUG: Injected {len(rag_results)} RAG documents.")
+                else:
+                    print("DEBUG: RAG enabled but no relevant info found.")
+            except Exception as e:
+                print(f"RAG Error: {e}")
+
+        # Update System Instruction with RAG
+        final_system_instruction = system_instruction + rag_context_str
 
         # Handle Image in the current message if provided
         if req.image and req.mimeType:
@@ -157,7 +222,7 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
             model=req.model,
             contents=contents,
             config=types.GenerateContentConfig(
-                system_instruction=system_instruction,
+                system_instruction=final_system_instruction,
                 temperature=0.7,
                 tools=tools if tools else None
             )

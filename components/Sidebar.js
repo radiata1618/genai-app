@@ -9,6 +9,7 @@ const navItems = [
         category: "AI Chat",
         items: [
             { name: "AI Chat", icon: "✨", href: "/ai-chat" },
+            { name: "Settings", icon: "⚙️", href: "/ai-chat/settings" },
         ],
     },
     {
@@ -46,6 +47,7 @@ const navItems = [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
             { name: "MTG Review", icon: "🎙️", href: "/consulting/review" },
             { name: "MTG SME Live", icon: "👂", href: "/consulting/sme" },
+            { name: "Knowledge Base", icon: "📚", href: "/consulting/knowledge" },
             { name: "Visual Search（未）", icon: "👁️", href: "/consulting/visual-search" },
             { name: "Slide Polisher（未）", icon: "✨", href: "/consulting/slide-polisher" },
             { name: "Data Admin", icon: "⚙️", href: "/consulting/data" },
