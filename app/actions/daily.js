@@ -218,7 +218,14 @@ export async function postponeTask(id, newDateStr) {
     // SYNC: Update backlog item with new scheduled_date
     if (task.source_type === 'BACKLOG') {
         const backlogRef = db.collection('backlog_items').doc(task.source_id);
-        batch.update(backlogRef, { scheduled_date: new Date(newDateStr) });
+        
+        // Fix: Ensure we store JST 00:00 (which is Previous Day 15:00 UTC)
+        // newDateStr is YYYY-MM-DD. new Date(newDateStr) gives UTC 00:00.
+        // We subtract 9 hours to get JST 00:00 in UTC terms.
+        const utcMidnight = new Date(newDateStr);
+        const scheduledDate = new Date(utcMidnight.getTime() - 9 * 60 * 60 * 1000);
+
+        batch.update(backlogRef, { scheduled_date: scheduledDate });
     }
 
     await batch.commit();
