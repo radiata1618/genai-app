@@ -47,7 +47,10 @@ export async function getBacklogItems(filters = {}) {
     query = query.where('status', 'in', statuses);
 
     if (filters.startDate) {
-        query = query.where('scheduled_date', '>=', new Date(filters.startDate));
+        // Adjust Start Date to JST 00:00 (UTC 15:00 prev day) to catch JST-aligned tasks
+        const start = new Date(filters.startDate);
+        const jstStart = new Date(start.getTime() - 9 * 60 * 60 * 1000);
+        query = query.where('scheduled_date', '>=', jstStart);
     }
     if (filters.endDate) {
         query = query.where('scheduled_date', '<=', new Date(filters.endDate));
