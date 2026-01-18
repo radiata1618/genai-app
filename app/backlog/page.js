@@ -669,7 +669,7 @@ export default function BacklogPage() {
                                                 >
                                                     今日やる
                                                 </button>
-                                                {activeSprint && !task.sprintId && !task.scheduled_date && (
+                                                {activeSprint && !task.sprintId && (
                                                     <button
                                                         onClick={(e) => handleAddToSprint(task, e)}
                                                         className="w-5 h-5 flex-shrink-0 flex items-center justify-center bg-white text-pink-400 hover:text-pink-600 hover:bg-pink-50 rounded-full border border-pink-200 transition-colors"
