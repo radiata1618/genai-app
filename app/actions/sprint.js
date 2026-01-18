@@ -106,7 +106,15 @@ export async function removeTaskFromSprint(taskId, scheduleUpdate = undefined) {
 
     // scheduleUpdate: { date: Date | null }
     let newDateStr = null;
-    let oldDateStr = taskData.scheduled_date ? taskData.scheduled_date.toDate().toISOString().split('T')[0] : null;
+    let oldDateStr = null;
+
+    // Fix: Calculate oldDateStr using JST (UTC+9) logic to match Daily Task ID generation
+    if (taskData.scheduled_date) {
+        const utcDate = taskData.scheduled_date.toDate();
+        // Add 9 hours to shift to JST, then take UTC components which will now match JST components
+        const jstDate = new Date(utcDate.getTime() + 9 * 60 * 60 * 1000);
+        oldDateStr = jstDate.toISOString().split('T')[0];
+    }
 
     if (scheduleUpdate) {
         if (scheduleUpdate.date) {

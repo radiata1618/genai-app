@@ -526,7 +526,7 @@ export default function BacklogPage() {
                                                             🐾 Pet OK
                                                         </span>
                                                     )}
-                                                    {activeSprint && !task.sprintId && !task.scheduled_date && (
+                                                    {activeSprint && !task.sprintId && (
                                                         <button
                                                             onClick={(e) => handleAddToSprint(task, e)}
                                                             className="text-pink-400 hover:text-pink-600 bg-white hover:bg-pink-50 w-5 h-5 flex items-center justify-center rounded-full border border-pink-200 transaction-colors"
