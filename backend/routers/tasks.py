@@ -232,9 +232,9 @@ def create_backlog_item(item: BacklogItemCreate, db: firestore.Client = Depends(
         data = item.dict()
         
         if data.get('deadline'):
-            data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
+            data['deadline'] = datetime.combine(data['deadline'], datetime.min.time()).replace(tzinfo=JST)
         if data.get('scheduled_date'):
-            data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
+            data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time()).replace(tzinfo=JST)
 
         data.update({
             "id": doc_ref.id,
@@ -281,9 +281,9 @@ def update_backlog_item(item_id: str, item: BacklogItemCreate, background_tasks:
     data = item.dict()
     
     if data.get('deadline'):
-        data['deadline'] = datetime.combine(data['deadline'], datetime.min.time())
+        data['deadline'] = datetime.combine(data['deadline'], datetime.min.time()).replace(tzinfo=JST)
     if data.get('scheduled_date'):
-        data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time())
+        data['scheduled_date'] = datetime.combine(data['scheduled_date'], datetime.min.time()).replace(tzinfo=JST)
 
     current_data = doc_ref.get().to_dict()
     data.update({
@@ -580,7 +580,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
 
     # --- AUTO-PICK SCHEDULED STOCK (NEW) ---
     scheduled_stock_docs = db.collection("backlog_items")\
-        .where(filter=FieldFilter("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time())))\
+        .where(filter=FieldFilter("scheduled_date", "<=", datetime.combine(target_date, datetime.max.time()).replace(tzinfo=JST)))\
         .where(filter=FieldFilter("status", "==", "STOCK"))\
         .where(filter=FieldFilter("is_archived", "==", False))\
         .limit(200)\
