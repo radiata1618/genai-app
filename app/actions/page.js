@@ -22,7 +22,13 @@ export default function ActionsPage() {
     const [selectedWeekdays, setSelectedWeekdays] = useState([]); // 0-6
 
     const [selectedMonthDays, setSelectedMonthDays] = useState([]); // 1-31
+    const [selectedMonths, setSelectedMonths] = useState([]); // 1-12 (Deprecated for Yearly)
+    const [yearlyDates, setYearlyDates] = useState([]); // Array of {month, day}
     const [scheduledTime, setScheduledTime] = useState('05:00');
+
+    // Temp state for adding a yearly date
+    const [tempMonth, setTempMonth] = useState(1);
+    const [tempDay, setTempDay] = useState(1);
 
     // Goal State
     const [isGoalEnabled, setIsGoalEnabled] = useState(false);
@@ -56,6 +62,10 @@ export default function ActionsPage() {
         setFreqType('DAILY');
         setSelectedWeekdays([]);
         setSelectedMonthDays([]);
+        setSelectedMonths([]);
+        setYearlyDates([]);
+        setTempMonth(1);
+        setTempDay(1);
         setScheduledTime('05:00');
 
         setIsGoalEnabled(false);
@@ -72,6 +82,8 @@ export default function ActionsPage() {
         setFreqType(r.frequency?.type || 'DAILY');
         setSelectedWeekdays(r.frequency?.weekdays || []);
         setSelectedMonthDays(r.frequency?.month_days || []);
+        setSelectedMonths(r.frequency?.months || []);
+        setYearlyDates(r.frequency?.yearly_dates || []);
         setScheduledTime(r.scheduled_time || '05:00');
 
         if (r.goal_config) {
@@ -103,13 +115,38 @@ export default function ActionsPage() {
         }
     };
 
+    const toggleMonth = (month) => {
+        if (selectedMonths.includes(month)) {
+            setSelectedMonths(selectedMonths.filter(m => m !== month));
+        } else {
+            setSelectedMonths([...selectedMonths, month]);
+        }
+    };
+
+    const addYearlyDate = () => {
+        // Prevent duplicates
+        if (yearlyDates.some(d => d.month === tempMonth && d.day === tempDay)) return;
+        setYearlyDates([...yearlyDates, { month: tempMonth, day: tempDay }].sort((a, b) => {
+            if (a.month !== b.month) return a.month - b.month;
+            return a.day - b.day;
+        }));
+    };
+
+    const removeYearlyDate = (idx) => {
+        const newDates = [...yearlyDates];
+        newDates.splice(idx, 1);
+        setYearlyDates(newDates);
+    };
+
     const handleSave = async (e) => {
         if (e) e.preventDefault();
         try {
             const frequency = {
                 type: freqType,
                 weekdays: freqType === 'WEEKLY' ? selectedWeekdays : [],
-                month_days: freqType === 'MONTHLY' ? selectedMonthDays : []
+                month_days: freqType === 'MONTHLY' ? selectedMonthDays : [],
+                months: [], // Deprecated for V2
+                yearly_dates: freqType === 'YEARLY' ? yearlyDates : []
             };
 
             const goal_config = isGoalEnabled ? {
@@ -289,6 +326,7 @@ export default function ActionsPage() {
                                                     {r.frequency?.type === 'WEEKLY' && <span>{r.frequency.weekdays.map(d => WEEKDAYS[d]).join(', ')}</span>}
 
                                                     {r.frequency?.type === 'MONTHLY' && <span>Days: {r.frequency.month_days.join(', ')}</span>}
+                                                    {r.frequency?.type === 'YEARLY' && <span>Dates: {r.frequency.yearly_dates ? r.frequency.yearly_dates.map(d => `${d.month}/${d.day}`).join(', ') : 'None'}</span>}
                                                     {r.goal_config && (
                                                         <>
                                                             <span className="text-slate-300">|</span>
@@ -382,7 +420,7 @@ export default function ActionsPage() {
                                 <div className="space-y-3">
                                     <label className="text-xs font-bold text-slate-500 uppercase tracking-wider">Frequency</label>
                                     <div className="flex bg-slate-100 p-1 rounded-xl w-fit">
-                                        {['DAILY', 'WEEKLY', 'MONTHLY'].map(t => (
+                                        {['DAILY', 'WEEKLY', 'MONTHLY', 'YEARLY'].map(t => (
                                             <button
                                                 key={t}
                                                 onClick={() => setFreqType(t)}
@@ -426,6 +464,38 @@ export default function ActionsPage() {
                                                     {day}
                                                 </button>
                                             ))}
+                                        </div>
+                                    )}
+
+                                    {freqType === 'YEARLY' && (
+                                        <div className="space-y-3 pt-2">
+                                            <div className="flex gap-2 items-end bg-white p-2 rounded-xl border border-slate-100">
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Month</label>
+                                                    <select value={tempMonth} onChange={e => setTempMonth(parseInt(e.target.value))} className="p-1.5 border border-slate-200 rounded-lg text-sm font-bold w-16 bg-slate-50">
+                                                        {Array.from({ length: 12 }, (_, i) => i + 1).map(m => <option key={m} value={m}>{m}</option>)}
+                                                    </select>
+                                                </div>
+                                                <div className="space-y-1">
+                                                    <label className="text-[10px] font-bold text-slate-400 uppercase tracking-wider block">Day</label>
+                                                    <select value={tempDay} onChange={e => setTempDay(parseInt(e.target.value))} className="p-1.5 border border-slate-200 rounded-lg text-sm font-bold w-16 bg-slate-50">
+                                                        {Array.from({ length: 31 }, (_, i) => i + 1).map(d => <option key={d} value={d}>{d}</option>)}
+                                                    </select>
+                                                </div>
+                                                <button onClick={addYearlyDate} className="mb-0.5 px-3 py-1.5 bg-indigo-600 text-white rounded-lg text-xs font-bold hover:bg-indigo-700 transition-colors">
+                                                    Add
+                                                </button>
+                                            </div>
+
+                                            <div className="flex flex-wrap gap-2">
+                                                {yearlyDates.map((d, idx) => (
+                                                    <div key={idx} className="flex items-center gap-1 bg-indigo-50 text-indigo-700 px-2 py-1 rounded-md text-xs font-bold border border-indigo-100">
+                                                        <span>{d.month}/{d.day}</span>
+                                                        <button onClick={() => removeYearlyDate(idx)} className="hover:text-red-500">×</button>
+                                                    </div>
+                                                ))}
+                                                {yearlyDates.length === 0 && <span className="text-xs text-slate-400 italic">No dates selected</span>}
+                                            </div>
                                         </div>
                                     )}
                                 </div>

@@ -46,7 +46,7 @@ export async function getRoutines(type = null) {
             ...data,
             id: d.id,
             // Defaults
-            frequency: data.frequency || { type: 'DAILY', weekdays: [], month_days: [] },
+            frequency: data.frequency || { type: 'DAILY', weekdays: [], month_days: [], months: [], yearly_dates: [] },
             scheduled_time: data.scheduled_time || "05:00"
         });
     });
@@ -62,7 +62,7 @@ export async function addRoutine(data) {
         created_at: now,
         title: data.title,
         routine_type: data.routine_type,
-        frequency: data.frequency || { type: 'DAILY', weekdays: [], month_days: [] },
+        frequency: data.frequency || { type: 'DAILY', weekdays: [], month_days: [], months: [], yearly_dates: [] },
         icon: data.icon || null,
         scheduled_time: data.scheduled_time || "05:00",
         is_highlighted: data.is_highlighted || false,

@@ -60,11 +60,14 @@ class FrequencyType(str, enum.Enum):
     DAILY = "DAILY"
     WEEKLY = "WEEKLY"
     MONTHLY = "MONTHLY"
+    YEARLY = "YEARLY"
 
 class FrequencyConfig(BaseModel):
     type: FrequencyType = FrequencyType.DAILY
     weekdays: List[int] = [] 
     month_days: List[int] = [] 
+    months: List[int] = [] 
+    yearly_dates: List[dict] = [] # List of {month: int, day: int} 
 
 class GoalConfig(BaseModel):
     target_count: int
@@ -349,7 +352,7 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
     for doc in docs:
         d = doc.to_dict()
         if 'frequency' not in d or d['frequency'] is None:
-             d['frequency'] = {"type": "DAILY", "weekdays": [], "month_days": []}
+             d['frequency'] = {"type": "DAILY", "weekdays": [], "month_days": [], "months": [], "yearly_dates": []}
         if 'scheduled_time' not in d:
              d['scheduled_time'] = "05:00"
         routines.append(d)
@@ -442,6 +445,7 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     target_date_str = target_date.isoformat()
     weekday = target_date.weekday()
     day_of_month = target_date.day
+    month = target_date.month
     
     print(f"Starting generate_daily_tasks for {target_date_str} (Current Time: {current_time_dt})")
 
@@ -467,6 +471,17 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
             if weekday in freq.get('weekdays', []): should_run = True
         elif f_type == 'MONTHLY':
             if day_of_month in freq.get('month_days', []): should_run = True
+        elif f_type == 'YEARLY':
+            # Check specific dates
+            y_dates = freq.get('yearly_dates', [])
+            if y_dates:
+                for yd in y_dates:
+                    if yd.get('month') == month and yd.get('day') == day_of_month:
+                        should_run = True
+                        break
+            else:
+                # Fallback to old behavior (Cartesian product) if yearly_dates is empty (backward compatibility)
+                if month in freq.get('months', []) and day_of_month in freq.get('month_days', []): should_run = True
             
         if not should_run: continue
         
