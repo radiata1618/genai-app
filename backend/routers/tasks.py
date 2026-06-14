@@ -87,6 +87,7 @@ class RoutineCreate(BaseModel):
     scheduled_time: str = "05:00"
     order: int = 0
     is_highlighted: bool = False
+    is_active: bool = True # 有効・無効フラグ
 
 class RoutineResponse(RoutineCreate):
     id: str
@@ -355,6 +356,8 @@ def get_routines(type: Optional[RoutineType] = None, db: firestore.Client = Depe
              d['frequency'] = {"type": "DAILY", "weekdays": [], "month_days": [], "months": [], "yearly_dates": []}
         if 'scheduled_time' not in d:
              d['scheduled_time'] = "05:00"
+        if 'is_active' not in d:
+             d['is_active'] = True
         routines.append(d)
     return routines
 
@@ -462,6 +465,10 @@ def generate_daily_tasks(target_date: Optional[date] = None, db: firestore.Clien
     
     # 1. Generate from Routines
     for r in routines:
+        # 有効でないルーチンはタスク生成をスキップ
+        if not r.get('is_active', True):
+            continue
+            
         freq = r.get('frequency', {})
         f_type = freq.get('type', 'DAILY')
         
