@@ -47,6 +47,8 @@ export default function LiveGeminiPage() {
 
     // 新しいアラート検知時の自動スクロール
     useEffect(() => {
+        if (alerts.length === 0) return;
+        if (typeof window !== "undefined" && window.innerWidth < 1024) return;
         timelineEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [alerts]);
 
@@ -431,11 +433,11 @@ export default function LiveGeminiPage() {
     };
 
     return (
-        <div className="flex min-h-screen lg:h-screen bg-gray-50 text-slate-800 font-sans overflow-y-auto lg:overflow-hidden">
-            <div className="flex-1 flex flex-col overflow-y-auto lg:overflow-hidden relative">
+        <div className="flex flex-col lg:h-screen bg-gray-50 text-slate-800 font-sans overflow-y-auto lg:overflow-hidden">
+            <div className="flex-1 flex flex-col relative">
                 
                 {/* ヘッダー */}
-                <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10">
+                <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10 sticky top-0">
                     <div className="flex items-center gap-3">
                         <MobileMenuButton />
                         <Link href="/consulting/training" className="text-slate-655 hover:text-cyan-600 transition-colors text-xs bg-white px-3 py-1.5 rounded-full border border-gray-300 shadow-xs">
@@ -456,10 +458,10 @@ export default function LiveGeminiPage() {
                 </div>
 
                 {/* メインコンテンツエリア */}
-                <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden p-4 sm:p-6 gap-6 bg-gray-50">
+                <div className="flex-1 flex flex-col lg:flex-row p-4 sm:p-6 gap-6 bg-gray-50">
                     
                     {/* 左カラム：ステータス＆リアルタイム文字起こし */}
-                    <div className="flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
+                    <div className="w-full lg:flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
                         {/* モニター状況カード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -513,14 +515,14 @@ export default function LiveGeminiPage() {
                         </div>
 
                         {/* リアルタイム発話文字起こしパネル */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[350px] lg:h-full lg:flex-1 lg:min-h-0 overflow-hidden">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col lg:h-full lg:flex-1 lg:min-h-0 lg:overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex items-center justify-between flex-shrink-0">
                                 <span>🗣️ Gemini文字起こし履歴 (6秒バッファごと)</span>
                                 {isRecording && <span className="text-[10px] text-cyan-655 font-mono animate-pulse">音声ブロック送信中...</span>}
                             </h2>
                             
                             {/* スクロール履歴 */}
-                            <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar text-sm text-slate-700 leading-relaxed">
+                            <div className="space-y-3 pr-2 custom-scrollbar text-sm text-slate-700 leading-relaxed lg:flex-1 lg:overflow-y-auto">
                                 {speechHistory.length === 0 && (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs py-8">
                                         <p>監視を開始して話し始めると、ここにGeminiによる文字起こし結果が表示されます。</p>
@@ -544,7 +546,7 @@ export default function LiveGeminiPage() {
                     </div>
 
                     {/* 右カラム：統計とアラートタイムライン */}
-                    <div className="w-full lg:w-[480px] flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
+                    <div className="w-full lg:w-[480px] flex flex-col space-y-4">
                         
                         {/* 簡易スタッツカード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-shrink-0">
@@ -570,11 +572,11 @@ export default function LiveGeminiPage() {
                         </div>
 
                         {/* リアルタイムアラートタイムライン */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[400px] lg:h-full lg:flex-1 lg:min-h-0 relative overflow-hidden">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col lg:h-full lg:flex-1 lg:min-h-0 relative lg:overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex-shrink-0">⚠️ 検出された発話課題 (Gemini解析)</h2>
                             
                             {/* タイムラインリスト */}
-                            <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
+                            <div className="space-y-4 pr-1 custom-scrollbar lg:flex-1 lg:overflow-y-auto">
                                 {alerts.length === 0 ? (
                                     <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs text-center py-12 p-4">
                                         <span className="text-3xl mb-2">🧠</span>
