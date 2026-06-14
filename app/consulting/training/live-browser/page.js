@@ -206,12 +206,12 @@ export default function LiveBrowserPage() {
         if (totalRecorderRef.current && totalRecorderRef.current.state === "recording") {
             totalRecorderRef.current.stop();
         }
-        
+
         // デフォルトの会議名を自動生成
         const now = new Date();
         const yyyymmdd_hhmmss = now.toISOString().replace(/T/, '_').replace(/\..+/, '').replace(/-/g, '').replace(/:/g, '');
         setSessionName(`Meeting_Browser_${yyyymmdd_hhmmss}`);
-        
+
         setShowUploadModal(true);
     };
 
@@ -386,7 +386,7 @@ export default function LiveBrowserPage() {
 
         if (newAlerts.length > 0) {
             setAlerts(prev => [...prev, ...newAlerts]);
-            
+
             setLatestAlert(newAlerts[0]);
             const timer = setTimeout(() => {
                 setLatestAlert(null);
@@ -437,7 +437,7 @@ export default function LiveBrowserPage() {
 
         if (newAlerts.length > 0) {
             setAlerts(prev => [...prev, ...newAlerts]);
-            
+
             setLatestAlert(newAlerts[0]);
             const timer = setTimeout(() => {
                 setLatestAlert(null);
@@ -469,10 +469,10 @@ export default function LiveBrowserPage() {
     };
 
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
+        <div className="flex min-h-screen lg:h-screen bg-gray-50 text-slate-800 font-sans overflow-y-auto lg:overflow-hidden">
             {/* メインビュー */}
-            <div className="flex-1 flex flex-col overflow-hidden relative">
-                
+            <div className="flex-1 flex flex-col overflow-y-auto lg:overflow-hidden relative">
+
                 {/* ヘッダー */}
                 <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10">
                     <div className="flex items-center gap-3">
@@ -495,10 +495,10 @@ export default function LiveBrowserPage() {
                 </div>
 
                 {/* メインコンテンツエリア */}
-                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 sm:p-6 gap-6 bg-gray-50">
-                    
+                <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden p-4 sm:p-6 gap-6 bg-gray-50">
+
                     {/* 左カラム：ステータス＆リアルタイム文字起こし */}
-                    <div className="flex-1 flex flex-col space-y-4 overflow-hidden h-full">
+                    <div className="flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
                         {/* モニター状況カード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -514,8 +514,8 @@ export default function LiveBrowserPage() {
                                     <div className="flex items-center space-x-1.5">
                                         <div className="text-[10px] text-slate-400 font-mono">Mic Input</div>
                                         <div className="w-24 bg-gray-100 h-2 rounded-full overflow-hidden border border-gray-200">
-                                            <div 
-                                                style={{ width: `${Math.min(100, (volume / 100) * 100)}%` }} 
+                                            <div
+                                                style={{ width: `${Math.min(100, (volume / 100) * 100)}%` }}
                                                 className="bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 h-full rounded-full transition-all duration-75"
                                             />
                                         </div>
@@ -544,12 +544,12 @@ export default function LiveBrowserPage() {
                         </div>
 
                         {/* リアルタイム発話文字起こしパネル */}
-                        <div className="flex-1 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-[250px] lg:min-h-0">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[350px] lg:h-full lg:flex-1 lg:min-h-0 overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex items-center justify-between flex-shrink-0">
                                 <span>🗣️ 発話文字起こし履歴 (確定分)</span>
                                 {isListening && <span className="text-[10px] text-cyan-600 font-mono animate-pulse">リアルタイム認識中</span>}
                             </h2>
-                            
+
                             {/* スクロール履歴 */}
                             <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar text-sm text-slate-700 leading-relaxed">
                                 {speechHistory.length === 0 && !currentText && (
@@ -557,7 +557,7 @@ export default function LiveBrowserPage() {
                                         <p>監視を開始して話し始めると、ここに認識結果が表示されます。</p>
                                     </div>
                                 )}
-                                
+
                                 {speechHistory.map((text, index) => (
                                     <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-150 animate-fadeIn">
                                         {text}
@@ -574,8 +574,8 @@ export default function LiveBrowserPage() {
                     </div>
 
                     {/* 右カラム：統計とアラートタイムライン */}
-                    <div className="w-full lg:w-[480px] flex flex-col space-y-4 overflow-hidden h-full">
-                        
+                    <div className="w-full lg:w-[480px] flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
+
                         {/* 簡易スタッツカード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-shrink-0">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3.5">🎯 アラート累積統計</h2>
@@ -596,9 +596,9 @@ export default function LiveBrowserPage() {
                         </div>
 
                         {/* リアルタイムアラートタイムライン */}
-                        <div className="flex-1 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-[300px] lg:min-h-0 relative">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[400px] lg:h-full lg:flex-1 lg:min-h-0 relative overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex-shrink-0">⚠️ 検出された発話課題 (警告)</h2>
-                            
+
                             {/* タイムラインリスト */}
                             <div className="flex-1 overflow-y-auto space-y-4 pr-1 custom-scrollbar">
                                 {alerts.length === 0 ? (
@@ -608,8 +608,8 @@ export default function LiveBrowserPage() {
                                     </div>
                                 ) : (
                                     alerts.map((alert) => (
-                                        <div 
-                                            key={alert.id} 
+                                        <div
+                                            key={alert.id}
                                             className="p-4 bg-white border border-gray-200 rounded-xl space-y-2.5 shadow-xs relative hover:border-cyan-300 transition-colors animate-slideUp"
                                         >
                                             <div className="flex justify-between items-center">
@@ -671,18 +671,18 @@ export default function LiveBrowserPage() {
                         <p className="text-xs text-slate-500 leading-relaxed">
                             この監視セッションの会話データをMTG Training履歴に保存し、Geminiによる定量採点を行います。評価の保存方式を選択してください。
                         </p>
-                        
+
                         <div className="space-y-1.5">
                             <label className="text-[10px] font-bold text-slate-400 block uppercase">会議タイトル・履歴名</label>
-                            <input 
-                                type="text" 
+                            <input
+                                type="text"
                                 value={sessionName}
                                 onChange={(e) => setSessionName(e.target.value)}
                                 className="w-full px-3 py-2 bg-gray-50 border border-gray-200 rounded-lg text-xs text-slate-800 focus:border-cyan-500 focus:outline-none focus:ring-1 focus:ring-cyan-500 font-bold"
                                 placeholder="会議の履歴名を入力してください..."
                             />
                         </div>
-                        
+
                         {uploadProgress ? (
                             <div className="py-4 space-y-3">
                                 <div className="text-xs font-bold text-cyan-600 animate-pulse text-center">{uploadProgress}</div>
@@ -706,7 +706,7 @@ export default function LiveBrowserPage() {
                                     <span>🎙️ 音声で詳細評価</span>
                                     <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">音声Up・滑舌/トーン含む</span>
                                 </button>
-                                
+
                                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
                                     <button
                                         onClick={() => {
@@ -725,7 +725,7 @@ export default function LiveBrowserPage() {
                                             if (totalRecorderRef.current && totalRecorderRef.current.state === "inactive") {
                                                 try {
                                                     totalRecorderRef.current.start();
-                                                } catch(err) {}
+                                                } catch (err) { }
                                             }
                                         }}
                                         className="py-2 bg-white border border-gray-200 hover:bg-gray-50 text-slate-500 text-xs font-bold rounded-lg transition-all text-center"
