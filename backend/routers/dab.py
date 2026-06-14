@@ -51,10 +51,22 @@ class PromptEditResponse(BaseModel):
 class PromptCommitRequest(BaseModel):
     prompt: str
 
+class FilterPromptEditRequest(BaseModel):
+    message: str
+    current_prompt: str
+
+class FilterPromptEditResponse(BaseModel):
+    assistant_message: str
+    proposed_prompt: str
+
+class FilterPromptCommitRequest(BaseModel):
+    prompt: str
+
 class UserMemory(BaseModel):
     known_concepts: List[str]
     learning_goals: str
     summary_prompt_template: str
+    filter_prompt_template: Optional[str] = None
     updated_at: datetime
 
 class EvaluationRequest(BaseModel):
@@ -347,6 +359,58 @@ async def commit_prompt(req: PromptCommitRequest, db: firestore.Client = Depends
             "updated_at": datetime.now(timezone.utc)
         })
         return {"status": "success", "message": "Prompt template committed successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/filter-prompt/edit-ai", response_model=FilterPromptEditResponse)
+async def edit_filter_prompt_ai(req: FilterPromptEditRequest):
+    """AIと対話し、ノイズフィルタ用プロンプトの修正案を生成する"""
+    client = get_genai_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="Gemini client is not initialized.")
+
+    system_instruction = (
+        "あなたはデータアーキテクチャコンサルタントのノイズフィルタリングルール設計を支援するAIアシスタントです。\n"
+        "ユーザーからの「こういうトピックは除外して」「こういう記事は採用して」等の指示に基づいて、新しいフィルタプロンプトテンプレートを作成してください。\n"
+        "必ず以下のJSON構造のみで応答してください。JSON以外の文章は一切出力しないでください。\n\n"
+        "## 応答JSONスキーマ:\n"
+        "{\n"
+        "  \"assistant_message\": \"プロンプト修正意図や解説を記したユーザーへのメッセージ（日本語）\",\n"
+        "  \"proposed_prompt\": \"修正後の新しいシステムプロンプトの全文\"\n"
+        "}"
+    )
+
+    prompt = (
+        f"【現在のフィルタプロンプト】:\n{req.current_prompt}\n\n"
+        f"【ユーザーの要望】:\n{req.message}\n"
+    )
+
+    try:
+        response = await client.aio.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                temperature=0.3
+            )
+        )
+        
+        result = json.loads(response.text)
+        return FilterPromptEditResponse(**result)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Failed to edit filter prompt: {str(e)}")
+
+@router.post("/filter-prompt/commit")
+async def commit_filter_prompt(req: FilterPromptCommitRequest, db: firestore.Client = Depends(get_db)):
+    """修正したフィルタプロンプトをFirestoreに確定保存する"""
+    try:
+        ref = db.collection("dab_user_memory").document("default_user")
+        ref.update({
+            "filter_prompt_template": req.prompt,
+            "updated_at": datetime.now(timezone.utc)
+        })
+        return {"status": "success", "message": "Filter prompt template committed successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
