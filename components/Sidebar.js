@@ -25,12 +25,12 @@ const navItems = [
         ],
     },
     {
-        category: "DAB (情報収集)",
+        category: "DAB",
         items: [
-            { name: "キャッチアップフィード", icon: "📰", href: "/dab?tab=feed" },
-            { name: "ホットトピック (10選)", icon: "🔥", href: "/dab?tab=topics" },
-            { name: "長期記憶 / プロファイル", icon: "🧠", href: "/dab?tab=memory" },
-            { name: "プロンプト設定", icon: "⚙️", href: "/dab?tab=settings" },
+            { name: "Feed", icon: "📰", href: "/dab?tab=feed" },
+            { name: "Topics", icon: "🔥", href: "/dab?tab=topics" },
+            { name: "Core Memory", icon: "🧠", href: "/dab?tab=memory" },
+            { name: "Settings", icon: "⚙️", href: "/dab?tab=settings" },
         ],
     },
     {

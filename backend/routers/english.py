@@ -14,6 +14,7 @@ import google.auth
 from google.oauth2 import service_account
 import json
 from services.ai_shared import get_genai_client
+from config import GEMINI_CHAT_MODEL, GEMINI_PRO_MODEL, GEMINI_FLASH_MODEL
 
 try:
     from moviepy import VideoFileClip
@@ -122,7 +123,7 @@ class ChatMessage(BaseModel):
 class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     context: Optional[str] = None
-    model: Optional[str] = "gemini-2.5-flash"
+    model: Optional[str] = GEMINI_FLASH_MODEL
 
     
 # --- Helpers ---
@@ -228,7 +229,7 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     try:
         client = get_genai_client()
         response = client.models.generate_content(
-            model="gemini-3-pro-preview",
+            model=GEMINI_PRO_MODEL,
             contents=prompt,
         )
         content = response.text
@@ -387,7 +388,7 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
         try:
             # Using 1.5 Flash for long text processing with high attention to constraints
             response = await client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
+                model=GEMINI_CHAT_MODEL,
                 contents=prompt,
                 config=types.GenerateContentConfig(
                     temperature=0.0, # Minimize creativity to ensure verbatim matching
@@ -410,7 +411,7 @@ async def create_youtube_prep(req: YouTubePrepRequest, db: firestore.Client = De
         # Parallel Execution: Notes + Manual Script + Auto Script
         client = get_genai_client()
         task_notes = client.aio.models.generate_content(
-                model="gemini-3-flash-preview",
+                model=GEMINI_CHAT_MODEL,
                 contents=prompt_notes,
         )
         
@@ -644,7 +645,7 @@ async def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends
         4. 冒頭の挨拶やメタコメントは不要です。スクリプトのみを出力してください。
         """
 
-    async def generate_content(p_prompt, p_part, p_model="gemini-3-pro-preview"):
+    async def generate_content(p_prompt, p_part, p_model=GEMINI_PRO_MODEL):
         # Retry logic for 429 RESOURCE_EXHAUSTED
         import time
         max_retries = 3
@@ -688,11 +689,11 @@ async def create_review(req: ReviewCreateRequest, db: firestore.Client = Depends
         async def run_parallel():
              client = get_genai_client()
              task_review = client.aio.models.generate_content(
-                model="gemini-3-pro-preview",
+                model=GEMINI_PRO_MODEL,
                 contents=[prompt_review, part]
              )
              task_script = client.aio.models.generate_content(
-                model="gemini-3-flash-preview", # Use Flash for script to save cost/time
+                model=GEMINI_CHAT_MODEL, # Use Flash for script to save cost/time
                 contents=[prompt_script, part]
              )
              return await asyncio.gather(task_review, task_script)
@@ -800,7 +801,7 @@ def generate_phrases(req: PhraseGenerateRequest):
     try:
         client = get_genai_client()
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=GEMINI_CHAT_MODEL,
             contents=prompt,
         )
         
@@ -918,7 +919,7 @@ def chat_with_context(req: ChatRequest):
         
         client = get_genai_client()
         response = client.models.generate_content(
-            model=req.model or "gemini-2.5-flash",
+            model=req.model or GEMINI_FLASH_MODEL,
             contents=contents,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,

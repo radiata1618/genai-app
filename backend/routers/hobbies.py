@@ -12,6 +12,7 @@ from google.genai import types
 import asyncio
 from google.oauth2 import service_account
 from services.ai_shared import get_genai_client
+from config import GEMINI_CHAT_MODEL, GEMINI_PRO_MODEL
 
 router = APIRouter(
     prefix="/hobbies",
@@ -212,7 +213,7 @@ async def analyze_photo(req: PhotoAnalyzeRequest, db: firestore.Client = Depends
         # 2. Call Gemini 3 Flash
         client = get_genai_client()
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=GEMINI_CHAT_MODEL,
             contents=[prompt, part]
         )
         advice_text = response.text
@@ -332,7 +333,7 @@ async def chat_camera_guide(req: ChatRequest):
     
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=GEMINI_CHAT_MODEL,
             contents=history,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction
@@ -411,7 +412,7 @@ async def analyze_finance(req: FinanceAnalysisRequest, db: firestore.Client = De
         
         client = get_genai_client()
         response = await client.aio.models.generate_content(
-            model="gemini-3-pro-preview",
+            model=GEMINI_PRO_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 tools=tools

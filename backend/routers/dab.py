@@ -9,6 +9,7 @@ from services.ai_shared import get_genai_client
 from services.dab_ingestion import run_ingestion_pipeline
 import uuid
 import json
+from config import GEMINI_FLASH_MODEL
 
 router = APIRouter(
     prefix="/dab",
@@ -114,7 +115,7 @@ async def update_user_memory_async(db: firestore.Client, topic_ids: List[str], e
         )
         
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=eval_summary,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -245,7 +246,7 @@ async def edit_topics_ai(req: EditChatRequest):
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -322,7 +323,7 @@ async def edit_prompt_ai(req: PromptEditRequest):
 
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,

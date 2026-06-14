@@ -7,6 +7,7 @@ from google import genai
 from google.genai import types
 import base64
 import os
+from config import GEMINI_CHAT_MODEL
 
 # ---- FastAPI router ----
 router = APIRouter(
@@ -84,7 +85,7 @@ async def generate_with_google_genai(request: GenerateRequest):
         # モデル名はお好みで変更可能（2.0 / 2.5 など）
         # 例: "gemini-2.5-flash" / "gemini-2.5-pro" :contentReference[oaicite:5]{index=5}
         response = client.models.generate_content(
-            model="gemini-3-flash-preview",
+            model=GEMINI_CHAT_MODEL,
             contents=contents,
             config=config,
         )

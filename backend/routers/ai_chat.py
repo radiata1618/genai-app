@@ -9,6 +9,7 @@ from google.genai import types
 from services.ai_shared import get_genai_client
 import uuid
 from routers.consulting import search_knowledge_db
+from config import GEMINI_CHAT_MODEL, GEMINI_EMBEDDING_MODEL
 
 router = APIRouter(
     prefix="/ai-chat",
@@ -43,7 +44,7 @@ class ChatSettings(BaseModel):
 
 class ChatRequest(BaseModel):
     message: str
-    model: str = "gemini-3-flash-preview"
+    model: str = GEMINI_CHAT_MODEL
     image: Optional[str] = None # Base64 string
     mimeType: Optional[str] = None
     use_grounding: bool = True
@@ -177,7 +178,7 @@ async def send_message(session_id: str, req: ChatRequest, db: firestore.Client =
                 print("DEBUG: RAG Enabled. Searching Knowledge Base...")
                 # Embed Query
                 embed_res = await client.aio.models.embed_content(
-                    model="models/gemini-embedding-001",
+                    model=GEMINI_EMBEDDING_MODEL,
                     contents=req.message
                 )
                 query_vector = embed_res.embeddings[0].values

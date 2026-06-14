@@ -9,6 +9,7 @@ from google.cloud import aiplatform
 from google.cloud import storage
 from google.genai import types
 from google import genai
+from config import GEMINI_PRO_MODEL
 # import vertexai
 # from vertexai.vision_models import MultiModalEmbeddingModel, Image
 
@@ -185,7 +186,7 @@ async def generate_rag(request: RagRequest):
         contents.append("Based on the provided manual pages (if any), please answer the user's question. If the manual pages don't contain the answer, state that.")
 
         response = client.models.generate_content(
-            model="gemini-3-pro-preview",
+            model=GEMINI_PRO_MODEL,
             contents=contents
         )
         

@@ -13,6 +13,7 @@ import uuid
 import json
 import asyncio
 import concurrent.futures
+from config import GEMINI_PRO_MODEL
 
 router = APIRouter()
 
@@ -83,7 +84,7 @@ async def generate_car_list(request: GenerationRequest):
         Only return the JSON array.
         """
         
-        model_name = "gemini-3-pro-preview"
+        model_name = GEMINI_PRO_MODEL
         try:
             response = client.models.generate_content(
                 model=model_name,
@@ -97,7 +98,7 @@ async def generate_car_list(request: GenerationRequest):
             )
         except Exception:
             # Fallback to 2.5 Pro if 3.0 fails
-            model_name = "gemini-3-pro-preview"
+            model_name = GEMINI_PRO_MODEL
             response = client.models.generate_content(
                 model=model_name,
                 contents=full_prompt,

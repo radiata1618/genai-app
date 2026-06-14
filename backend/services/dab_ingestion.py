@@ -26,6 +26,7 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db
 from google.genai import types
 from services.ai_shared import get_genai_client
+from config import GEMINI_FLASH_MODEL
 
 def fetch_zenn_rss() -> List[Dict[str, Any]]:
     """Zennの全体RSSフィード(RSS 2.0形式)から最新記事を取得してパースする"""
@@ -106,7 +107,7 @@ async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
     
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
@@ -178,7 +179,7 @@ async def generate_consultant_summary(article_title: str, article_url: str, brie
     
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 tools=[types.Tool(google_search=types.GoogleSearch())], # 記事内容の補完のために検索を許可
@@ -216,7 +217,7 @@ async def map_article_to_topics(article_title: str, summary: str, active_topics:
     
     try:
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash",
+            model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,

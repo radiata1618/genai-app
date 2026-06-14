@@ -15,6 +15,13 @@ from pydantic import BaseModel
 from typing import Optional, List, Dict, Any
 import base64
 import os
+from config import (
+    GEMINI_FLASH_MODEL,
+    GEMINI_FLASH_LITE_MODEL,
+    GEMINI_LIVE_MODEL,
+    GEMINI_EMBEDDING_MODEL,
+    GEMINI_STABLE_PRO_MODEL
+)
 import requests
 import datetime
 import asyncio
@@ -632,14 +639,14 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
             parts=[text_part, file_part]
         )
         
-        print(f"DEBUGGING: Calling generate_content with model='gemini-2.5-flash-lite' (Inline Bytes)...")
+        print(f"DEBUGGING: Calling generate_content with model='{GEMINI_FLASH_LITE_MODEL}' (Inline Bytes)...")
         
         start_time = time.time()
         
         try:
             # Using default timeout (proven to work in isolate_gemini_call.py with ADC)
             response = await custom_client.aio.models.generate_content(
-                model="gemini-2.5-flash-lite", 
+                model=GEMINI_FLASH_LITE_MODEL, 
                 contents=[user_content],
                 config=types.GenerateContentConfig(
                     response_mime_type="application/json"
@@ -665,7 +672,7 @@ async def process_knowledge_worker(doc_id: str, gcs_uri: str, file_type: str):
         
         # Use local client for embedding too for consistency
         embed_response = await custom_client.aio.models.embed_content(
-            model="models/gemini-embedding-001", 
+            model=GEMINI_EMBEDDING_MODEL, 
             contents=text_to_embed
         )
         embedding_vector = embed_response.embeddings[0].values
@@ -882,7 +889,7 @@ async def search_knowledge(req: KnowledgeSearchRequest):
         client = get_genai_client()
         # Embed Query
         embed_response = await client.aio.models.embed_content(
-            model="models/gemini-embedding-001",
+            model=GEMINI_EMBEDDING_MODEL,
             contents=req.query
         )
         vector = embed_response.embeddings[0].values
@@ -1041,7 +1048,7 @@ async def slide_polisher(req: SlidePolisherRequest):
              image_bytes = base64.b64decode(req.image)
              contents.append(types.Part.from_bytes(data=image_bytes, mime_type="image/jpeg"))
              contents.append("Refine the layout of this slide sketch/draft.")
-        response = client.models.generate_content(model="gemini-1.5-pro-002", contents=contents)
+        response = client.models.generate_content(model=GEMINI_STABLE_PRO_MODEL, contents=contents)
         html_content = response.text
         if html_content.startswith("```html"): html_content = html_content.replace("```html", "").replace("```", "")
         elif html_content.startswith("```"): html_content = html_content.replace("```", "")
@@ -1210,7 +1217,7 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
         
         # 音声デコードの失敗を避けるため、テスト済みの安定したモデルである gemini-2.5-flash を使用します
         response = await client.aio.models.generate_content(
-            model="gemini-2.5-flash", 
+            model=GEMINI_FLASH_MODEL, 
             contents=[prompt, part],
             config=types.GenerateContentConfig(
                 response_modalities=["TEXT"]
@@ -1293,7 +1300,7 @@ async def consulting_sme_websocket(websocket: WebSocket):
 
     # Model Configuration
     # verified working model for Live API connection & transcription
-    MODEL_NAME = "gemini-live-2.5-flash-preview-native-audio-09-2025" 
+    MODEL_NAME = GEMINI_LIVE_MODEL 
     
     try:
         # 1. Initial Handshake / Setup
