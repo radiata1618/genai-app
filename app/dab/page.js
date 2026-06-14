@@ -1,6 +1,7 @@
 "use client";
 
 import React, { useState, useEffect, useRef, Suspense } from 'react';
+import ReactMarkdown from 'react-markdown';
 import { useSearchParams } from 'next/navigation';
 import { dabApi } from '../utils/dabApi';
 import MobileMenuButton from '../../components/MobileMenuButton';
@@ -327,7 +328,7 @@ function DabDashboard() {
                             <span>ニュースサマリをハンズフリー再生中...</span>
                             <button 
                                 onClick={stopSpeaking} 
-                                className="bg-rose-500 hover:bg-rose-600 text-white font-bold px-3 py-1 rounded-full text-[10px] transition-all"
+                                className="bg-rose-500 hover:bg-rose-650 text-white font-bold px-3 py-1 rounded-full text-[10px] transition-all"
                             >
                                 停止 ⏹️
                             </button>
@@ -376,31 +377,48 @@ function DabDashboard() {
                                             <h3 className="text-[10px] font-bold text-slate-400 uppercase tracking-widest border-l-2 border-indigo-500 pl-2">
                                                 {category}
                                             </h3>
-                                            <div className="flex flex-col gap-1.5">
-                                                {groupedTopics[category].map(topic => {
+                                            
+                                            {/* 二重枠線解消のため、カテゴリ内のリスト全体を1つの枠（テーブル状）で包む */}
+                                            <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+                                                {groupedTopics[category].map((topic, index) => {
                                                     const previewStatus = getTopicStatusInPreview(topic.id);
                                                     const isExpanded = expandedTopicId === topic.id;
                                                     
-                                                    // ステータスに応じた枠線・背景色
-                                                    let borderClass = 'border-slate-200 bg-white hover:bg-slate-50/50';
-                                                    if (previewStatus === 'add') borderClass = 'border-emerald-300 bg-emerald-50 shadow-sm animate-pulse text-emerald-900';
-                                                    if (previewStatus === 'delete') borderClass = 'border-red-200 bg-red-50/60 opacity-60 text-red-900';
-                                                    if (previewStatus === 'modify') borderClass = 'border-blue-300 bg-blue-50 text-blue-900';
+                                                    // 既知度に応じた左端カラーバー
+                                                    // 既知度が低い (<= 2) 場合はピンク (要学習)、高い (>= 4) 場合はエメラルド (習得済み)、その他はインディゴ
+                                                    const knownVal = topic.known_score || 1;
+                                                    let leftBarColor = 'bg-indigo-400';
+                                                    if (knownVal <= 2) leftBarColor = 'bg-pink-500';
+                                                    else if (knownVal >= 4) leftBarColor = 'bg-emerald-500';
+
+                                                    // プレビュー状態による背景色とホバー色
+                                                    let rowBgClass = 'bg-white hover:bg-slate-50/50';
+                                                    if (previewStatus === 'add') rowBgClass = 'bg-emerald-50/40 hover:bg-emerald-50/60 text-emerald-900';
+                                                    if (previewStatus === 'delete') rowBgClass = 'bg-red-50/30 hover:bg-red-50/40 opacity-60 text-red-900';
+                                                    if (previewStatus === 'modify') rowBgClass = 'bg-blue-50/40 hover:bg-blue-50/60 text-blue-900';
 
                                                     return (
                                                         <div 
                                                             key={topic.id} 
-                                                            className={`px-3 py-2 rounded-lg border transition-all duration-200 ${borderClass}`}
+                                                            className={`border-b border-slate-100 last:border-b-0 transition-all duration-200 ${rowBgClass}`}
                                                         >
-                                                            {/* ヘッダー行：クリックで詳細アコーディオン開閉 */}
+                                                            {/* ヘッダー行：クリックで詳細アコーディオン開閉。relative pl-4 で左端カラーバーを設置 */}
                                                             <div 
-                                                                className="flex justify-between items-center cursor-pointer select-none"
+                                                                className="relative pl-4 pr-3 py-2.5 flex justify-between items-center cursor-pointer select-none"
                                                                 onClick={() => setExpandedTopicId(isExpanded ? null : topic.id)}
                                                             >
+                                                                {/* 左端重要度カラーバー */}
+                                                                <div className={`absolute left-0 top-0 bottom-0 w-1 ${leftBarColor}`} />
+
                                                                 <div className="flex items-center gap-2">
+                                                                    {/* 関心度が高い (>= 4) 場合はタイトル前に炎アイコン */}
+                                                                    {(topic.interest_score || 0) >= 4 && (
+                                                                        <span className="text-amber-500 text-xs flex-shrink-0 animate-pulse" title="高関心トピック">🔥</span>
+                                                                    )}
                                                                     <h4 className="font-bold text-xs text-slate-800">
                                                                         {topic.name}
                                                                     </h4>
+                                                                    
                                                                     {/* プレビュータグ */}
                                                                     {previewStatus !== 'normal' && (
                                                                         <span className={`text-[8px] font-bold px-1 py-0.2 rounded-full ${
@@ -414,7 +432,7 @@ function DabDashboard() {
                                                                 </div>
 
                                                                 <div className="flex items-center gap-3 text-[10px]">
-                                                                    {/* 評価スコアを1行に表示 */}
+                                                                    {/* 評価スコア表示 */}
                                                                     <div className="flex gap-3">
                                                                         <div className="flex items-center gap-1">
                                                                             <span className="text-slate-400 text-[9px]">関心:</span>
@@ -438,9 +456,9 @@ function DabDashboard() {
                                                                 </div>
                                                             </div>
 
-                                                            {/* アコーディオンの中身：説明文 */}
+                                                            {/* アコーディオンの中身：二重枠線なしでスッキリ展開 */}
                                                             {isExpanded && (
-                                                                <div className="mt-2 pt-2 border-t border-slate-100 text-[11px] text-slate-600 leading-relaxed animate-in fade-in slide-in-from-top-1 duration-150">
+                                                                <div className="bg-slate-50/60 border-t border-slate-100 px-4 py-3 text-[11px] text-slate-650 leading-relaxed animate-in fade-in slide-in-from-top-1 duration-150">
                                                                     {topic.description}
                                                                 </div>
                                                             )}
@@ -481,38 +499,62 @@ function DabDashboard() {
                                             <p className="text-slate-500 text-[10px] mt-0.5">Zenn RSSやWeb検索バッチが実行されると、ここに関連情報が並びます。</p>
                                         </div>
                                     ) : (
-                                        <div className="flex flex-col gap-1.5">
-                                            {feed.map(item => {
+                                        /* 二重枠線解消のため、フィード記事全体を1つのコンテナ（テーブル状）で包む */
+                                        <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+                                            {feed.map((item, index) => {
                                                 const isRead = item.read_status === 'READ';
                                                 const hasEval = !!item.user_evaluations;
                                                 const isExpanded = expandedFeedId === item.id;
 
+                                                // 左端の学習重要度/評価状況カラーバー
+                                                // 未評価(新着)は鮮やかなインディゴ、評価済みはライトグレー
+                                                const leftBarColor = hasEval ? 'bg-slate-200' : 'bg-indigo-500';
+
                                                 return (
                                                     <div 
                                                         key={item.id} 
-                                                        className={`border rounded-lg overflow-hidden transition-all duration-200 ${
+                                                        className={`border-b border-slate-100 last:border-b-0 transition-all duration-200 ${
                                                             isRead 
-                                                                ? 'border-slate-200 bg-slate-50/70 opacity-75' 
-                                                                : 'border-indigo-100 bg-white shadow-sm hover:border-indigo-200'
+                                                                ? 'bg-slate-50/40 opacity-75' 
+                                                                : 'bg-white hover:bg-slate-50/50'
                                                         }`}
                                                     >
-                                                        {/* ヘッダー部分（1行リスト形式、クリックで開閉） */}
+                                                        {/* ヘッダー部分（1行リスト形式、クリックで開閉、relative pl-4） */}
                                                         <div 
                                                             onClick={() => setExpandedFeedId(isExpanded ? null : item.id)}
-                                                            className="px-3 py-2 flex justify-between items-center gap-3 cursor-pointer select-none"
+                                                            className="relative pl-4 pr-3 py-2 flex justify-between items-center gap-3 cursor-pointer select-none"
                                                         >
+                                                            {/* 左端重要度・評価状態カラーバー */}
+                                                            <div className={`absolute left-0 top-0 bottom-0 w-1 ${leftBarColor}`} />
+
                                                             <div className="flex items-center gap-2 flex-1 min-w-0">
                                                                 <span className="text-[9px] font-bold bg-indigo-50 border border-indigo-100 text-indigo-700 px-1.5 py-0.2 rounded-md flex-shrink-0">
                                                                     {item.source}
                                                                 </span>
-                                                                <h3 className={`font-bold text-xs truncate max-w-[60%] hover:text-indigo-650 transition-colors ${
-                                                                    isRead ? 'text-slate-500 line-through' : 'text-slate-800'
+
+                                                                {/* 評価内容のインラインマイクロバッジ表示（一覧上の重要度可視化） */}
+                                                                {hasEval && (
+                                                                    <span className={`text-[9px] font-bold px-1.5 py-0.2 rounded-md flex-shrink-0 border ${
+                                                                        item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                                        !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                                                        'bg-slate-100 text-slate-600 border-slate-300'
+                                                                    }`}>
+                                                                        {item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
+                                                                         !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
+                                                                         '❄️ 既知・関心なし'}
+                                                                    </span>
+                                                                )}
+
+                                                                <h3 className={`font-bold text-xs truncate max-w-[50%] hover:text-indigo-650 transition-colors ${
+                                                                    isRead ? 'text-slate-500 font-medium' : 'text-slate-800'
                                                                 }`}>
                                                                     {item.title}
                                                                 </h3>
-                                                                <div className="hidden sm:flex gap-1 flex-shrink-0">
-                                                                    {item.related_topics && item.related_topics.slice(0, 2).map(t => (
-                                                                        <span key={t} className="text-[8px] text-slate-500 border border-slate-200 bg-slate-50 px-1 py-0.2 rounded">
+
+                                                                {/* 関連トピックタグ：見やすく拡大 */}
+                                                                <div className="hidden sm:flex gap-1.5 flex-shrink-0">
+                                                                    {item.related_topics && item.related_topics.slice(0, 3).map(t => (
+                                                                        <span key={t} className="text-[10px] text-indigo-700 border border-indigo-150 bg-indigo-50 px-2 py-0.5 rounded-md font-semibold">
                                                                             {t}
                                                                         </span>
                                                                     ))}
@@ -536,11 +578,12 @@ function DabDashboard() {
                                                             </div>
                                                         </div>
 
-                                                        {/* アコーディオンで開くサマリー本文と評価パネル */}
+                                                        {/* アコーディオン詳細：react-markdownを使用し二重枠線なしでスッキリ表示 */}
                                                         {isExpanded && (
-                                                            <div className="p-3 bg-slate-50/50 border-t border-slate-100 space-y-3 animate-in fade-in duration-150">
-                                                                <div className="prose prose-sm max-w-none text-[11px] text-slate-600 whitespace-pre-wrap leading-relaxed">
-                                                                    {item.summary}
+                                                            <div className="p-4 bg-slate-50/70 border-t border-slate-150 space-y-4 animate-in fade-in duration-150">
+                                                                {/* react-markdownで構造化サマリーを綺麗にレンダリング */}
+                                                                <div className="dab-markdown text-slate-700 text-xs leading-relaxed">
+                                                                    <ReactMarkdown>{item.summary ? item.summary.replace(/\\n/g, '\n') : ''}</ReactMarkdown>
                                                                 </div>
 
                                                                 <div className="pt-2 border-t border-slate-200/60 flex flex-wrap gap-3 items-center justify-between text-[10px]">
@@ -705,7 +748,7 @@ function DabDashboard() {
                                 setChatMode('prompt');
                                 setActiveTab('settings');
                             }}
-                            className={`px-2 py-1 text-[9px] font-bold rounded-md transition-all ${chatMode === 'prompt' ? 'bg-indigo-650 text-white shadow' : 'text-slate-600 hover:text-slate-800'}`}
+                            className={`px-2 py-1 text-[9px] font-bold rounded-md transition-all ${chatMode === 'prompt' ? 'bg-indigo-600 text-white shadow' : 'text-slate-600 hover:text-slate-800'}`}
                         >
                             プロンプト
                         </button>

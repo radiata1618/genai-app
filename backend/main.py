@@ -16,6 +16,7 @@ from routers import tasks
 from routers import car_quiz
 from routers import projects
 from routers import consulting
+from routers import consulting_training
 from routers import ai_chat
 
 app = FastAPI()
@@ -89,6 +90,7 @@ app.include_router(tasks.router, prefix="/api", tags=["tasks"])
 app.include_router(car_quiz.router, prefix="/api", tags=["car_quiz"])
 app.include_router(projects.router, prefix="/api", tags=["projects"])
 app.include_router(consulting.router, prefix="/api", tags=["consulting"])
+app.include_router(consulting_training.router, prefix="/api", tags=["consulting_training"])
 app.include_router(ai_chat.router, prefix="/api", tags=["ai-chat"])
 from routers import english
 from routers import roleplay

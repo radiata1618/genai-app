@@ -3,7 +3,6 @@
 import React, { useState, useEffect } from 'react';
 import Link from 'next/link';
 import { getRecipes } from '../actions/recipe';
-import StarRating from '../../components/StarRating';
 import MobileMenuButton from '../../components/MobileMenuButton';
 
 export default function RecipeListPage() {
@@ -69,41 +68,27 @@ export default function RecipeListPage() {
                         <div className="animate-spin rounded-full h-12 w-12 border-t-2 border-b-2 border-indigo-600"></div>
                     </div>
                 ) : (
-                    <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4 md:gap-6">
+                    <div className="flex flex-col gap-3">
                         {recipes.length > 0 ? (
                             recipes.map((recipe) => (
                                 <Link href={`/recipes/${recipe.id}`} key={recipe.id} className="block group">
-                                    <div className="bg-white rounded-2xl p-4 md:p-6 shadow-sm border border-slate-100 hover:shadow-xl hover:-translate-y-1 transition-all duration-300 h-full flex flex-col">
-                                        <div className="flex justify-between items-start mb-3 md:mb-4">
-                                            <div className={`px-3 py-1 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wide 
-                                                ${recipe.type === 'Main' ? 'bg-orange-100 text-orange-600' :
-                                                    recipe.type === 'Side' ? 'bg-green-100 text-green-600' :
-                                                        recipe.type === 'Soup' ? 'bg-blue-100 text-blue-600' :
-                                                            'bg-gray-100 text-gray-600'}`}>
-                                                {recipe.type || 'Other'}
-                                            </div>
-                                            {/* <span className="text-slate-400 text-sm">{new Date(recipe.updated_at).toLocaleDateString()}</span> */}
+                                    <div className="bg-white rounded-xl p-4 shadow-sm border border-slate-100 hover:shadow-md hover:border-indigo-100 transition-all flex items-center justify-between">
+                                        <div className="flex items-center gap-3">
+                                            {recipe.type && (
+                                                <div className={`px-2.5 py-0.5 rounded-full text-[10px] md:text-xs font-bold uppercase tracking-wide shrink-0
+                                                    ${recipe.type === 'Main' ? 'bg-orange-100 text-orange-600' :
+                                                        recipe.type === 'Side' ? 'bg-green-100 text-green-600' :
+                                                            recipe.type === 'Soup' ? 'bg-blue-100 text-blue-600' :
+                                                                'bg-gray-100 text-gray-600'}`}>
+                                                    {recipe.type}
+                                                </div>
+                                            )}
+                                            <h2 className="text-base md:text-lg font-semibold text-slate-800 group-hover:text-indigo-600 transition-colors line-clamp-1">
+                                                {recipe.title || 'Untitled Recipe'}
+                                            </h2>
                                         </div>
-                                        <h2 className="text-lg md:text-xl font-bold text-slate-800 mb-2 group-hover:text-indigo-600 transition-colors line-clamp-2">
-                                            {recipe.title || 'Untitled Recipe'}
-                                        </h2>
-
-                                        {/* Ratings Summary */}
-                                        <div className="flex flex-wrap gap-x-3 gap-y-1 md:gap-4 mb-3">
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase">Effort</span>
-                                                <StarRating value={recipe.effort_rating} sizeClass="text-xs" colorClass="text-blue-400" />
-                                            </div>
-                                            <div className="flex items-center gap-1">
-                                                <span className="text-[9px] md:text-[10px] font-bold text-slate-400 uppercase">Taste</span>
-                                                <StarRating value={recipe.taste_rating} sizeClass="text-xs" colorClass="text-orange-400" />
-                                            </div>
-                                        </div>
-                                        <p className="text-slate-500 text-xs md:text-sm line-clamp-3 mb-3 md:mb-4 flex-grow">
-                                            {recipe.content ? recipe.content.replace(/[#*`]/g, '') : 'No content...'}
-                                        </p>
-                                        <div className="mt-auto pt-3 md:pt-4 border-t border-slate-100 flex justify-end items-center text-indigo-500 font-medium opacity-100 md:opacity-0 group-hover:opacity-100 transition-opacity text-sm">
-                                            View Details →
+                                        <div className="text-slate-400 group-hover:text-indigo-500 transition-colors text-sm font-medium pr-1">
+                                            View →
                                         </div>
                                     </div>
                                 </Link>
