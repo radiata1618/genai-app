@@ -32,6 +32,8 @@ export default function LiveBrowserPage() {
     const analyserRef = useRef(null);
     const animationFrameRef = useRef(null);
     const streamRef = useRef(null);
+    const volumeStreamRef = useRef(null);
+    const recordStreamRef = useRef(null);
     const timelineEndRef = useRef(null);
 
     // 全体録音用
@@ -72,10 +74,17 @@ export default function LiveBrowserPage() {
         }
 
         try {
-            // マイクストリームの取得（音量可視化 ＆ 全体録音用）
+            // マイクストリームの取得
             const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
             streamRef.current = stream;
-            startVolumeIndicator(stream);
+
+            // マイク競合を回避するためにトラックのクローンを作成
+            const volumeStream = stream.clone();
+            const recordStream = stream.clone();
+            volumeStreamRef.current = volumeStream;
+            recordStreamRef.current = recordStream;
+
+            startVolumeIndicator(volumeStream);
 
             // 全体録音レコーダーの起動
             let mimeType = "audio/webm";
@@ -88,7 +97,7 @@ export default function LiveBrowserPage() {
                     }
                 }
             }
-            const totalRecorder = new MediaRecorder(stream, mimeType ? { mimeType } : {});
+            const totalRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : {});
             totalRecorder.ondataavailable = (e) => {
                 if (e.data && e.data.size > 0) {
                     allAudioChunksRef.current.push(e.data);
@@ -191,6 +200,14 @@ export default function LiveBrowserPage() {
         if (audioContextRef.current) {
             audioContextRef.current.close();
             audioContextRef.current = null;
+        }
+        if (volumeStreamRef.current) {
+            volumeStreamRef.current.getTracks().forEach(track => track.stop());
+            volumeStreamRef.current = null;
+        }
+        if (recordStreamRef.current) {
+            recordStreamRef.current.getTracks().forEach(track => track.stop());
+            recordStreamRef.current = null;
         }
         if (streamRef.current) {
             streamRef.current.getTracks().forEach(track => track.stop());
