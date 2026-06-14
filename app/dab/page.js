@@ -1,13 +1,28 @@
 "use client";
 
-import React, { useState, useEffect, useRef } from 'react';
+import React, { useState, useEffect, useRef, Suspense } from 'react';
+import { useSearchParams } from 'next/navigation';
 import { dabApi } from '../utils/dabApi';
 import MobileMenuButton from '../../components/MobileMenuButton';
 
-export default function DabPage() {
+function DabDashboard() {
+    const searchParams = useSearchParams();
+    const tabParam = searchParams.get('tab') || 'feed';
+
     // タブ状態: 'topics' | 'feed' | 'memory' | 'settings'
-    const [activeTab, setActiveTab] = useState('topics');
+    const [activeTab, setActiveTab] = useState(tabParam);
     
+    // アコーディオン開閉用ステート
+    const [expandedTopicId, setExpandedTopicId] = useState(null);
+    const [expandedFeedId, setExpandedFeedId] = useState(null);
+
+    // クエリパラメータの変更を監視して activeTab を同期
+    useEffect(() => {
+        if (tabParam) {
+            setActiveTab(tabParam);
+        }
+    }, [tabParam]);
+
     // データ状態
     const [topics, setTopics] = useState([]);
     const [memory, setMemory] = useState(null);
@@ -389,7 +404,7 @@ export default function DabPage() {
                                             <h3 className="text-xs font-bold text-slate-400 uppercase tracking-widest border-l-2 border-indigo-500 pl-2">
                                                 {category}
                                             </h3>
-                                            <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            <div className="flex flex-col gap-3">
                                                 {groupedTopics[category].map(topic => {
                                                     const previewStatus = getTopicStatusInPreview(topic.id);
                                                     
@@ -419,7 +434,7 @@ export default function DabPage() {
                                                                     </span>
                                                                 )}
                                                             </div>
-                                                            <p className="text-xs text-slate-400 mt-2 leading-relaxed h-12 overflow-y-auto">
+                                                            <p className="text-xs text-slate-400 mt-2 leading-relaxed">
                                                                 {topic.description}
                                                             </p>
                                                             
@@ -766,5 +781,17 @@ export default function DabPage() {
                 </form>
             </div>
         </div>
+    );
+}
+
+export default function DabPage() {
+    return (
+        <Suspense fallback={
+            <div className="flex justify-center items-center h-full w-full bg-[#0b0f19] text-slate-400 text-sm">
+                <span className="animate-spin mr-2">🔄</span> 読み込み中...
+            </div>
+        }>
+            <DabDashboard />
+        </Suspense>
     );
 }

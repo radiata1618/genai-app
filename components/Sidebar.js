@@ -25,6 +25,15 @@ const navItems = [
         ],
     },
     {
+        category: "DAB (情報収集)",
+        items: [
+            { name: "キャッチアップフィード", icon: "📰", href: "/dab?tab=feed" },
+            { name: "ホットトピック (10選)", icon: "🔥", href: "/dab?tab=topics" },
+            { name: "長期記憶 / プロファイル", icon: "🧠", href: "/dab?tab=memory" },
+            { name: "プロンプト設定", icon: "⚙️", href: "/dab?tab=settings" },
+        ],
+    },
+    {
         category: "English",
         items: [
             { name: "Preparation", icon: "📚", href: "/english/preparation" },
