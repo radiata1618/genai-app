@@ -431,8 +431,8 @@ export default function LiveGeminiPage() {
     };
 
     return (
-        <div className="flex h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
-            <div className="flex-1 flex flex-col overflow-hidden relative">
+        <div className="flex min-h-screen lg:h-screen bg-gray-50 text-slate-800 font-sans overflow-y-auto lg:overflow-hidden">
+            <div className="flex-1 flex flex-col overflow-y-auto lg:overflow-hidden relative">
                 
                 {/* ヘッダー */}
                 <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10">
@@ -456,10 +456,10 @@ export default function LiveGeminiPage() {
                 </div>
 
                 {/* メインコンテンツエリア */}
-                <div className="flex-1 flex flex-col lg:flex-row overflow-hidden p-4 sm:p-6 gap-6 bg-gray-50">
+                <div className="flex-1 flex flex-col lg:flex-row overflow-y-auto lg:overflow-hidden p-4 sm:p-6 gap-6 bg-gray-50">
                     
                     {/* 左カラム：ステータス＆リアルタイム文字起こし */}
-                    <div className="flex-1 flex flex-col space-y-4 overflow-hidden h-full">
+                    <div className="flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
                         {/* モニター状況カード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
                             <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
@@ -513,10 +513,10 @@ export default function LiveGeminiPage() {
                         </div>
 
                         {/* リアルタイム発話文字起こしパネル */}
-                        <div className="flex-1 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-[250px] lg:min-h-0">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[350px] lg:h-full lg:flex-1 lg:min-h-0 overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex items-center justify-between flex-shrink-0">
                                 <span>🗣️ Gemini文字起こし履歴 (6秒バッファごと)</span>
-                                {isRecording && <span className="text-[10px] text-cyan-650 font-mono animate-pulse">音声ブロック送信中...</span>}
+                                {isRecording && <span className="text-[10px] text-cyan-655 font-mono animate-pulse">音声ブロック送信中...</span>}
                             </h2>
                             
                             {/* スクロール履歴 */}
@@ -544,7 +544,7 @@ export default function LiveGeminiPage() {
                     </div>
 
                     {/* 右カラム：統計とアラートタイムライン */}
-                    <div className="w-full lg:w-[480px] flex flex-col space-y-4 overflow-hidden h-full">
+                    <div className="w-full lg:w-[480px] flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
                         
                         {/* 簡易スタッツカード */}
                         <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-shrink-0">
@@ -570,7 +570,7 @@ export default function LiveGeminiPage() {
                         </div>
 
                         {/* リアルタイムアラートタイムライン */}
-                        <div className="flex-1 bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col overflow-hidden min-h-[300px] lg:min-h-0 relative">
+                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[400px] lg:h-full lg:flex-1 lg:min-h-0 relative overflow-hidden">
                             <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex-shrink-0">⚠️ 検出された発話課題 (Gemini解析)</h2>
                             
                             {/* タイムラインリスト */}
@@ -592,7 +592,7 @@ export default function LiveGeminiPage() {
                                             </div>
                                             <div className="text-xs">
                                                 <div className="text-slate-400 font-medium mb-1">指摘箇所の発話:</div>
-                                                <div className="text-slate-200 bg-gray-50 px-2.5 py-1.5 rounded border border-gray-150 italic font-mono">
+                                                <div className="text-slate-700 bg-gray-50 px-2.5 py-1.5 rounded border border-gray-150 italic font-mono">
                                                     「 {alert.detected_text} 」
                                                 </div>
                                             </div>
@@ -600,13 +600,13 @@ export default function LiveGeminiPage() {
                                                 <div className="text-rose-600 font-bold flex items-center">
                                                     <span className="mr-1">❌</span> アラート理由:
                                                 </div>
-                                                <p className="text-slate-655 pl-4 leading-relaxed">{alert.reason}</p>
+                                                <p className="text-slate-600 pl-4 leading-relaxed">{alert.reason}</p>
                                             </div>
                                             <div className="text-xs space-y-1 pt-1 border-t border-gray-100">
                                                 <div className="text-emerald-600 font-bold flex items-center">
                                                     <span className="mr-1">💡</span> 改善・言い換え案:
                                                 </div>
-                                                <p className="text-slate-655 pl-4 leading-relaxed">{alert.improvement}</p>
+                                                <p className="text-slate-600 pl-4 leading-relaxed">{alert.improvement}</p>
                                             </div>
                                         </div>
                                     ))
