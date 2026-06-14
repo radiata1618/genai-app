@@ -66,6 +66,31 @@ export const dabApi = {
         return res.json();
     },
 
+    // AIチャット壁打ちによるフィルタプロンプト修正案の作成
+    editFilterPromptAi: async (message, currentPrompt) => {
+        const res = await fetch(`${API_BASE}/filter-prompt/edit-ai`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ message, current_prompt: currentPrompt }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'フィルタプロンプト修正案の生成に失敗しました');
+        }
+        return res.json();
+    },
+
+    // フィルタプロンプト変更の確定コミット
+    commitFilterPrompt: async (prompt) => {
+        const res = await fetch(`${API_BASE}/filter-prompt/commit`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ prompt }),
+        });
+        if (!res.ok) throw new Error('フィルタプロンプトの確定に失敗しました');
+        return res.json();
+    },
+
     // 構造化記事フィードの取得
     getFeed: async () => {
         const res = await fetch(`${API_BASE}/feed`);

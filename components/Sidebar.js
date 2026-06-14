@@ -34,6 +34,12 @@ const navItems = [
         ],
     },
     {
+        category: "MTG Training",
+        items: [
+            { name: "MTG Training", icon: "🏋️", href: "/consulting/training" }
+        ],
+    },
+    {
         category: "English",
         items: [
             { name: "Preparation", icon: "📚", href: "/english/preparation" },
@@ -55,7 +61,6 @@ const navItems = [
         items: [
             { name: "Logic Mapper", icon: "🧠", href: "/consulting/logic-mapper" },
             { name: "MTG Review", icon: "🎙️", href: "/consulting/review" },
-            { name: "MTG Training", icon: "🏋️", href: "/consulting/training" },
             { name: "MTG SME Live", icon: "👂", href: "/consulting/sme" },
             { name: "Knowledge Base", icon: "📚", href: "/consulting/knowledge" },
             { name: "Visual Search（未）", icon: "👁️", href: "/consulting/visual-search" },

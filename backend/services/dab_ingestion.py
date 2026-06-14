@@ -80,6 +80,75 @@ def fetch_zenn_rss() -> List[Dict[str, Any]]:
         print(f"Zenn RSS取得エラー: {e}")
         return []
 
+DEFAULT_FILTER_PROMPT = """あなたはデータアーキテクチャコンサルタントの自己学習支援システム用の分類AIです。
+入力された技術記事（タイトルとURL）が、「データアーキテクチャコンサルタントが学習すべきか」を判定してください。
+
+以下の条件に当てはまる記事は【採用（読むべき＝True）】と判定してください：
+1. エンタープライズデータ基盤、データマネジメント、データ統合（DWH/Lakehouse、データメッシュ、セマンティックレイヤー、データファブリック、Data Observability等）に関するもの。
+2. エンタープライズ環境でのRAG、LLMエージェント統合のアーキテクチャ設計や、セキュリティ/AIガバナンス・規制（EU AI Act等）に関するもの。
+
+以下の条件に当てはまる記事は【除外（読むべきでない＝False）】と判定してください：
+1. 一般的なプログラミング言語仕様（Go vs Java、Pythonの文法等）や言語固有のTips。
+2. 一般的なフロントエンド開発手法やフレームワーク設計（Next.js、React、CSS等）。
+3. インフラ/セキュリティ一般の資格の合格体験記（CKS等）や個人のOS環境構築（Ubuntu等）。
+4. ガジェットやツールの個人的な使用感、個人の開発記、無関係なテーマ。
+
+## 判定例：
+- 『Bedrock AgentCore + Strands Agents SDKで作る社内RAGボット』 -> True (社内RAG/LLMエージェント設計)
+- 『Claude Fable 5が突然使えなくなった(輸出管理指令によるアクセス停止)』 -> True (AIガバナンス/法規制)
+- 『GoのパッケージシステムをJavaと比較しながら理解する』 -> False (言語比較)
+- 『半年でNext.jsアプリを10本作って見えた設計の『判断基準』』 -> False (フロントエンド)
+- 『CKS合格体験記〜AIと歩んだ44日間〜』 -> False (資格)
+- 『QAエンジニアが「自分でテストやりきる」のをやめようとしている話』 -> False (一般的なテスト運用)
+
+応答は必ず以下のJSON形式のみで行ってください。
+{
+  "is_relevant": true または false,
+  "reason": "簡単な判定理由（1行）"
+}"""
+
+async def filter_article_by_ai(article_title: str, article_url: str) -> bool:
+    """記事がデータアーキテクチャコンサルタントにとって有用か（ノイズでないか）をAIに判定させる"""
+    client = get_genai_client()
+    if not client:
+        return True # AIクライアントがない場合はセーフティにTrueとする
+        
+    db = get_db()
+    memory_doc = db.collection("dab_user_memory").document("default_user").get()
+    filter_prompt = ""
+    if memory_doc.exists:
+        filter_prompt = memory_doc.to_dict().get("filter_prompt_template", "")
+        
+    if not filter_prompt:
+        filter_prompt = DEFAULT_FILTER_PROMPT
+        
+    prompt = (
+        f"【対象記事】\n"
+        f"タイトル: {article_title}\n"
+        f"URL: {article_url}\n\n"
+        f"指示: 上記の記事がデータアーキテクチャ・AIガバナンスのテーマに合致し、読む価値があるかを上記ルールに照らし合わせて判定してください。"
+    )
+    
+    try:
+        response = await client.aio.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=filter_prompt,
+                response_mime_type="application/json",
+                temperature=0.1
+            )
+        )
+        
+        res_dict = json.loads(response.text.strip())
+        is_relevant = res_dict.get("is_relevant", True)
+        reason = res_dict.get("reason", "")
+        print(f"  AIノイズ判定: {'採用' if is_relevant else '除外'} ({reason})")
+        return is_relevant
+    except Exception as e:
+        print(f"AIノイズフィルタエラー: {e}")
+        return True
+
 async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
     """GeminiのGoogle Searchグラウンディング機能を用いて、特定トピックに関する最新Web情報を収集する"""
     print(f"Gemini Web Searchでトレンド情報を検索中: {topic_name}")
@@ -90,20 +159,21 @@ async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
         
     system_instruction = (
         "あなたは最新の技術動向をリサーチする優秀なリサーチエージェントです。\n"
-        "指定されたトピックに関する最新の技術解説、ブログ記事、公式ドキュメント、またはリリースの情報をWebから検索してください。\n"
-        "実在する信頼できる情報源のみを対象とし、タイトル、URL、簡単な内容概要（3行程度）を必ず抽出してください。\n"
+        "指定されたトピックに関する最新（2025年〜2026年）の技術解説、ブログ記事、公式ドキュメント、またはリリースの情報をWebから検索してください。\n"
+        "候補として最大10件の記事タイトルとURLを見つけ出し、さらにその中から、データアーキテクチャの文脈における重要度（優先度スコア: 1〜5）を判定してください。\n"
         "以下のJSONフォーマット（配列のみ）で応答してください。それ以外の文字は一切含めないでください。\n\n"
         "## 応答JSONスキーマ:\n"
         "[\n"
         "  {\n"
         "    \"title\": \"記事またはドキュメントのタイトル\",\n"
         "    \"url\": \"完全なURL（httpまたはhttpsから始まるもの。ダミーは禁止）\",\n"
-        "    \"brief_summary\": \"記事の簡潔な概要（2〜3行）\"\n"
+        "    \"brief_summary\": \"記事の簡潔な概要（2〜3行）\",\n"
+        "    \"priority_score\": 1から5の重要度数値(5が最も重要)\n"
         "  }\n"
         "]"
     )
     
-    prompt = f"トピック: 「{topic_name}」に関連する、2025年〜2026年現在の最新の技術動向や詳細な技術解説・ブログ記事を3件見つけてリストアップしてください。"
+    prompt = f"トピック: 「{topic_name}」に関連する、2025年〜2026年現在の最新の技術動向や詳細な技術解説・ブログ記事を10件検索し、重要度スコアとともにリストアップしてください。"
     
     try:
         response = await client.aio.models.generate_content(
@@ -112,7 +182,6 @@ async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
                 tools=[types.Tool(google_search=types.GoogleSearch())], # Google Search を有効化
-                # response_mime_type="application/json" は Search ツールと併用できないため削除
                 temperature=0.3
             )
         )
@@ -133,19 +202,33 @@ async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
                     "url": item["url"],
                     "published_at": datetime.now(timezone.utc),
                     "source": "Gemini Web Search",
-                    "brief_summary": item.get("brief_summary", "")
+                    "brief_summary": item.get("brief_summary", ""),
+                    "priority_score": int(item.get("priority_score", 3))
                 })
-        print(f"Gemini Web Search から {len(results)} 件の技術情報を抽出しました。")
-        return results
+        
+        # 優先度スコア4以上のものだけにフィルタリングし、最大3件まで厳選
+        results = sorted(results, key=lambda x: x["priority_score"], reverse=True)
+        filtered_results = [r for r in results if r["priority_score"] >= 4][:3]
+        
+        # もしスコア4以上が1件もない場合は、上位3件をそのまま使用
+        if not filtered_results and results:
+            filtered_results = results[:3]
+            
+        print(f"Gemini Web Search から {len(filtered_results)} 件の厳選された技術情報を抽出しました（全候補 {len(results)} 件中）。")
+        return filtered_results
     except Exception as e:
         print(f"Gemini Web Search エラー ({topic_name}): {e}")
         return []
 
-async def generate_consultant_summary(article_title: str, article_url: str, brief_summary: str = "") -> str:
-    """Gemini APIを呼び出し、コンサルタント用の構造化サマリを生成する"""
+async def generate_article_metadata(article_title: str, article_url: str, brief_summary: str = "", active_topics: List[Dict[str, Any]] = None) -> Dict[str, Any]:
+    """Gemini APIを呼び出し、構造化サマリ、おすすめの理由、優先度スコアを一括生成する"""
     client = get_genai_client()
     if not client:
-        return "AIクライアントの初期化エラーのため、サマリを生成できませんでした。"
+        return {
+            "summary": "AIクライアントの初期化エラーのため、サマリを生成できませんでした。",
+            "recommendation_reason": "AI初期化エラー",
+            "priority_score": 3
+        }
         
     db = get_db()
     
@@ -158,23 +241,38 @@ async def generate_consultant_summary(article_title: str, article_url: str, brie
     if not summary_prompt:
         # フォールバック用デフォルトプロンプト
         summary_prompt = (
-            "あなたは優秀なデータアーキテクチャコンサルタントの学習支援AIです。\n"
             "記事を以下の構成で構造化要約してください。\n"
             "1. 技術概要 (3行)\n"
             "2. コンサルタントとしての示唆 (実務的な重要性、影響)\n"
             "3. 関連技術・トピック\n"
         )
         
-    # 記事をスクレイピングして内容を入手したいが、アクセス制限や速度を考慮し、
-    # タイトルと簡単な概要からGeminiにWeb検索(Grounding)させつつ要約させると非常に高精度かつ安定したサマリが得られます。
+    topics_context = ""
+    if active_topics:
+        topics_list = [f"- {t['name']}: {t['description']}" for t in active_topics]
+        topics_context = "【ユーザーの現在の関心（ホットトピック）】:\n" + "\n".join(topics_list)
+
+    system_instruction = (
+        "あなたは優秀なデータアーキテクチャコンサルタントの学習支援AIです。\n"
+        "与えられた記事の情報をWebから検索（グラウンディング）して詳細を把握し、以下のJSON形式で応答を出力してください。\n"
+        "JSON以外の余計な文字は一切出力しないでください。\n\n"
+        "## 応答JSONスキーマ:\n"
+        "{\n"
+        "  \"summary\": \"【要約プロンプト指示】に従って生成したマークダウン形式の構造化要約\",\n"
+        "  \"recommendation_reason\": \"なぜこの記事がユーザーの関心（ホットトピック）にとって重要かを示す、おすすめの理由（日本語1〜2行）\",\n"
+        "  \"priority_score\": ユーザーの関心（ホットトピック）との親和性や記事の重要性に応じた優先度（1〜5の数値、5が最高）\n"
+        "}\n\n"
+        f"【要約プロンプト指示】:\n{summary_prompt}"
+    )
+
     prompt = (
         f"【対象記事】\n"
         f"タイトル: {article_title}\n"
         f"URL: {article_url}\n"
         f"事前概要: {brief_summary}\n\n"
+        f"{topics_context}\n\n"
         f"指示：上記の記事のURLにアクセスする、またはWeb検索でこの記事の具体的な内容（技術仕様、機能、ユースケース）を調べて把握し、"
-        f"以下のカスタマイズプロンプト指示に従ってコンサルタント向けの構造化要約を日本語で生成してください。\n\n"
-        f"【要約プロンプト指示】:\n{summary_prompt}"
+        f"システム指示に従ってJSONを生成してください。"
     )
     
     try:
@@ -182,14 +280,26 @@ async def generate_consultant_summary(article_title: str, article_url: str, brie
             model=GEMINI_FLASH_MODEL,
             contents=prompt,
             config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
                 tools=[types.Tool(google_search=types.GoogleSearch())], # 記事内容の補完のために検索を許可
+                response_mime_type="application/json",
                 temperature=0.3
             )
         )
-        return response.text or "サマリの生成に失敗しました。"
+        
+        res_dict = json.loads(response.text.strip())
+        return {
+            "summary": res_dict.get("summary", "サマリの生成に失敗しました。"),
+            "recommendation_reason": res_dict.get("recommendation_reason", "最新のトレンド情報です。"),
+            "priority_score": int(res_dict.get("priority_score", 3))
+        }
     except Exception as e:
-        print(f"サマリ生成エラー: {e}")
-        return f"サマリの生成中にエラーが発生しました: {str(e)}"
+        print(f"メタデータ一括生成エラー: {e}")
+        return {
+            "summary": f"サマリの生成中にエラーが発生しました: {str(e)}",
+            "recommendation_reason": "エラーが発生したため、デフォルトで取り込みました。",
+            "priority_score": 3
+        }
 
 async def map_article_to_topics(article_title: str, summary: str, active_topics: List[Dict[str, Any]]) -> List[str]:
     """記事の内容を分析し、現在アクティブなホットトピック10選のどれに紐づくかをGeminiに推論させる"""
@@ -248,17 +358,28 @@ async def run_ingestion_pipeline():
         print("アクティブなホットトピックが見つかりません。バッチを終了します。")
         return
         
-    # 2. Zenn RSSから新着記事を取得
-    zenn_articles = fetch_zenn_rss()
+    # 2. Zenn RSSから新着記事を取得してノイズ除去
+    raw_zenn_articles = fetch_zenn_rss()
+    zenn_articles = []
+    for art in raw_zenn_articles:
+        # 重複チェックを事前に行うことで、AIノイズ判定の呼び出し回数を削減する
+        url_hash = hashlib.md5(art["url"].encode('utf-8')).hexdigest()
+        if db.collection("dab_feeds").document(url_hash).get().exists:
+            continue
+            
+        print(f"\nZenn新規候補をAIフィルタリング判定中: {art['title']}")
+        is_relevant = await filter_article_by_ai(art["title"], art["url"])
+        if is_relevant:
+            zenn_articles.append(art)
     
-    # 3. 各アクティブトピックについて Gemini Web Search で最新技術情報を3件ずつ収集
+    # 3. 各アクティブトピックについて Gemini Web Search で最新技術情報を3件ずつ収集（すでに検索内で厳選済み）
     web_articles = []
     for topic in active_topics:
         topic_articles = await fetch_web_trends_via_gemini(topic["name"])
         web_articles.extend(topic_articles)
         
     all_raw_articles = zenn_articles + web_articles
-    print(f"合計 {len(all_raw_articles)} 件の記事候補が集まりました。")
+    print(f"合計 {len(all_raw_articles)} 件のフィルタ適用済み記事候補が集まりました。")
     
     # 4. 重複排除とフィルタリング
     feed_ref = db.collection("dab_feeds")
@@ -274,16 +395,17 @@ async def run_ingestion_pipeline():
             # 既に登録済みの場合はスキップ
             continue
             
-        # Zenn記事の場合、アクティブトピックに関連するかを事前に簡易キーワード判定、
-        # または直接Geminiに判定させて、関連しないノイズ記事ならスキップする。
-        # ここではノイズ排除のため、「アクティブトピックのどれかに関連している」と分類された場合のみ取り込む。
         print(f"\n新着記事を処理中: {article['title']}")
         
         # 一次的に関連度を測るため、またはサマリを作るための下地
         brief = article.get("brief_summary", "")
         
-        # コンサル向け構造化サマリの生成
-        summary = await generate_consultant_summary(article["title"], article["url"], brief)
+        # コンサル向け構造化メタデータ（サマリ、おすすめ理由、優先度スコア）の一括生成
+        meta = await generate_article_metadata(article["title"], article["url"], brief, active_topics)
+        summary = meta["summary"]
+        recommendation_reason = meta["recommendation_reason"]
+        # Web Searchの時点でスコアがある場合はそれを優先しつつ、AI生成スコアも加味
+        priority_score = article.get("priority_score", meta["priority_score"])
         
         # 記事をアクティブなホットトピックにマッピング
         mapped_topic_ids = await map_article_to_topics(article["title"], summary, active_topics)
@@ -309,6 +431,8 @@ async def run_ingestion_pipeline():
             "source": article["source"],
             "published_at": article["published_at"],
             "summary": summary,
+            "recommendation_reason": recommendation_reason,
+            "priority_score": priority_score,
             "read_status": "UNREAD",
             "user_evaluations": None,
             "related_topics": topic_names,
@@ -316,7 +440,7 @@ async def run_ingestion_pipeline():
         }
         
         doc_ref.set(feed_data)
-        print(f"  -> Firestoreに保存完了！ (関連トピック: {', '.join(topic_names)})")
+        print(f"  -> Firestoreに保存完了！ (関連トピック: {', '.join(topic_names)}) (優先度: {priority_score})")
         processed_count += 1
         
         # APIレート制限への配慮（適度にウェイトを置く）
