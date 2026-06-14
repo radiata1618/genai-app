@@ -34,18 +34,18 @@ async def websocket_endpoint(websocket: WebSocket):
         "response_modalities": ["AUDIO"]
     }
     
-    # 1. Initial Setup Phase
+    # 1. 初期セットアップフェーズ
     current_session_handle = None
+    system_instruction = "You are a helpful English tutor. Engage in a roleplay conversation."
+
     try:
-        # Wait for client to send configuration/context
-        # Message format: { "type": "setup", "config": { ... }, "context": { ... } }
+        # クライアントから設定を受信
+        # フォーマット: { "type": "setup", "config": { ... }, "context": { ... } }
         init_data = await websocket.receive_json()
         print(f"DEBUG: Received setup data: {init_data}", flush=True)
         
-        system_instruction = "You are a helpful English tutor. Engage in a roleplay conversation."
-        
         if init_data.get("type") == "setup":
-             # Build System Instruction based on context
+             # コンテキストに基づいてシステム指示を構築
              context = init_data.get("context", {})
              if context.get("topic"):
                  system_instruction += f"\n\nTopic: {context['topic']}"
@@ -55,7 +55,7 @@ async def websocket_endpoint(websocket: WebSocket):
                  phrases_str = ", ".join([p.get('english', '') for p in context['phrases']])
                  system_instruction += f"\n\nTarget Phrases to use/check: {phrases_str}"
              
-             # Restore session handle if provided by client
+             # クライアントからセッションハンドルが提供された場合、復元を試みる
              if init_data.get("session_handle"):
                  current_session_handle = init_data.get("session_handle")
                  print(f"DEBUG: Restoring session from client handle: {current_session_handle[:10]}...", flush=True)
@@ -65,17 +65,13 @@ async def websocket_endpoint(websocket: WebSocket):
         await websocket.close()
         return
 
-    # 2. Connect to Gemini Live API
+    # 2. Gemini Live API への接続
     try:
-        # await websocket.accept() - ALREADY ACCEPTED AT START
-        
-        # current_session_handle is now initialized above if provided
+        # current_session_handle は上記で初期化済み（提供された場合）
 
         while True:
-            # print("DEBUG: Establishing new Gemini Live API session...", flush=True)
             try:
-                # 2. Initialize Gemini Live API Session
-                # Best Practice: Enable session_resumption
+                # Gemini Live API セッションを初期化
                 print(f"DEBUG: Connecting to Live API...", flush=True)
 
                 if current_session_handle:
@@ -91,40 +87,34 @@ async def websocket_endpoint(websocket: WebSocket):
                         session_resumption=types.SessionResumptionConfig(transparent=True)
                     )
 
-                # client = get_genai_client()
                 async with client.aio.live.connect(
                     model=config["model"],
                     config=session_config
                 ) as session:
                     print("DEBUG: Connected to Gemini Live API Successfully", flush=True)
 
-                    # 3. Bi-directional Streaming Loop
+                    # 3. 双方向ストリーミングループ
                     
-                    # Task to receive from Gemini and send to Client
+                    # Geminiからの受信 → クライアントへ転送
                     async def send_to_client():
                         nonlocal current_session_handle
                         print("DEBUG: Starting send_to_client loop", flush=True)
                         try:
-                            # Add explicit iterator for debugging? No, keep simple.
                             async for response in session.receive():
-                                # print(f"DEBUG: Session received response: {response}", flush=True) 
                                 server_content = response.server_content
 
-                                # Check for Session Resumption Update
+                                # セッション再開トークンの更新
                                 if response.session_resumption_update:
-                                    # print(f"DEBUG: Received session resumption update: {response.session_resumption_update}", flush=True)
                                     if response.session_resumption_update.new_handle:
                                         current_session_handle = response.session_resumption_update.new_handle
                                         print(f"DEBUG: Updated Session Handle: {current_session_handle[:10]}...", flush=True)
-                                        # Sync handle with Client
+                                        # クライアントにハンドルを同期
                                         await websocket.send_json({
                                             "type": "session_update",
                                             "session_handle": current_session_handle
                                         })
 
                                 if server_content is None:
-                                    # Could be other types of messages? tool_call etc?
-                                    # print(f"DEBUG: Non-content response: {response}", flush=True)
                                     continue
                                 
                                 if server_content.turn_complete:
@@ -146,13 +136,18 @@ async def websocket_endpoint(websocket: WebSocket):
                         finally:
                             print("DEBUG: send_to_client loop finished - Server likely closed stream", flush=True)
 
-                    # Task to receive from Client and send to Gemini
+                    # クライアントからの受信 → Geminiへ転送
                     async def receive_from_client():
                         print("DEBUG: Starting receive_from_client loop", flush=True)
                         try:
                             while True:
                                 message = await websocket.receive_json()
                                 
+                                # ハートビート Ping への応答
+                                if message.get("type") == "ping":
+                                    await websocket.send_json({"type": "pong"})
+                                    continue
+
                                 if "audio" in message:
                                     import base64
                                     audio_data = base64.b64decode(message["audio"])
@@ -160,11 +155,11 @@ async def websocket_endpoint(websocket: WebSocket):
                                     if len(audio_data) == 0:
                                         continue
 
-                                    # Basic silence check 
+                                    # 無音チェック
                                     is_silence = all(b == 0 for b in audio_data[:100])
                                     print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                                    # Best Practice: send_realtime_input for low-latency streaming
+                                    # 低遅延ストリーミング送信
                                     try:
                                         await session.send_realtime_input(
                                             media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
@@ -178,14 +173,14 @@ async def websocket_endpoint(websocket: WebSocket):
                                     
                         except WebSocketDisconnect:
                              print("DEBUG: Client disconnected (WebSocketDisconnect)", flush=True)
-                             raise # Propagate to trigger outer break
+                             raise # 上位に伝播してループを抜ける
                         except Exception as e:
                             print(f"Error receiving from client: {e}", flush=True)
-                            raise # Propagate errors to restart or exit
+                            raise # エラーを上位に伝播
                         finally:
                             print("DEBUG: receive_from_client loop finished", flush=True)
 
-                    # Run tasks
+                    # タスク実行
                     send_task = asyncio.create_task(send_to_client())
                     receive_task = asyncio.create_task(receive_from_client())
                     
@@ -194,7 +189,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         return_when=asyncio.FIRST_COMPLETED
                     )
 
-                    # Cancel pending tasks
+                    # ペンディングタスクをキャンセル
                     for task in pending:
                         task.cancel()
                         try:
@@ -202,20 +197,35 @@ async def websocket_endpoint(websocket: WebSocket):
                         except asyncio.CancelledError:
                             pass
                     
-                    # Check who finished
+                    # 終了したタスクの確認
                     if receive_task in done:
-                        # Client disconnected or error -> Stop everything
+                        # クライアント切断またはエラー → 処理終了
                         print("DEBUG: Client side closed/failed. Ending session.", flush=True)
                         break 
                     else:
-                        # Gemini side closed -> Loop will continue and Reconnect
+                        # Gemini側が切断 → 再接続ループへ
                         print("DEBUG: Gemini side closed. Reconnecting...", flush=True)
                         continue
 
             except Exception as gemini_err:
-                 print(f"Gemini Connection Error: {gemini_err}. Reconnecting in 1s...", flush=True)
-                 await asyncio.sleep(1)
-                 continue # Retry loop
+                err_str = str(gemini_err)
+                print(f"Gemini Connection Error: {gemini_err}", flush=True)
+
+                # セッションハンドルが無効・失効した場合はリセットして新規接続にフォールバック
+                if current_session_handle and (
+                    "invalid" in err_str.lower() or 
+                    "expired" in err_str.lower() or
+                    "not found" in err_str.lower() or
+                    "handle" in err_str.lower()
+                ):
+                    print(f"DEBUG: Session handle invalid/expired. Resetting to new session.", flush=True)
+                    current_session_handle = None
+                    await asyncio.sleep(1)
+                    continue  # 新規セッションで再試行
+
+                print(f"Retrying in 2s...", flush=True)
+                await asyncio.sleep(2)
+                continue  # 接続リトライ
 
     except Exception as e:
         print(f"Gemini Live API Error: {e}", flush=True)

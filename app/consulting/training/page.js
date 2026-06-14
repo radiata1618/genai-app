@@ -266,6 +266,12 @@ export default function MtgTrainingPage() {
                         >
                             <span>＋ トレーニング新規評価</span>
                         </button>
+                        <Link
+                            href="/consulting/training/live-browser"
+                            className="flex items-center space-x-1.5 bg-white border border-gray-300 hover:border-cyan-500 text-slate-600 hover:text-cyan-600 font-medium px-4 py-2 rounded-full shadow-sm transition-all text-sm"
+                        >
+                            <span>🎙️ リアルタイム監視 (Live)</span>
+                        </Link>
                     </div>
 
                     <span className="font-semibold text-slate-700 lg:hidden line-clamp-1 max-w-[150px]">

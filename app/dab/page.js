@@ -6,9 +6,278 @@ import { useSearchParams } from 'next/navigation';
 import { dabApi } from '../utils/dabApi';
 import MobileMenuButton from '../../components/MobileMenuButton';
 
+// Zennなどの全件フィードから無関係な記事を除外する判定用デフォルトプロンプト
+const DEFAULT_FILTER_PROMPT = `あなたはデータアーキテクチャコンサルタントの自己学習支援システム用の分類AIです。
+入力された技術記事（タイトルとURL）が、「データアーキテクチャコンサルタントが学習すべきか」を判定してください。
+
+以下の条件に当てはまる記事は【採用（読むべき＝True）】と判定してください：
+1. エンタープライズデータ基盤、データマネジメント、データ統合（DWH/Lakehouse、データメッシュ、セマンティックレイヤー、データファブリック、Data Observability等）に関するもの。
+2. エンタープライズ環境でのRAG、LLMエージェント統合のアーキテクチャ設計や、セキュリティ/AIガバナンス・規制（EU AI Act等）に関するもの。
+
+以下の条件に当てはまる記事は【除外（読むべきでない＝False）】と判定してください：
+1. 一般的なプログラミング言語仕様（Go vs Java、Pythonの文法等）や言語固有のTips。
+2. 一般的なフロントエンド開発手法やフレームワーク設計（Next.js、React、CSS等）。
+3. インフラ/セキュリティ一般の資格の合格体験記（CKS等）や個人のOS環境構築（Ubuntu等）。
+4. ガジェットやツールの個人的な使用感、個人の開発記、無関係なテーマ。
+
+## 判定例：
+- 『Bedrock AgentCore + Strands Agents SDKで作る社内RAGボット』 -> True (社内RAG/LLMエージェント設計)
+- 『Claude Fable 5が突然使えなくなった(輸出管理指令によるアクセス停止)』 -> True (AIガバナンス/法規制)
+- 『GoのパッケージシステムをJavaと比較しながら理解する』 -> False (言語比較)
+- 『半年でNext.jsアプリを10本作って見えた設計の『判断基準』』 -> False (フロントエンド)
+- 『CKS合格体験記〜AIと歩んだ44日間〜』 -> False (資格)
+- 『QAエンジニアが「自分でテストやりきる」のをやめようとしている話』 -> False (一般的なテスト運用)
+
+応答は必ず以下のJSON形式のみで行ってください。
+{
+  "is_relevant": true または false,
+  "reason": "簡単な判定理由（1行）"
+}`;
+
+// CDN経由でMermaid.jsをロードし、図解を動的レンダリングするコンポーネント
+function MermaidRenderer({ chart }) {
+    const containerRef = useRef(null);
+    const [svg, setSvg] = useState('');
+    const [error, setError] = useState(null);
+
+    useEffect(() => {
+        let isMounted = true;
+        
+        const renderChart = async () => {
+            try {
+                // AIが生成するMermaidコードのパースエラーを防ぐため、自動パッチ処理を適用
+                // 改行コードを\nに統一し、Windowsの\rを削除して正規表現の突き抜けを防ぐ
+                let cleanChart = chart.trim().replace(/\\n/g, '\n').replace(/\r/g, '');
+                if (cleanChart.startsWith('```mermaid')) {
+                    cleanChart = cleanChart.replace(/^```mermaid\n/, '').replace(/\n```$/, '');
+                } else if (cleanChart.startsWith('```')) {
+                    cleanChart = cleanChart.replace(/^```\n/, '').replace(/\n```$/, '');
+                }
+
+                // すでにダブルクォーテーションで囲まれていないノード定義を自動クォートする
+                // [] (角括弧): ID[テキスト] -> ID["テキスト"]
+                cleanChart = cleanChart.replace(/([a-zA-Z0-9_-]+)\[([^"\]\r\n]+)\]/g, (match, id, text) => {
+                    if (id === 'subgraph' || id === 'style' || id === 'classDef' || id === 'class' || id === 'click' || id === 'linkStyle') return match;
+                    return `${id}["${text.trim()}"]`;
+                });
+
+                // () (丸括弧): ID(テキスト) -> ID("テキスト")
+                cleanChart = cleanChart.replace(/([a-zA-Z0-9_-]+)\(([^"\)\r\n]+)\)/g, (match, id, text) => {
+                    if (id === 'graph' || id === 'flowchart' || id === 'subgraph' || id === 'style' || id === 'classDef' || id === 'class' || id === 'click' || id === 'linkStyle') return match;
+                    return `${id}("${text.trim()}")`;
+                });
+
+                // {} (波括弧): ID{テキスト} -> ID{"テキスト"}
+                cleanChart = cleanChart.replace(/([a-zA-Z0-9_-]+)\{([^"\}\r\n]+)\}/g, (match, id, text) => {
+                    if (id === 'subgraph' || id === 'style' || id === 'classDef' || id === 'class' || id === 'click' || id === 'linkStyle') return match;
+                    return `${id}{"${text.trim()}"}`;
+                });
+                
+                // mindmapチャートの場合、ノードテキスト内の丸括弧が「(())」構文と衝突してパースエラーになるため全角に変換する
+                if (/^\s*mindmap/i.test(cleanChart)) {
+                    cleanChart = cleanChart.split('\n').map(line => {
+                        // ((text)) 形式の中の丸括弧を全角に変換
+                        line = line.replace(/\(\((.+?)\)\)/g, (m, inner) =>
+                            `((${inner.replace(/[()]/g, c => c === '(' ? '（' : '）')}))`
+                        );
+                        // (text) 形式の中の丸括弧を全角に変換（前後に追加括弧がないもの）
+                        line = line.replace(/(?<!\()\(([^()\n]+)\)(?!\))/g, (m, inner) =>
+                            `(${inner.replace(/[()]/g, c => c === '(' ? '（' : '）')})`
+                        );
+                        return line;
+                    }).join('\n');
+                }
+
+                if (!window.mermaid) {
+                    await new Promise((resolve, reject) => {
+                        const script = document.createElement('script');
+                        script.src = 'https://cdn.jsdelivr.net/npm/mermaid@10.9.1/dist/mermaid.min.js';
+                        script.onload = () => {
+                            try {
+                                window.mermaid.initialize({
+                                    startOnLoad: false,
+                                    theme: 'neutral',
+                                    securityLevel: 'loose',
+                                    suppressErrors: true, // エラー出力を抑制してNext.jsのクラッシュを防ぐ
+                                    parseError: (err) => {
+                                        console.warn('Mermaid parse error handled inside callback:', err);
+                                    },
+                                    themeVariables: {
+                                        background: '#ffffff',
+                                        primaryColor: '#e0e7ff', // Indigo 100
+                                        primaryTextColor: '#1e1b4b',
+                                        lineColor: '#6366f1',
+                                    }
+                                });
+                                resolve();
+                            } catch (initErr) {
+                                reject(initErr);
+                            }
+                        };
+                        script.onerror = reject;
+                        document.head.appendChild(script);
+                    });
+                }
+
+                if (window.mermaid && isMounted) {
+                    // 事前にパースチェックを行い、エラーがあれば例外を投げる
+                    try {
+                        await window.mermaid.parse(cleanChart);
+                    } catch (parseErr) {
+                        throw new Error(`Mermaid構文エラー: ${parseErr.message || parseErr}`);
+                    }
+
+                    const randomId = `mermaid-${Math.random().toString(36).substring(2, 11)}`;
+                    const { svg: renderedSvg } = await window.mermaid.render(randomId, cleanChart);
+                    if (isMounted) {
+                        setSvg(renderedSvg);
+                        setError(null);
+                    }
+                }
+            } catch (err) {
+                console.error('Mermaid rendering failed:', err);
+                if (isMounted) {
+                    setError(err.message || '図解の描画に失敗しました');
+                }
+            }
+        };
+
+        renderChart();
+
+        return () => {
+            isMounted = false;
+        };
+    }, [chart]);
+
+    if (error) {
+        return (
+            <div className="text-[10px] text-red-500 bg-red-50 p-2.5 rounded-lg border border-red-200 font-mono">
+                ⚠️ 図解の描画でエラーが発生しました。
+                <pre className="mt-1 bg-slate-800 text-slate-200 p-2 rounded overflow-x-auto text-[9px] max-h-40">{chart}</pre>
+            </div>
+        );
+    }
+
+    if (!svg) {
+        return (
+            <div className="flex items-center gap-1.5 text-[10px] text-slate-450 py-3 pl-1 bg-white p-4 rounded-xl border border-slate-200/50">
+                <span className="animate-spin text-xs">🔄</span> 図解を描画中...
+            </div>
+        );
+    }
+
+    return (
+        <div 
+            ref={containerRef} 
+            className="mermaid-svg-container flex justify-center bg-white p-4 rounded-xl border border-slate-250/50 shadow-inner overflow-x-auto"
+            dangerouslySetInnerHTML={{ __html: svg }} 
+        />
+    );
+}
+
+// 記事サマリをMarkdownパースしてスライド資料風に視覚化するコンポーネント（コストゼロ・内容直結）
+function SlideCard({ item }) {
+    const rawText = (item.summary || '').replace(/\\n/g, '\n');
+
+    // セクションごとに分割してキー情報を抽出
+    const sections = {};
+    let currentKey = null;
+    for (const line of rawText.split('\n')) {
+        if (line.includes('問い') && (line.includes('結論') || line.startsWith('#'))) {
+            currentKey = 'qa'; sections[currentKey] = [];
+        } else if (line.includes('論点') || line.includes('トレードオフ')) {
+            currentKey = 'points'; sections[currentKey] = [];
+        } else if (line.includes('中級者') || line.includes('読むべき理由')) {
+            currentKey = 'reason'; sections[currentKey] = [];
+        } else if (currentKey && line.trim().match(/^[-*]\s/)) {
+            const text = line.replace(/^[\s\-*]+/, '').replace(/\*\*/g, '').trim();
+            if (text) sections[currentKey].push(text);
+        } else if (currentKey === 'reason' && line.trim() && !line.startsWith('#')) {
+            const text = line.replace(/\*\*/g, '').trim();
+            if (text) sections[currentKey].push(text);
+        }
+    }
+
+    // カラーテーマ（記事タイトルハッシュで自動選択）
+    const themes = [
+        { from: '#1e1b4b', to: '#3730a3', accent: '#818cf8', text: '#e0e7ff' },
+        { from: '#0c1a33', to: '#1e3a5f', accent: '#38bdf8', text: '#e0f9ff' },
+        { from: '#0d1f12', to: '#14532d', accent: '#4ade80', text: '#d1fae5' },
+        { from: '#2d1500', to: '#78350f', accent: '#fbbf24', text: '#fef3c7' },
+        { from: '#1a0533', to: '#4a1d96', accent: '#c084fc', text: '#f3e8ff' },
+        { from: '#0c2026', to: '#155e75', accent: '#22d3ee', text: '#cffafe' },
+    ];
+    const hash = (item.title || '').split('').reduce((a, c) => a + c.charCodeAt(0), 0);
+    const t = themes[hash % themes.length];
+
+    const qaPoints = (sections.qa || []).slice(0, 2);
+    const keyPoints = (sections.points || []).slice(0, 3);
+
+    return (
+        <div style={{
+            background: `linear-gradient(135deg, ${t.from} 0%, ${t.to} 100%)`,
+            borderRadius: '12px',
+            padding: '16px 18px 40px',
+            position: 'relative',
+            overflow: 'hidden',
+            minHeight: '220px',
+            boxShadow: '0 4px 24px rgba(0,0,0,0.18)',
+            fontFamily: 'sans-serif',
+        }}>
+            {/* 背景装飾 */}
+            <div style={{ position: 'absolute', top: '-40px', right: '-40px', width: '150px', height: '150px', borderRadius: '50%', background: `${t.accent}18` }} />
+            <div style={{ position: 'absolute', bottom: '-30px', left: '-20px', width: '100px', height: '100px', borderRadius: '50%', background: `${t.accent}10` }} />
+
+            {/* スライドタイトル */}
+            <div style={{ display: 'flex', alignItems: 'flex-start', gap: '7px', marginBottom: '12px', position: 'relative' }}>
+                <div style={{ width: '3px', flexShrink: 0, alignSelf: 'stretch', background: t.accent, borderRadius: '2px', marginTop: '2px' }} />
+                <h3 style={{ color: t.text, fontSize: '12px', fontWeight: 800, lineHeight: 1.5, margin: 0 }}>
+                    {(item.title || '').slice(0, 70)}{(item.title || '').length > 70 ? '…' : ''}
+                </h3>
+            </div>
+
+            {/* 問い・結論セクション */}
+            {qaPoints.length > 0 && (
+                <div style={{ marginBottom: '10px', position: 'relative' }}>
+                    <div style={{ fontSize: '8px', color: t.accent, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '5px' }}>🎯 問い・結論</div>
+                    {qaPoints.map((p, i) => (
+                        <div key={i} style={{ fontSize: '10px', color: 'rgba(255,255,255,0.88)', lineHeight: 1.6, paddingLeft: '8px', borderLeft: `2px solid ${t.accent}`, marginBottom: '4px' }}>
+                            {p.slice(0, 90)}{p.length > 90 ? '…' : ''}
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* キーポイントセクション */}
+            {keyPoints.length > 0 && (
+                <div style={{ position: 'relative' }}>
+                    <div style={{ fontSize: '8px', color: t.accent, fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '5px' }}>🔑 キーポイント</div>
+                    {keyPoints.map((p, i) => (
+                        <div key={i} style={{ display: 'flex', gap: '5px', fontSize: '10px', color: 'rgba(255,255,255,0.82)', lineHeight: 1.5, marginBottom: '4px' }}>
+                            <span style={{ color: t.accent, flexShrink: 0, fontWeight: 700 }}>▸</span>
+                            <span>{p.slice(0, 80)}{p.length > 80 ? '…' : ''}</span>
+                        </div>
+                    ))}
+                </div>
+            )}
+
+            {/* フッター */}
+            <div style={{ position: 'absolute', bottom: '10px', right: '12px', display: 'flex', gap: '6px', alignItems: 'center' }}>
+                {item.read_time && (
+                    <span style={{ fontSize: '8px', color: `${t.accent}dd`, background: 'rgba(255,255,255,0.1)', padding: '2px 7px', borderRadius: '20px' }}>⏱️ {item.read_time}</span>
+                )}
+                <span style={{ fontSize: '8px', color: `${t.accent}dd`, background: 'rgba(255,255,255,0.1)', padding: '2px 7px', borderRadius: '20px' }}>{item.source}</span>
+            </div>
+        </div>
+    );
+}
+
 function DabDashboard() {
     const searchParams = useSearchParams();
     const tabParam = searchParams.get('tab') || 'feed';
+
+    // クライアントサイドでのマウント判定（Hydrationエラー防止用）
+    const [isMounted, setIsMounted] = useState(false);
 
     // タブ状態: 'topics' | 'feed' | 'memory' | 'settings'
     const [activeTab, setActiveTab] = useState(tabParam);
@@ -16,6 +285,31 @@ function DabDashboard() {
     // アコーディオン開閉用ステート
     const [expandedTopicId, setExpandedTopicId] = useState(null);
     const [expandedFeedId, setExpandedFeedId] = useState(null);
+
+    // ビジュアルパーツ（Mermaid / AI画像）の表示ON/OFF設定
+    const [showMermaid, setShowMermaid] = useState(true);
+    const [showAiImage, setShowAiImage] = useState(true);
+
+    // マウント完了時に localStorage から設定を読み込む
+    useEffect(() => {
+        if (typeof window !== 'undefined') {
+            const savedMermaid = localStorage.getItem('dab_show_mermaid');
+            const savedAiImage = localStorage.getItem('dab_show_ai_image');
+            if (savedMermaid !== null) setShowMermaid(savedMermaid === 'true');
+            if (savedAiImage !== null) setShowAiImage(savedAiImage === 'true');
+        }
+    }, []);
+
+    // 設定トグルハンドラー
+    const handleToggleMermaid = (val) => {
+        setShowMermaid(val);
+        localStorage.setItem('dab_show_mermaid', String(val));
+    };
+
+    const handleToggleAiImage = (val) => {
+        setShowAiImage(val);
+        localStorage.setItem('dab_show_ai_image', String(val));
+    };
 
     // クエリパラメータの変更を監視して activeTab を同期
     useEffect(() => {
@@ -64,6 +358,10 @@ function DabDashboard() {
     // インジェクションバッチ動作状態
     const [isIngesting, setIsIngesting] = useState(false);
 
+    // Imagen 試験生成の状態管理（feedId -> base64 imageData）
+    const [imagenResults, setImagenResults] = useState({});
+    const [imagenLoadingId, setImagenLoadingId] = useState(null);
+
     // 音声再生（SpeechSynthesis）関連
     const [isPlaying, setIsPlaying] = useState(false);
     const [currentPlayingFeedId, setCurrentPlayingFeedId] = useState(null);
@@ -71,6 +369,7 @@ function DabDashboard() {
     const speechRef = useRef(null);
 
     useEffect(() => {
+        setIsMounted(true);
         fetchInitialData();
     }, []);
 
@@ -89,6 +388,21 @@ function DabDashboard() {
             console.error('初期データの取得に失敗しました', e);
         } finally {
             setLoading(false);
+        }
+    };
+
+    // Imagen 3 Fast 試験生成ハンドラー
+    const handleTestImagen = async (item) => {
+        setImagenLoadingId(item.id);
+        try {
+            const result = await dabApi.testImagen(item.title, item.summary || '');
+            if (result.success) {
+                setImagenResults(prev => ({ ...prev, [item.id]: result.image_data }));
+            }
+        } catch (e) {
+            alert(`Imagen生成エラー: ${e.message}`);
+        } finally {
+            setImagenLoadingId(null);
         }
     };
 
@@ -366,6 +680,14 @@ function DabDashboard() {
         groups[category].push(topic);
         return groups;
     }, {});
+
+    if (!isMounted) {
+        return (
+            <div className="flex justify-center items-center h-screen bg-slate-50 text-slate-500 text-sm">
+                <span className="animate-spin mr-2">🔄</span> 読み込み中...
+            </div>
+        );
+    }
 
     return (
         <div className="relative w-full h-full bg-slate-50 text-slate-900 font-sans flex flex-row overflow-hidden">
@@ -654,9 +976,12 @@ function DabDashboard() {
                                                                 </div>
 
                                                                 {/* 操作系 (音声、開閉) */}
-                                                                <div className="flex items-center gap-2 flex-shrink-0" onClick={e => e.stopPropagation()}>
+                                                                <div className="flex items-center gap-2 flex-shrink-0">
                                                                     <button
-                                                                        onClick={() => currentPlayingFeedId === item.id ? stopSpeaking() : startSpeaking(item)}
+                                                                        onClick={(e) => {
+                                                                            e.stopPropagation();
+                                                                            currentPlayingFeedId === item.id ? stopSpeaking() : startSpeaking(item);
+                                                                        }}
                                                                         className={`px-2 py-0.5 rounded text-[9px] font-bold flex items-center gap-0.5 transition-all ${
                                                                             currentPlayingFeedId === item.id 
                                                                                 ? 'bg-rose-500 text-white animate-pulse' 
@@ -671,9 +996,39 @@ function DabDashboard() {
                                                                 </div>
                                                             </div>
 
+                                                            {/* 新メタデータバッジ行 */}
+                                                            {(item.author || item.read_time || item.target_level || item.benefit) && (
+                                                                <div className="flex flex-wrap gap-1.5 text-[9px] mt-1" onClick={e => e.stopPropagation()}>
+                                                                    {item.author && (
+                                                                        <span className="bg-slate-100 border border-slate-200 text-slate-650 px-1.5 py-0.5 rounded flex items-center gap-1" title="著者/発信元">
+                                                                            <span>✍️</span>
+                                                                            <span>{item.author}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    {item.read_time && (
+                                                                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-750 px-1.5 py-0.5 rounded flex items-center gap-1" title="想定読了時間">
+                                                                            <span>⏱️</span>
+                                                                            <span>{item.read_time}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    {item.target_level && (
+                                                                        <span className="bg-emerald-50 border border-emerald-250 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-1" title="対象者レベル">
+                                                                            <span>🎓</span>
+                                                                            <span>{item.target_level}</span>
+                                                                        </span>
+                                                                    )}
+                                                                    {item.benefit && (
+                                                                        <span className="bg-amber-50 border border-amber-250 text-amber-800 px-1.5 py-0.5 rounded flex items-center gap-1 truncate max-w-[250px] sm:max-w-[400px]" title={`得られるベネフィット: ${item.benefit}`}>
+                                                                            <span>💡</span>
+                                                                            <span>{item.benefit}</span>
+                                                                        </span>
+                                                                    )}
+                                                                </div>
+                                                            )}
+
                                                             {/* 3行目: AIおすすめの理由 */}
                                                             {item.recommendation_reason && (
-                                                                <div className="text-[11px] text-slate-550 bg-slate-50 border border-slate-100/50 rounded px-2 py-1 mt-0.5">
+                                                                <div className="text-[11px] text-slate-550 bg-slate-50 border border-slate-100/50 rounded px-2 py-1 mt-1.5">
                                                                     💡 <strong>おすすめ理由:</strong> {item.recommendation_reason}
                                                                 </div>
                                                             )}
@@ -718,11 +1073,85 @@ function DabDashboard() {
                                                             </div>
                                                         </div>
 
-                                                        {/* アコーディオンの中身（詳細マークダウンサマリー） */}
+                                                        {/* アコーディオンの中身（詳細要約 ＋ Mermaid & AI画像） */}
                                                         {isExpanded && (
                                                             <div className="p-4 bg-slate-50/70 border-t border-slate-150 animate-in fade-in duration-150">
-                                                                <div className="dab-markdown text-slate-700 text-xs leading-relaxed">
-                                                                    <ReactMarkdown>{item.summary ? item.summary.replace(/\\n/g, '\n') : ''}</ReactMarkdown>
+                                                                <div className="grid grid-cols-1 lg:grid-cols-12 gap-5" onClick={e => e.stopPropagation()}>
+                                                                    {/* 左カラム: 構造化サマリテキスト */}
+                                                                    <div className="lg:col-span-7 space-y-3">
+                                                                        <div className="dab-markdown text-slate-700 text-xs leading-relaxed">
+                                                                            <ReactMarkdown>{item.summary ? item.summary.replace(/\\n/g, '\n') : ''}</ReactMarkdown>
+                                                                        </div>
+
+                                                                        {/* Imagen試験生成ゾーン */}
+                                                                        <div className="pt-2 border-t border-slate-100">
+                                                                            <div className="flex items-center gap-2 flex-wrap">
+                                                                                <button
+                                                                                    onClick={() => handleTestImagen(item)}
+                                                                                    disabled={imagenLoadingId === item.id}
+                                                                                    className={`px-2.5 py-1 rounded-lg text-[9px] font-bold flex items-center gap-1.5 border transition-all ${
+                                                                                        imagenLoadingId === item.id
+                                                                                            ? 'bg-violet-50 border-violet-200 text-violet-400 animate-pulse cursor-not-allowed'
+                                                                                            : 'bg-violet-50 border-violet-200 text-violet-700 hover:bg-violet-100'
+                                                                                    }`}
+                                                                                >
+                                                                                    {imagenLoadingId === item.id ? (
+                                                                                        <><span className="animate-spin">🔄</span> 生成中（5〜10秒）...</>
+                                                                                    ) : (
+                                                                                        <><span>🎨</span> Imagen 3 試験生成</>
+                                                                                    )}
+                                                                                </button>
+                                                                                <span className="text-[8px] text-slate-400">≈$0.02/枚 • imagen-3.0-fast • 評価用</span>
+                                                                                {imagenResults[item.id] && (
+                                                                                    <button
+                                                                                        onClick={() => setImagenResults(prev => { const n = {...prev}; delete n[item.id]; return n; })}
+                                                                                        className="text-[8px] text-slate-400 hover:text-rose-500 transition-colors"
+                                                                                    >
+                                                                                        ✕ 閉じる
+                                                                                    </button>
+                                                                                )}
+                                                                            </div>
+
+                                                                            {/* 生成された概念画像プレビュー */}
+                                                                            {imagenResults[item.id] && (
+                                                                                <div className="mt-2 space-y-1">
+                                                                                    <p className="text-[8px] text-violet-600 font-bold uppercase tracking-widest">🎨 Imagenプレビュー（評価用）</p>
+                                                                                    <div className="overflow-hidden rounded-xl border-2 border-violet-200 shadow-md">
+                                                                                        <img
+                                                                                            src={imagenResults[item.id]}
+                                                                                            alt="Imagen 3 generated concept"
+                                                                                            className="w-full h-auto object-cover max-h-48"
+                                                                                        />
+                                                                                    </div>
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    </div>
+
+                                                                    {/* 右カラム: ビジュアルパーツ（Mermaid ＋ スライドカード） */}
+                                                                    {((showMermaid && item.mermaid_code) || showAiImage) && (
+                                                                        <div className="lg:col-span-5 space-y-4">
+                                                                            {/* Mermaid図解 */}
+                                                                            {showMermaid && item.mermaid_code && (
+                                                                                <div className="space-y-1.5">
+                                                                                    <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-widest pl-1">
+                                                                                        📊 構造・関係図解 (Mermaid)
+                                                                                    </h4>
+                                                                                    <MermaidRenderer chart={item.mermaid_code} />
+                                                                                </div>
+                                                                            )}
+
+                                                                            {/* 記事サマリのスライドカード（内容直結・コストゼロ） */}
+                                                                            {showAiImage && (
+                                                                                <div className="space-y-1.5">
+                                                                                    <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-widest pl-1">
+                                                                                        📑 スライドカード
+                                                                                    </h4>
+                                                                                    <SlideCard item={item} />
+                                                                                </div>
+                                                                            )}
+                                                                        </div>
+                                                                    )}
                                                                 </div>
                                                             </div>
                                                         )}
@@ -773,6 +1202,54 @@ function DabDashboard() {
                             {/* 4. プロンプト設定 */}
                             {activeTab === 'settings' && (
                                 <div className="space-y-4 animate-in fade-in duration-200">
+                                    {/* 表示・非表示設定 (Mermaid, AI画像) */}
+                                    <div className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm space-y-4 animate-in fade-in slide-in-from-top-1 duration-150">
+                                        <div>
+                                            <h3 className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
+                                                ⚙️ キャッチアップフィード表示設定
+                                            </h3>
+                                            <p className="text-[9px] text-slate-400 mt-0.5">アコーディオン展開時に表示するビジュアルパーツを設定します。</p>
+                                        </div>
+                                        <div className="flex flex-col gap-3 pt-1">
+                                            {/* Mermaid設定 */}
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 last:border-b-0 last:pb-0">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-xs font-bold text-slate-700">📊 構造・関係図解 (Mermaid.js)</span>
+                                                    <span className="text-[9px] text-slate-400">記事の内容から自動生成された構成図をダイアグラム表示します。</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleMermaid(!showMermaid)}
+                                                    className={`w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                                                        showMermaid ? 'bg-indigo-600' : 'bg-slate-300'
+                                                    }`}
+                                                >
+                                                    <span className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform ${
+                                                        showMermaid ? 'translate-x-4' : 'translate-x-0'
+                                                    }`} />
+                                                </button>
+                                            </div>
+
+                                            {/* スライドカード設定 */}
+                                            <div className="flex items-center justify-between border-b border-slate-100 pb-2.5 last:border-b-0 last:pb-0">
+                                                <div className="flex flex-col gap-0.5">
+                                                    <span className="text-xs font-bold text-slate-700">📑 スライドカード表示</span>
+                                                    <span className="text-[9px] text-slate-450">記事のサマリから自動生成するスライド風の視覚カードを表示します（追加コスト¥0）。</span>
+                                                </div>
+                                                <button
+                                                    type="button"
+                                                    onClick={() => handleToggleAiImage(!showAiImage)}
+                                                    className={`w-9 h-5 rounded-full transition-colors relative flex items-center p-0.5 ${
+                                                        showAiImage ? 'bg-indigo-600' : 'bg-slate-300'
+                                                    }`}
+                                                >
+                                                    <span className={`w-4 h-4 rounded-full bg-white shadow-sm transform transition-transform ${
+                                                        showAiImage ? 'translate-x-4' : 'translate-x-0'
+                                                    }`} />
+                                                </button>
+                                            </div>
+                                        </div>
+                                    </div>
                                     {/* プレビュー中警告 */}
                                     {(previewPrompt || previewFilterPrompt) && (
                                         <div className="bg-amber-50 border border-amber-200 p-3 rounded-lg flex items-center justify-between">

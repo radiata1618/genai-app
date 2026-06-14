@@ -26,7 +26,8 @@ sys.path.append(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 from database import get_db
 from google.genai import types
 from services.ai_shared import get_genai_client
-from config import GEMINI_FLASH_MODEL
+# DAB処理にはコスト対効果の良いflash-liteモデルを使用（標準flashの約1/2のコスト）
+from config import GEMINI_FLASH_MODEL, GEMINI_FLASH_LITE_MODEL
 
 def fetch_zenn_rss() -> List[Dict[str, Any]]:
     """Zennの全体RSSフィード(RSS 2.0形式)から最新記事を取得してパースする"""
@@ -227,7 +228,12 @@ async def generate_article_metadata(article_title: str, article_url: str, brief_
         return {
             "summary": "AIクライアントの初期化エラーのため、サマリを生成できませんでした。",
             "recommendation_reason": "AI初期化エラー",
-            "priority_score": 3
+            "priority_score": 3,
+            "author": "不明",
+            "read_time": "5分",
+            "target_level": "コンサル向け",
+            "benefit": "最新トレンド理解",
+            "mermaid_code": ""
         }
         
     db = get_db()
@@ -239,12 +245,16 @@ async def generate_article_metadata(article_title: str, article_url: str, brief_
         summary_prompt = memory_doc.to_dict().get("summary_prompt_template", "")
         
     if not summary_prompt:
-        # フォールバック用デフォルトプロンプト
+        # フォールバック用デフォルトプロンプト（意思決定支援型サマリ構成）
         summary_prompt = (
-            "記事を以下の構成で構造化要約してください。\n"
-            "1. 技術概要 (3行)\n"
-            "2. コンサルタントとしての示唆 (実務的な重要性、影響)\n"
-            "3. 関連技術・トピック\n"
+            "記事を以下の構成で構造化要約してください。\n\n"
+            "### 🎯 この記事が解く「問い」と「結論」\n"
+            "- **問い**: （この記事が扱っているアーキテクチャ設計や技術選定における具体的な課題や疑問を1行で）\n"
+            "- **結論**: （それに対するこの記事の核心的な解決策や主張を1行で）\n\n"
+            "### 🔑 ユニークな技術的論点・トレードオフ\n"
+            "（この記事ならではの具体的な重要テーマ、設計上のメリット・デメリット、トレードオフを箇条書きで2〜3点挙げる。辞書的な一般論は除く）\n\n"
+            "### 🎓 専門家を目指す中級者が読むべき理由\n"
+            "（データアーキテクトや専門家を目指す中級者の実務にどう役立つか、どんな選択肢が増えるかを1〜2行で簡潔に示す）\n"
         )
         
     topics_context = ""
@@ -260,7 +270,12 @@ async def generate_article_metadata(article_title: str, article_url: str, brief_
         "{\n"
         "  \"summary\": \"【要約プロンプト指示】に従って生成したマークダウン形式の構造化要約\",\n"
         "  \"recommendation_reason\": \"なぜこの記事がユーザーの関心（ホットトピック）にとって重要かを示す、おすすめの理由（日本語1〜2行）\",\n"
-        "  \"priority_score\": ユーザーの関心（ホットトピック）との親和性や記事の重要性に応じた優先度（1〜5の数値、5が最高）\n"
+        "  \"priority_score\": ユーザーの関心（ホットトピック）との親和性や記事の重要性に応じた優先度（1〜5の数値、5が最高）。必ずユーザーのアクティブなホットトピックの内容に合致しているかを厳格に判定して決定してください。無関係なものは1や2、非常に関連が深い場合は4や5にしてください。一律3にするのは絶対に禁止です。\",\n"
+        "  \"author\": \"記事の著者名または発信元の組織名（Web検索結果や記事内から特定できない場合は『不明』またはウェブサイト名とする）\",\n"
+        "  \"read_time\": \"想定される読了時間（例：『3分』『5分』『10分』など、日本語表記）\",\n"
+        "  \"target_level\": \"対象者レベル（例：『アーキテクト向け』『データエンジニア向け』『初心者向け』『コンサル向け』など、日本語15文字以内）\",\n"
+        "  \"benefit\": \"この記事を読むことで得られる最大のベネフィット・学び（例：『RAGの改善手法』『セマンティックレイヤー概要』『法規制の理解』など、日本語15文字以内）\",\n"
+        "  \"mermaid_code\": \"記事の内容を1枚絵で視覚的に整理するMermaid.jsのダイアグラムコード。アコーディオン内でグラフィカルに表示されます。マインドマップ (mindmap) またはフローチャート (graph TD) 等の構文を使用して、技術の関係性、構成要素、または主要な流れを表現してください。```mermaidなどのコードブロック記号は含めず、純粋なコードテキストのみを出力してください。\"\n"
         "}\n\n"
         f"【要約プロンプト指示】:\n{summary_prompt}"
     )
@@ -277,28 +292,41 @@ async def generate_article_metadata(article_title: str, article_url: str, brief_
     
     try:
         response = await client.aio.models.generate_content(
-            model=GEMINI_FLASH_MODEL,
+            model=GEMINI_FLASH_MODEL,  # サマリ・Mermaid生成は品質重視でflashを使用
             contents=prompt,
             config=types.GenerateContentConfig(
                 system_instruction=system_instruction,
-                tools=[types.Tool(google_search=types.GoogleSearch())], # 記事内容の補完のために検索を許可
                 response_mime_type="application/json",
                 temperature=0.3
             )
         )
         
         res_dict = json.loads(response.text.strip())
+        
+        # image_urlはフロントエンドのSlideCardコンポーネントで代替するため空を1ンマイアスディックが対応
         return {
             "summary": res_dict.get("summary", "サマリの生成に失敗しました。"),
             "recommendation_reason": res_dict.get("recommendation_reason", "最新のトレンド情報です。"),
-            "priority_score": int(res_dict.get("priority_score", 3))
+            "priority_score": int(res_dict.get("priority_score", 3)),
+            "author": res_dict.get("author", "不明"),
+            "read_time": res_dict.get("read_time", "5分"),
+            "target_level": res_dict.get("target_level", "コンサル向け"),
+            "benefit": res_dict.get("benefit", "最新トレンド理解"),
+            "mermaid_code": res_dict.get("mermaid_code", ""),
+            "image_url": ""  # SlideCardコンポーネントで代替するため不要
         }
     except Exception as e:
         print(f"メタデータ一括生成エラー: {e}")
         return {
             "summary": f"サマリの生成中にエラーが発生しました: {str(e)}",
             "recommendation_reason": "エラーが発生したため、デフォルトで取り込みました。",
-            "priority_score": 3
+            "priority_score": 3,
+            "author": "不明",
+            "read_time": "5分",
+            "target_level": "コンサル向け",
+            "benefit": "最新トレンド理解",
+            "mermaid_code": "",
+            "image_url": ""  # SlideCardコンポーネントで代替するため不要
         }
 
 async def map_article_to_topics(article_title: str, summary: str, active_topics: List[Dict[str, Any]]) -> List[str]:
@@ -436,7 +464,13 @@ async def run_ingestion_pipeline():
             "read_status": "UNREAD",
             "user_evaluations": None,
             "related_topics": topic_names,
-            "created_at": datetime.now(timezone.utc)
+            "created_at": datetime.now(timezone.utc),
+            "author": article.get("author") or meta.get("author") or "不明",
+            "read_time": meta.get("read_time", "5分"),
+            "target_level": meta.get("target_level", "コンサル向け"),
+            "benefit": meta.get("benefit", "最新トレンド理解"),
+            "mermaid_code": meta.get("mermaid_code", ""),
+            "image_url": meta.get("image_url")
         }
         
         doc_ref.set(feed_data)

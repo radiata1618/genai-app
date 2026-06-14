@@ -2,7 +2,9 @@ from fastapi import (
     APIRouter,
     HTTPException,
     Depends,
-    status
+    status,
+    UploadFile,
+    File
 )
 from pydantic import BaseModel, Field
 from typing import Optional, List, Dict, Any
@@ -115,6 +117,16 @@ class MtgTrainingResultSchema(BaseModel):
     overall_feedback: str = Field(..., description="全体を通した定量的・客観的な評価の総評と、改善アクションプラン")
     topic_evaluations: List[TopicEvaluation] = Field(..., description="トピック（場面セグメント）ごとの詳細評価のリスト")
     detected_fillers: List[FillerItem] = Field(..., description="検出されたフィラーのリスト")
+
+class LiveAlertItem(BaseModel):
+    category: str = Field(..., description="アラートの種類: 'filler' (フィラー), 'roundabout' (回りくどい), 'logic' (論理/咀嚼不足), 'clarity' (滑舌)")
+    detected_text: str = Field(..., description="指摘対象となった発言の一部または全部の抜粋")
+    reason: str = Field(..., description="アラートが発生した理由の説明")
+    improvement: str = Field(..., description="具体的な改善案や、より良い言い換え例")
+
+class LiveAnalysisResultSchema(BaseModel):
+    transcription: str = Field(..., description="音声から文字起こしした全体テキスト")
+    alerts: List[LiveAlertItem] = Field(..., description="検出されたアラートのリスト")
 
 class TrainingReviewTask(BaseModel):
     id: str
@@ -349,3 +361,170 @@ def delete_training_task(task_id: str, db: firestore.Client = Depends(get_firest
         return {"status": "deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/live-gemini/analyze", response_model=LiveAnalysisResultSchema)
+async def analyze_live_audio(file: UploadFile = File(...)):
+    """数秒単位で送られてきたマイク音声バッファをGeminiで解析し、発話アラートをリアルタイム返却します"""
+    try:
+        content = await file.read()
+        if not content:
+            raise HTTPException(status_code=400, detail="音声データが空です。")
+
+        # MIMEタイプの判定と調整
+        mime_type = file.content_type or "audio/webm"
+        if "webm" in mime_type:
+            mime_type = "audio/webm"
+        elif "ogg" in mime_type:
+            mime_type = "audio/ogg"
+        elif "wav" in mime_type:
+            mime_type = "audio/wav"
+        elif "mp3" in mime_type or "mpeg" in mime_type:
+            mime_type = "audio/mpeg"
+        
+        # Partオブジェクトの作成
+        part = types.Part.from_bytes(data=content, mime_type=mime_type)
+
+        prompt = """添付された短い音声ファイルを解析し、コンサルタントとしての発話課題をリアルタイム評価してください。
+以下の観点で発話課題（アラート）を検出してください：
+1. フィラー: 「あの」「ええと」「ちょっと」「まあ」等の無意識の口癖や無駄な雑音。
+2. 回りくどい表現: 結論ファーストではなく、冗長であったりダラダラと話している箇所。
+3. 要約咀嚼の不足/論理破綻: 話の意味が通っていない、あるいは前後で矛盾している箇所。
+4. 滑舌の乱れ: 音声の中で聞き取りにくい箇所、もごもごしている箇所。
+
+【最重要指示: ハルシネーション（幻聴）の防止】
+- 音声が無音である場合、またはエアコンの動作音やマイクの電気的ノイズなどの背景雑音（ノイズ）のみで、人の明確な発話が聞き取れない場合は、文字起こし (transcription) を必ず空文字列 "" にしてください。
+- また、その場合はアラート (alerts) も必ず空リスト [] にして返却してください。
+- 音声に含まれていない架空の対話や、「ええと、プロジェクトの進捗...」などのビジネスライクな発話を絶対に捏造して出力しないでください。
+
+※アラートが一切検出されなかった場合は、alertsリストを空にして返却してください。
+"""
+
+        client = get_genai_client()
+        
+        # 安定性と速度に優れた gemini-2.5-flash を使用
+        response = await client.aio.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=[prompt, part],
+            config=types.GenerateContentConfig(
+                system_instruction="あなたは一流のビジネスコミュニケーションコーチです。発話の欠点を素早く見つけ、建設的に指導します。",
+                response_mime_type="application/json",
+                response_schema=LiveAnalysisResultSchema,
+                temperature=0.1
+            )
+        )
+
+        result_data = json.loads(response.text)
+        return LiveAnalysisResultSchema(**result_data)
+
+    except Exception as e:
+        import traceback
+        print(f"Error in analyze_live_audio: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"リアルタイム音声解析に失敗しました: {str(e)}")
+
+class SidebarSettingsModel(BaseModel):
+    hidden_items: List[str] = Field(default_factory=list, description="非表示に設定されたサイドバー項目のhrefリスト")
+
+@router.get("/sidebar/settings", response_model=SidebarSettingsModel)
+def get_sidebar_settings(db: firestore.Client = Depends(get_firestore_client)):
+    """サイドバーの非表示設定を取得します"""
+    try:
+        doc_ref = db.collection(CONFIG_COLLECTION).document("sidebar_visible_config")
+        doc = doc_ref.get()
+        if doc.exists:
+            data = doc.to_dict()
+            return SidebarSettingsModel(hidden_items=data.get("hidden_items", []))
+        return SidebarSettingsModel(hidden_items=[])
+    except Exception as e:
+        print(f"Error in get_sidebar_settings: {e}")
+        raise HTTPException(status_code=500, detail=f"サイドバー設定の取得に失敗しました: {str(e)}")
+
+@router.post("/sidebar/settings", response_model=SidebarSettingsModel)
+def update_sidebar_settings(req: SidebarSettingsModel, db: firestore.Client = Depends(get_firestore_client)):
+    """サイドバーの非表示設定を更新・保存します"""
+    try:
+        doc_ref = db.collection(CONFIG_COLLECTION).document("sidebar_visible_config")
+        doc_ref.set({
+            "hidden_items": req.hidden_items,
+            "updated_at": firestore.SERVER_TIMESTAMP
+        })
+        return req
+    except Exception as e:
+        print(f"Error in update_sidebar_settings: {e}")
+        raise HTTPException(status_code=500, detail=f"サイドバー設定の保存に失敗しました: {str(e)}")
+
+class TrainingReviewTextCreateRequest(BaseModel):
+    media_filename: str
+    full_transcript: str
+
+@router.post("/review-text", response_model=TrainingReviewTask)
+async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: firestore.Client = Depends(get_firestore_client)):
+    """文字起こしテキスト（全体）を元に、Geminiでコンサルタント会話能力の定量評価を行いFirestoreに保存します"""
+    try:
+        if not req.full_transcript.strip():
+            raise HTTPException(status_code=400, detail="文字起こしテキストが空です。")
+
+        # 1. Firestoreから最新のプロンプトとルーブリックを読み込む
+        config = get_or_create_config(db)
+        system_instruction = config.get("system_instruction")
+        rubric_definition = config.get("rubric_definition")
+
+        # 2. 解析用プロンプトの構築
+        prompt = f"""以下の会議の文字起こしテキスト（全体）を詳細に解析し、コンサルタントとしての会話能力を評価してください。
+客観的かつ定量的な判定を行うため、以下の評価ルーブリックの記述を厳密に解釈して点数と評価を決定してください。
+
+【評価ルーブリック定義】
+{rubric_definition}
+
+【会議の文字起こしテキスト（全体）】
+{req.full_transcript}
+
+【指示】
+1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」をそれぞれ1〜5点（整数値）で採点し、全体の総評を作成してください。
+2. 会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。（※テキストベースでの解析となるため、時間帯はおおよその時間、あるいはセグメント順序で補正してください）
+3. 会話全体の中から検出されたフィラー（「あの」「ええと」「ちょっと」等の口癖、あるいはもごもごして意味を持たない雑音）の一覧を作成し、その文脈セリフを提示してください。
+"""
+
+        # 3. Gemini API の呼び出し（構造化出力: JSON スキーマ）
+        client = get_genai_client()
+        response = await client.aio.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                response_mime_type="application/json",
+                response_schema=MtgTrainingResultSchema,
+                temperature=0.2,
+            )
+        )
+
+        result_data = json.loads(response.text)
+
+        # 4. Firestoreへ結果を保存
+        doc_ref = db.collection(TASKS_COLLECTION).document()
+        task_id = doc_ref.id
+
+        task_data = {
+            "id": task_id,
+            "media_filename": req.media_filename,
+            "gcs_path": "text_based_evaluation",
+            "overall_scores": result_data.get("overall_scores", {}),
+            "overall_feedback": result_data.get("overall_feedback", "評価が正常に生成されませんでした。"),
+            "topic_evaluations": result_data.get("topic_evaluations", []),
+            "detected_fillers": result_data.get("detected_fillers", []),
+            "status": 0,
+            "created_at": firestore.SERVER_TIMESTAMP
+        }
+        
+        doc_ref.set(task_data)
+
+        # レスポンス用に created_at をオブジェクト化
+        task_data["created_at"] = datetime.datetime.now()
+
+        return TrainingReviewTask(**task_data)
+
+    except Exception as e:
+        import traceback
+        print(f"Error in create_training_review_text: {e}")
+        traceback.print_exc()
+        raise HTTPException(status_code=500, detail=f"テキストベースのトレーニング解析に失敗しました: {str(e)}")

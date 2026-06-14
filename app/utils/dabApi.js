@@ -93,7 +93,7 @@ export const dabApi = {
 
     // 構造化記事フィードの取得
     getFeed: async () => {
-        const res = await fetch(`${API_BASE}/feed`);
+        const res = await fetch(`${API_BASE}/feed?_t=${Date.now()}`, { cache: 'no-store' });
         if (!res.ok) throw new Error('フィードの取得に失敗しました');
         return res.json();
     },
@@ -119,6 +119,20 @@ export const dabApi = {
             method: 'POST',
         });
         if (!res.ok) throw new Error('情報収集バッチのトリガーに失敗しました');
+        return res.json();
+    },
+
+    // Imagen 3 Fastで記事概念画像を1枚試験生成する（評価専用）
+    testImagen: async (title, summary) => {
+        const res = await fetch(`${API_BASE}/test-imagen`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ title, summary: summary || '' }),
+        });
+        if (!res.ok) {
+            const err = await res.json().catch(() => ({}));
+            throw new Error(err.detail || 'Imagen画像生成に失敗しました');
+        }
         return res.json();
     },
 };

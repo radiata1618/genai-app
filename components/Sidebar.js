@@ -1,10 +1,10 @@
 "use client";
-import React from "react";
+import React, { useState, useEffect } from "react";
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
-// Navigation Items Configuration
-const navItems = [
+// Navigation Items Configuration (Exported for settings page)
+export const navItems = [
     {
         category: "AI Chat",
         items: [
@@ -36,7 +36,9 @@ const navItems = [
     {
         category: "MTG Training",
         items: [
-            { name: "MTG Training", icon: "🏋️", href: "/consulting/training" }
+            { name: "MTG Training", icon: "🏋️", href: "/consulting/training" },
+            { name: "Live Train(Browser)", icon: "🎙️", href: "/consulting/training/live-browser" },
+            { name: "Live Train(Gemini)", icon: "🧠", href: "/consulting/training/live-gemini" },
         ],
     },
     {
@@ -86,6 +88,38 @@ const navItems = [
 
 export default function Sidebar({ onCloseMobile }) {
     const pathname = usePathname();
+    const [hiddenItems, setHiddenItems] = useState([]);
+
+    const fetchSettings = async () => {
+        try {
+            const res = await fetch("/api/consulting/training/sidebar/settings");
+            if (res.ok) {
+                const data = await res.json();
+                setHiddenItems(data.hidden_items || []);
+            }
+        } catch (e) {
+            console.error("Failed to load sidebar settings", e);
+        }
+    };
+
+    useEffect(() => {
+        fetchSettings();
+
+        const handleSettingsChange = () => {
+            fetchSettings();
+        };
+        window.addEventListener("sidebarSettingsUpdated", handleSettingsChange);
+        return () => window.removeEventListener("sidebarSettingsUpdated", handleSettingsChange);
+    }, []);
+
+    // フィルタリング処理
+    const filteredNavItems = navItems.map(section => {
+        const visibleItems = section.items.filter(item => !hiddenItems.includes(item.href));
+        return {
+            ...section,
+            items: visibleItems
+        };
+    }).filter(section => section.items.length > 0);
 
     return (
         <aside className="w-52 bg-[#0e7490] text-white flex flex-col h-full font-sans">
@@ -96,7 +130,7 @@ export default function Sidebar({ onCloseMobile }) {
 
             {/* Navigation */}
             <nav className="flex-1 overflow-y-auto py-4">
-                {navItems.map((section, idx) => (
+                {filteredNavItems.map((section, idx) => (
                     <div key={idx} className="mb-3">
                         <h3 className="px-4 text-xs font-semibold text-cyan-200 mb-2 uppercase tracking-wider">
                             {section.category}
@@ -126,6 +160,17 @@ export default function Sidebar({ onCloseMobile }) {
                     </div>
                 ))}
             </nav>
+
+            {/* フッター設定リンク (固定表示) */}
+            <div className="p-3 border-t border-cyan-800 bg-[#0891b2] flex-shrink-0">
+                <Link
+                    href="/settings/sidebar"
+                    onClick={onCloseMobile}
+                    className="flex items-center justify-center space-x-2 py-2 px-3 bg-[#155e75] hover:bg-[#1b4e5d] rounded-lg text-xs font-bold transition-all border border-cyan-700 text-cyan-100 hover:text-white animate-fadeIn"
+                >
+                    <span>⚙️ サイドバー表示設定</span>
+                </Link>
+            </div>
         </aside>
     );
 }
