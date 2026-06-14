@@ -101,3 +101,7 @@ async def health_check():
 
 from routers import hobbies
 app.include_router(hobbies.router, prefix="/api", tags=["hobbies"])
+
+from routers import dab
+app.include_router(dab.router, prefix="/api", tags=["dab"])
+

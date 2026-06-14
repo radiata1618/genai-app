@@ -1118,7 +1118,12 @@ def get_consulting_upload_url(filename: str, content_type: Optional[str] = "vide
              g_client = get_storage_client()
              bucket = g_client.bucket(GCS_BUCKET_NAME)
 
-        unique_name = f"consulting_uploads/{uuid.uuid4()}_{filename}"
+        # GCSやAPIで安全に扱えるよう、スペースや非ASCII文字を除去してファイル名をクリーンアップします
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        if not safe_filename or safe_filename.startswith("."):
+            safe_filename = f"file{safe_filename}"
+
+        unique_name = f"consulting_uploads/{uuid.uuid4()}_{safe_filename}"
         blob = bucket.blob(unique_name)
         
         url = blob.generate_signed_url(
@@ -1203,8 +1208,9 @@ async def create_consulting_review(req: ConsultingReviewCreateRequest):
         
         """
         
+        # 音声デコードの失敗を避けるため、テスト済みの安定したモデルである gemini-2.5-flash を使用します
         response = await client.aio.models.generate_content(
-            model="gemini-3-flash-preview", 
+            model="gemini-2.5-flash", 
             contents=[prompt, part],
             config=types.GenerateContentConfig(
                 response_modalities=["TEXT"]

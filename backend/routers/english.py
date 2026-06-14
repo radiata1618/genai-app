@@ -516,7 +516,12 @@ def get_upload_url(filename: str, content_type: Optional[str] = "video/mp4"):
         else:
              bucket = storage_client.bucket(GCS_BUCKET_NAME)
 
-        unique_name = f"english_uploads/{uuid.uuid4()}_{filename}"
+        # GCSやAPIで安全に扱えるよう、スペースや非ASCII文字を除去してファイル名をクリーンアップします
+        safe_filename = "".join(c for c in filename if c.isalnum() or c in "._-")
+        if not safe_filename or safe_filename.startswith("."):
+            safe_filename = f"file{safe_filename}"
+
+        unique_name = f"english_uploads/{uuid.uuid4()}_{safe_filename}"
         blob = bucket.blob(unique_name)
         
         url = blob.generate_signed_url(
