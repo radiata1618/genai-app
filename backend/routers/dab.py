@@ -85,6 +85,15 @@ class FeedItem(BaseModel):
     user_evaluations: Optional[Dict[str, Any]] = None
     related_topics: List[str]
     created_at: datetime
+    author: Optional[str] = None
+    read_time: Optional[str] = None
+    target_level: Optional[str] = None
+    benefit: Optional[str] = None
+    mermaid_code: Optional[str] = None
+    image_url: Optional[str] = None
+    recommendation_reason: Optional[str] = None
+    priority_score: Optional[int] = 3
+
 
 # --- Helpers ---
 
@@ -466,3 +475,76 @@ async def trigger_ingestion(background_tasks: BackgroundTasks):
         return {"status": "success", "message": "DAB情報収集パイプラインをバックグラウンドで開始しました。"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
+
+
+# --- Imagen 試験生成エンドポイント ---
+
+class ImagenTestRequest(BaseModel):
+    title: str
+    summary: str
+
+@router.post("/test-imagen")
+async def test_imagen_generation(request: ImagenTestRequest):
+    """
+    Imagen 3 Fastで記事タイトル・サマリをもとにスライド風概念画像を1枚試験生成する。
+    base64データURLで返すためGCS保存不要（評価専用）。
+    料金目安: ≈$0.02/枚 (imagen-3.0-fast-generate-001)
+    """
+    import asyncio
+    import base64
+    import re as _re
+
+    client = get_genai_client()
+    if not client:
+        raise HTTPException(status_code=503, detail="AIクライアントが初期化できませんでした")
+
+    # Markdownを除去して記事の核心テーマを抽出
+    clean_summary = request.summary.replace("\\n", "\n")
+    clean_summary = _re.sub(r"[#*\[\]`>]", "", clean_summary).strip()
+
+    # 「問い」と「結論」だけを抽出する試み（最初の250文字）
+    short_context = clean_summary[:250]
+
+    # データアーキテクチャ概念の視覚的プロンプト
+    prompt = (
+        "Create a beautiful, modern data architecture concept art image. "
+        f"Theme: '{request.title[:70]}'. "
+        f"Visual concept inspired by: {short_context[:180]}. "
+        "Style requirements: "
+        "Deep indigo-to-navy gradient background (#1e1b4b to #0c1a2e), "
+        "glowing geometric data flow networks, hexagonal data nodes connected by light beams, "
+        "abstract circuit patterns, subtle grid lines, "
+        "professional data consulting aesthetic, "
+        "cinematic lighting with teal and indigo accent glows. "
+        "No text. No people. No photos. Pure abstract digital art only."
+    )
+
+    try:
+        # Imagen APIは同期のためexecutorで非同期化
+        loop = asyncio.get_event_loop()
+        response = await loop.run_in_executor(
+            None,
+            lambda: client.models.generate_images(
+                model="imagen-3.0-fast-generate-001",
+                prompt=prompt,
+                config=types.GenerateImagesConfig(
+                    number_of_images=1,
+                    aspect_ratio="16:9",
+                    safety_filter_level="BLOCK_MEDIUM_AND_ABOVE",
+                    person_generation="DONT_ALLOW",
+                )
+            )
+        )
+
+        image_bytes = response.generated_images[0].image.image_bytes
+        image_b64 = base64.b64encode(image_bytes).decode("utf-8")
+
+        return {
+            "success": True,
+            "image_data": f"data:image/png;base64,{image_b64}",
+            "model": "imagen-3.0-fast-generate-001",
+            "estimated_cost_usd": 0.02
+        }
+
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Imagen生成エラー: {str(e)}")

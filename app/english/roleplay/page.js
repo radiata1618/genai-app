@@ -4,26 +4,41 @@ import MobileMenuButton from "../../../components/MobileMenuButton";
 
 export default function RoleplayPage() {
     // State
-    const [status, setStatus] = useState("disconnected"); // disconnected, connecting, connected, speaking
+    const [status, setStatus] = useState("disconnected"); // disconnected, connecting, connected
     const [preps, setPreps] = useState([]);
     const [selectedPrepId, setSelectedPrepId] = useState("");
     const [logs, setLogs] = useState([]);
 
-    // Refs
+    // Refs - WebSocket / Audio
     const wsRef = useRef(null);
     const audioContextRef = useRef(null);
     const audioWorkletNodeRef = useRef(null);
     const sourceNodeRef = useRef(null);
     const isRecordingRef = useRef(false);
-    const sessionHandleRef = useRef(null); // Keep session token for reconnection
+    const sessionHandleRef = useRef(null); // セッション再開用トークン
 
-    // Audio Queue for playback
+    // 多重接続防止フラグ
+    const isConnectingRef = useRef(false);
+    // 意図的な切断フラグ（ユーザーが「End Session」を押した場合）
+    const userStoppedRef = useRef(false);
+    // 自動再接続タイマー
+    const reconnectTimerRef = useRef(null);
+    // ハートビート Ping タイマー
+    const pingTimerRef = useRef(null);
+
+    // 音声再生キュー
     const nextStartTimeRef = useRef(0);
-    const jitterBufferSizeRef = useRef(0.5); // Adaptive Buffer (Starts at 0.5s, increases if unstable)
+    const jitterBufferSizeRef = useRef(0.5); // アダプティブバッファ（開始0.5s、不安定時は増加）
 
     useEffect(() => {
         fetchPreps();
-        return () => stopSession();
+        return () => {
+            // アンマウント時の完全クリーンアップ
+            userStoppedRef.current = true;
+            clearReconnectTimer();
+            clearPingTimer();
+            stopSession();
+        };
     }, []);
 
     const fetchPreps = async () => {
@@ -39,22 +54,52 @@ export default function RoleplayPage() {
     };
 
     const addLog = (msg) => {
-        setLogs(prev => [...prev.slice(-4), msg]); // Keep last 5
+        setLogs(prev => [...prev.slice(-4), msg]); // 最新5件を保持
+    };
+
+    // 再接続タイマーのクリア
+    const clearReconnectTimer = () => {
+        if (reconnectTimerRef.current) {
+            clearTimeout(reconnectTimerRef.current);
+            reconnectTimerRef.current = null;
+        }
+    };
+
+    // ハートビートタイマーのクリア
+    const clearPingTimer = () => {
+        if (pingTimerRef.current) {
+            clearInterval(pingTimerRef.current);
+            pingTimerRef.current = null;
+        }
+    };
+
+    // ハートビート Ping 送信開始（20秒ごと）
+    const startPingTimer = () => {
+        clearPingTimer();
+        pingTimerRef.current = setInterval(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: "ping" }));
+                console.log("DEBUG: Sent heartbeat ping");
+            }
+        }, 20000);
     };
 
     const startSession = async () => {
+        // 多重接続防止
+        if (isConnectingRef.current) {
+            console.log("DEBUG: Already connecting, skipping.");
+            return;
+        }
+
         if (!selectedPrepId && !confirm("No topic selected. Start free talk?")) return;
 
+        isConnectingRef.current = true;
+        userStoppedRef.current = false;
         setStatus("connecting");
         addLog("Connecting to server...");
 
         try {
-            // 1. Audio Context Setup (16kHz for input preference, but browser might override)
-            // We'll resample in worklet or just send whatever browser gives (usually 44.1/48k)
-            // Gemini 2.0 Flash Live API actually handles 48k fine usually, or we downsample.
-            // Let's try native sample rate.
-
-            // 1. Audio Context Setup (Robust Check)
+            // AudioContext のセットアップ
             const AudioContext = window.AudioContext || window.webkitAudioContext;
 
             if (!audioContextRef.current || audioContextRef.current.state === 'closed') {
@@ -62,14 +107,14 @@ export default function RoleplayPage() {
             }
             const ctx = audioContextRef.current;
 
-            // Resume if suspended (browser autoplay policy)
+            // サスペンド中の場合は再開
             if (ctx.state === 'suspended') {
                 await ctx.resume();
             }
 
             addLog(`AudioContext started: ${ctx.sampleRate}Hz`);
 
-            // 2. Microphone Access
+            // マイクアクセス
             const stream = await navigator.mediaDevices.getUserMedia({
                 audio: {
                     channelCount: 1,
@@ -79,32 +124,27 @@ export default function RoleplayPage() {
                 }
             });
 
-            // 3. WebSocket Setup
-            // Determine WS URL (assume same host)
+            // WebSocket URL の決定
             const protocol = window.location.protocol === "https:" ? "wss:" : "ws:";
-            const host = window.location.host; // e.g. localhost:3000
-            // On dev, backend is often on 8000. Nextjs rewrites /api -> backend:8000
-            // WS rewrite support in Nextjs proxy is sometimes tricky.
-            // If we use `/api/roleplay/ws`, next.js config must support WS proxy.
-            // If not, we might need direct port 8000. 
-            // Assuming standard setup where /api is proxied:
+            const host = window.location.host;
             const wsUrl = `${protocol}//${host}/api/roleplay/ws`;
 
             wsRef.current = new WebSocket(wsUrl);
 
             wsRef.current.onopen = () => {
+                isConnectingRef.current = false;
                 setStatus("connected");
                 addLog("WebSocket Connected");
 
-                // Send Setup
+                // セットアップ情報の送信
                 const prep = preps.find(p => p.id === selectedPrepId);
                 const setupData = {
                     type: "setup",
-                    session_handle: sessionHandleRef.current, // Send stored token if valid
+                    session_handle: sessionHandleRef.current, // 保存済みトークンがあれば送信
                     context: {
                         topic: prep?.topic || "Free Talk",
                         role: "English Tutor",
-                        phrases: [] // Could fetch phrases too
+                        phrases: []
                     }
                 };
                 if (sessionHandleRef.current) {
@@ -112,18 +152,27 @@ export default function RoleplayPage() {
                 }
                 wsRef.current.send(JSON.stringify(setupData));
 
-                // Start Audio Flow
+                // 音声入力の開始
                 startAudioInput(ctx, stream);
+
+                // ハートビート Ping タイマーの開始
+                startPingTimer();
             };
 
             wsRef.current.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
 
-                // Handle session updates
+                // セッションハンドルの更新
                 if (data.type === "session_update" && data.session_handle) {
                     sessionHandleRef.current = data.session_handle;
                     console.log("Updated Session Handle:", data.session_handle);
-                    return; // Control message, no audio
+                    return;
+                }
+
+                // ハートビート Pong の受信
+                if (data.type === "pong") {
+                    console.log("DEBUG: Received pong");
+                    return;
                 }
 
                 if (data.audio) {
@@ -131,10 +180,30 @@ export default function RoleplayPage() {
                 }
             };
 
-            wsRef.current.onclose = () => {
-                setStatus("disconnected");
+            wsRef.current.onclose = (event) => {
+                isConnectingRef.current = false;
+                clearPingTimer();
                 stopAudio();
                 addLog("Disconnected");
+
+                // ユーザーが意図的に切断した場合は再接続しない
+                if (userStoppedRef.current) {
+                    setStatus("disconnected");
+                    return;
+                }
+
+                // 予期しない切断 → 自動再接続
+                console.log(`DEBUG: Unexpected disconnect (code=${event.code}). Reconnecting in 3s...`);
+                setStatus("connecting");
+                addLog("Connection lost. Reconnecting in 3s...");
+
+                clearReconnectTimer();
+                reconnectTimerRef.current = setTimeout(() => {
+                    if (!userStoppedRef.current) {
+                        addLog("Reconnecting...");
+                        startSession();
+                    }
+                }, 3000);
             };
 
             wsRef.current.onerror = (e) => {
@@ -143,6 +212,7 @@ export default function RoleplayPage() {
             };
 
         } catch (e) {
+            isConnectingRef.current = false;
             console.error(e);
             alert("Failed to start: " + e.message);
             setStatus("disconnected");
@@ -157,7 +227,7 @@ export default function RoleplayPage() {
             return;
         }
 
-        // Safety check: Context might have closed while awaiting addModule
+        // audioWorkletのロード中にContextが閉じた場合の安全チェック
         if (ctx.state === 'closed') {
             console.warn("AudioContext invalid (closed) after loading worklet. Aborting input setup.");
             return;
@@ -174,11 +244,11 @@ export default function RoleplayPage() {
         let inputBuffer = new Int16Array(0);
 
         audioWorkletNodeRef.current.port.onmessage = (event) => {
-            // Received Float32 chunk from Worklet
+            // Workletから Float32 チャンクを受信
             const rawFloat32Data = event.data;
             let finalFloat32Data = rawFloat32Data;
 
-            // Downsample to 16000Hz (Linear Interpolation)
+            // 16000Hz へダウンサンプリング（線形補間）
             const targetRate = 16000;
             const currentRate = ctx.sampleRate;
             if (currentRate > targetRate) {
@@ -190,28 +260,26 @@ export default function RoleplayPage() {
                     const index0 = Math.floor(inputIndex);
                     const index1 = Math.min(index0 + 1, rawFloat32Data.length - 1);
                     const fraction = inputIndex - index0;
-                    // Linear interpolation
                     finalFloat32Data[i] = rawFloat32Data[index0] * (1 - fraction) + rawFloat32Data[index1] * fraction;
                 }
             }
 
-            // Convert to Int16
+            // Int16 へ変換
             const int16Chunk = new Int16Array(finalFloat32Data.length);
             for (let i = 0; i < finalFloat32Data.length; i++) {
                 let s = Math.max(-1, Math.min(1, finalFloat32Data[i]));
                 int16Chunk[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
             }
 
-            // Append to buffer
+            // バッファに追加
             const newBuffer = new Int16Array(inputBuffer.length + int16Chunk.length);
             newBuffer.set(inputBuffer);
             newBuffer.set(int16Chunk, inputBuffer.length);
             inputBuffer = newBuffer;
 
-            // Send if >= 1024 samples (2048 bytes, ~64ms) - Low latency
+            // 1024サンプル（約64ms）ごとに送信
             const CHUNK_SIZE = 1024;
             if (inputBuffer.length >= CHUNK_SIZE) {
-                // Extract chunks
                 while (inputBuffer.length >= CHUNK_SIZE) {
                     const chunkToSend = inputBuffer.slice(0, CHUNK_SIZE);
                     inputBuffer = inputBuffer.slice(CHUNK_SIZE);
@@ -225,14 +293,21 @@ export default function RoleplayPage() {
         };
 
         sourceNodeRef.current.connect(audioWorkletNodeRef.current);
-        audioWorkletNodeRef.current.connect(ctx.destination); // Mute self? If connected to destination, user hears self.
-        // Usually we don't connect to destination to avoid echo, unless we want self-monitoring.
-        audioWorkletNodeRef.current.disconnect(); // Don't play back input
+        audioWorkletNodeRef.current.connect(ctx.destination);
+        audioWorkletNodeRef.current.disconnect(); // 入力音声のフィードバックを防止
     };
 
     const stopSession = () => {
+        // 意図的な停止フラグを立てる（自動再接続を防ぐ）
+        userStoppedRef.current = true;
+        clearReconnectTimer();
+        clearPingTimer();
         stopAudio();
-        if (wsRef.current) wsRef.current.close();
+        if (wsRef.current) {
+            wsRef.current.close();
+            wsRef.current = null;
+        }
+        isConnectingRef.current = false;
         setStatus("disconnected");
     };
 
@@ -258,7 +333,7 @@ export default function RoleplayPage() {
         isRecordingRef.current = false;
     };
 
-    // Playback Logic
+    // 音声再生ロジック
     const playAudioChunk = (base64string) => {
         if (!audioContextRef.current) return;
         const ctx = audioContextRef.current;
@@ -268,27 +343,25 @@ export default function RoleplayPage() {
         const float32Data = new Float32Array(int16Data.length);
 
         for (let i = 0; i < int16Data.length; i++) {
-            // Int16Array values are already signed (-32768 to 32767)
-            // Convert to Float32 [-1.0, 1.0]
+            // Int16Array の値はすでに符号付き (-32768 〜 32767)
+            // Float32 [-1.0, 1.0] に変換
             float32Data[i] = int16Data[i] / 32768.0;
         }
 
-        const audioBuffer = ctx.createBuffer(1, float32Data.length, 24000); // Gemini output is often 24kHz
+        const audioBuffer = ctx.createBuffer(1, float32Data.length, 24000); // Gemini の出力は 24kHz
         audioBuffer.copyToChannel(float32Data, 0);
 
         const source = ctx.createBufferSource();
         source.buffer = audioBuffer;
         source.connect(ctx.destination);
 
-        // Scheduling
+        // スケジューリング
         const now = ctx.currentTime;
         let start = nextStartTimeRef.current;
 
-        // Adaptive Jitter Buffering Logic
-        // If we fell behind (buffer underrun), it means our current buffer size was too small for the network jitter.
+        // アダプティブジッターバッファリング
+        // バッファアンダーランが発生した場合、バッファサイズを拡大して安定性を優先
         if (start < now) {
-            // Increase buffer size to handle the instability
-            // Start with 0.5s, step up by 0.5s each time we fail, max 3.0s
             const currentBuffer = jitterBufferSizeRef.current;
             const newBuffer = Math.min(currentBuffer + 0.5, 3.0);
 
@@ -296,16 +369,13 @@ export default function RoleplayPage() {
             console.log(`DEBUG: Audio Underrun. Increasing jitter buffer to ${newBuffer}s`);
 
             start = now + newBuffer;
-        } else {
-            // Optional: Slowly decrease buffer if stable? 
-            // For now, prioritize stability over recovering latency.
         }
 
         source.start(start);
         nextStartTimeRef.current = start + audioBuffer.duration;
     };
 
-    // Helpers
+    // ヘルパー関数
     function arrayBufferToBase64(buffer) {
         let binary = '';
         const bytes = new Uint8Array(buffer);
@@ -334,7 +404,7 @@ export default function RoleplayPage() {
 
             <main className="flex-1 flex flex-col items-center justify-center p-6 relative">
 
-                {/* Visualizer / Avatar Circle */}
+                {/* ビジュアライザー / アバター */}
                 <div className={`w-48 h-48 rounded-full border-4 flex items-center justify-center mb-8 transition-all duration-500
                     ${status === "connected" ? "border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.5)] animate-pulse" : "border-slate-700"}
                 `}>
@@ -343,9 +413,9 @@ export default function RoleplayPage() {
                     </div>
                 </div>
 
-                {/* Status Text */}
+                {/* ステータステキスト */}
                 <div className="mb-8 text-center h-20">
-                    <p className={`text-lg font-bold ${status === "connected" ? "text-cyan-400" : "text-slate-400"}`}>
+                    <p className={`text-lg font-bold ${status === "connected" ? "text-cyan-400" : status === "connecting" ? "text-yellow-400" : "text-slate-400"}`}>
                         {status === "disconnected" && "Ready to Start"}
                         {status === "connecting" && "Connecting..."}
                         {status === "connected" && "Listening..."}
@@ -353,7 +423,7 @@ export default function RoleplayPage() {
                     {logs.map((l, i) => <p key={i} className="text-xs text-slate-500">{l}</p>)}
                 </div>
 
-                {/* Controls */}
+                {/* コントロール */}
                 <div className="w-full max-w-md space-y-4">
                     {status === "disconnected" && (
                         <>
