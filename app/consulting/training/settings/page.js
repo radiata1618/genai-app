@@ -7,17 +7,17 @@ export default function MtgTrainingSettingsPage() {
     const [systemInstruction, setSystemInstruction] = useState("");
     const [rubricDefinition, setRubricDefinition] = useState("");
     const [isSaving, setIsSaving] = useState(false);
-    
+
     // AI壁打ちチャット用状態
     const [chatMessages, setChatMessages] = useState([
         {
             role: "assistant",
-            content: "こんにちは！MTG Trainingの評価プロンプト調整アシスタントです。現在のシステムプロンプトやルーブリックの評価基準に対して「咀嚼力の配点を大きくしてほしい」「滑舌の評価項目をさらに細分化したい」などの調整要求を教えてください。要望を反映した新しいプロンプトを提案します。"
+            content: "こんにちは！！MTG Trainingの評価プロンプト調整アシスタントです。現在のシステムプロンプトやルーブリックの評価基準に対して「咀嚼力の配点を大きくしてほしい」「滑舌の評価項目をさらに細分化したい」などの調整要求を教えてください。要望を反映した新しいプロンプトを提案します。"
         }
     ]);
     const [userMessage, setUserMessage] = useState("");
     const [isChatLoading, setIsChatLoading] = useState(false);
-    
+
     // AIから提案された新しい設定（一時保存用）
     const [proposedInstruction, setProposedInstruction] = useState("");
     const [proposedRubric, setProposedRubric] = useState("");
@@ -88,12 +88,12 @@ export default function MtgTrainingSettingsPage() {
 
             if (res.ok) {
                 const data = await res.json();
-                
+
                 setChatMessages([
                     ...newMessages,
                     { role: "assistant", content: data.assistant_response }
                 ]);
-                
+
                 setProposedInstruction(data.proposed_system_instruction);
                 setProposedRubric(data.proposed_rubric_definition);
             } else {
@@ -111,13 +111,13 @@ export default function MtgTrainingSettingsPage() {
 
     const handleApplyProposal = () => {
         if (!proposedInstruction && !proposedRubric) return;
-        
+
         if (proposedInstruction) setSystemInstruction(proposedInstruction);
         if (proposedRubric) setRubricDefinition(proposedRubric);
-        
+
         setProposedInstruction("");
         setProposedRubric("");
-        
+
         alert("AIの提案を設定画面に適用しました。内容を確認し、よろしければ「設定を保存する」ボタンを押してください。");
     };
 
@@ -134,7 +134,7 @@ export default function MtgTrainingSettingsPage() {
                         </Link>
                         <h1 className="text-base font-bold text-slate-700 hidden sm:block">🏋️ MTG Training プロンプト管理・AI壁打ち</h1>
                     </div>
-                    
+
                     <button
                         onClick={handleSaveConfig}
                         disabled={isSaving}
@@ -207,17 +207,17 @@ export default function MtgTrainingSettingsPage() {
                         {/* メッセージログ */}
                         <div className="flex-1 overflow-y-auto p-4 space-y-4 custom-scrollbar bg-gray-50/50">
                             {chatMessages.map((msg, mIdx) => (
-                                <div 
+                                <div
                                     key={mIdx}
                                     className={`flex flex-col max-w-[85%] ${msg.role === 'user' ? 'ml-auto items-end' : 'mr-auto items-start'}`}
                                 >
                                     <span className="text-[10px] text-slate-400 mb-1">
                                         {msg.role === 'user' ? 'あなた' : '調整AI'}
                                     </span>
-                                    <div 
+                                    <div
                                         className={`p-3 rounded-2xl text-xs leading-relaxed whitespace-pre-wrap shadow-xs
-                                            ${msg.role === 'user' 
-                                                ? 'bg-cyan-600 text-white rounded-tr-none' 
+                                            ${msg.role === 'user'
+                                                ? 'bg-cyan-600 text-white rounded-tr-none'
                                                 : 'bg-white text-slate-700 rounded-tl-none border border-gray-200'}`}
                                     >
                                         {msg.content}
