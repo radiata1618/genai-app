@@ -15,11 +15,12 @@ export default function ActionsPage() {
     const [isModalOpen, setIsModalOpen] = useState(false);
     const [editingId, setEditingId] = useState(null);
 
-    // Form State
+    // フォームの状態
     const [title, setTitle] = useState('');
     const [icon, setIcon] = useState('🔥');
     const [freqType, setFreqType] = useState('DAILY'); // DAILY, WEEKLY, MONTHLY
     const [selectedWeekdays, setSelectedWeekdays] = useState([]); // 0-6
+    const [isActive, setIsActive] = useState(true); // 有効・無効状態
 
     const [selectedMonthDays, setSelectedMonthDays] = useState([]); // 1-31
     const [selectedMonths, setSelectedMonths] = useState([]); // 1-12 (Deprecated for Yearly)
@@ -67,6 +68,7 @@ export default function ActionsPage() {
         setTempMonth(1);
         setTempDay(1);
         setScheduledTime('05:00');
+        setIsActive(true); // デフォルトで有効
 
         setIsGoalEnabled(false);
         setGoalPeriod('WEEKLY');
@@ -85,6 +87,7 @@ export default function ActionsPage() {
         setSelectedMonths(r.frequency?.months || []);
         setYearlyDates(r.frequency?.yearly_dates || []);
         setScheduledTime(r.scheduled_time || '05:00');
+        setIsActive(r.is_active !== false); // 有効状態をロード
 
         if (r.goal_config) {
             setIsGoalEnabled(true);
@@ -162,7 +165,8 @@ export default function ActionsPage() {
                     icon,
                     scheduled_time: scheduledTime,
                     is_highlighted: false,
-                    goal_config
+                    goal_config,
+                    is_active: isActive
                 });
             } else {
                 await addRoutine({
@@ -172,7 +176,8 @@ export default function ActionsPage() {
                     icon,
                     scheduled_time: scheduledTime,
                     is_highlighted: false,
-                    goal_config
+                    goal_config,
+                    is_active: isActive
                 });
             }
 
@@ -180,6 +185,23 @@ export default function ActionsPage() {
             fetchRoutines();
         } catch (e) {
             alert('Failed to save action');
+        }
+    };
+
+    const handleToggleActive = async (routine, e) => {
+        e.stopPropagation();
+        const newStatus = routine.is_active === false ? true : false;
+        // 即時画面を更新（オプティミスティック・アップデート）
+        setRoutines(prev => prev.map(r => r.id === routine.id ? { ...r, is_active: newStatus } : r));
+
+        try {
+            await updateRoutine(
+                routine.id,
+                { ...routine, is_active: newStatus }
+            );
+        } catch (e) {
+            console.error('Failed to toggle active status', e);
+            fetchRoutines();
         }
     };
 
@@ -293,6 +315,7 @@ export default function ActionsPage() {
                                         onDragEnd={onDragEnd}
                                         className={`group flex items-center justify-between p-1.5 transition-colors cursor-move
                                             ${r.is_highlighted ? 'bg-pink-50 hover:bg-pink-100' : 'hover:bg-slate-50'}
+                                            ${r.is_active === false ? 'opacity-50' : ''}
                                         `}
                                         style={{ opacity: draggedItem === r ? 0.5 : 1 }}
                                     >
@@ -341,28 +364,41 @@ export default function ActionsPage() {
                                             </div>
                                         </div>
 
-                                        <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                        <div className="flex items-center gap-3">
+                                            {/* 有効・無効切り替えトグルスイッチ */}
                                             <button
-                                                onClick={(e) => handleHighlight(r, e)}
-                                                className={`p-1 rounded-md transition-colors ${r.is_highlighted ? 'text-pink-500 bg-pink-100' : 'text-slate-300 hover:text-pink-400 hover:bg-pink-50'}`}
-                                                title={r.is_highlighted ? "Remove Highlight" : "Highlight"}
+                                                onClick={(e) => handleToggleActive(r, e)}
+                                                className={`relative inline-flex h-5 w-9 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${r.is_active !== false ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                                                title={r.is_active !== false ? "無効にする" : "有効にする"}
                                             >
-                                                {r.is_highlighted ? '⭐' : '☆'}
+                                                <span
+                                                    className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${r.is_active !== false ? 'translate-x-4' : 'translate-x-0'}`}
+                                                />
                                             </button>
-                                            <button
-                                                onClick={() => openEditModal(r)}
-                                                className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
-                                                title="Edit"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
-                                            </button>
-                                            <button
-                                                onClick={() => handleDelete(r.id)}
-                                                className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
-                                                title="Delete"
-                                            >
-                                                <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
-                                            </button>
+
+                                            <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-opacity">
+                                                <button
+                                                    onClick={(e) => handleHighlight(r, e)}
+                                                    className={`p-1 rounded-md transition-colors ${r.is_highlighted ? 'text-pink-500 bg-pink-100' : 'text-slate-300 hover:text-pink-400 hover:bg-pink-50'}`}
+                                                    title={r.is_highlighted ? "Remove Highlight" : "Highlight"}
+                                                >
+                                                    {r.is_highlighted ? '⭐' : '☆'}
+                                                </button>
+                                                <button
+                                                    onClick={() => openEditModal(r)}
+                                                    className="p-1 text-slate-400 hover:text-indigo-600 hover:bg-indigo-50 rounded-md transition-colors"
+                                                    title="Edit"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15.232 5.232l3.536 3.536m-2.036-5.036a2.5 2.5 0 113.536 3.536L6.5 21.036H3v-3.572L16.732 3.732z" /></svg>
+                                                </button>
+                                                <button
+                                                    onClick={() => handleDelete(r.id)}
+                                                    className="p-1 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-md transition-colors"
+                                                    title="Delete"
+                                                >
+                                                    <svg className="w-3.5 h-3.5" fill="none" viewBox="0 0 24 24" stroke="currentColor"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 7l-.867 12.142A2 2 0 0116.138 21H7.862a2 2 0 01-1.995-1.858L5 7m5 4v6m4-6v6m1-10V4a1 1 0 00-1-1h-4a1 1 0 00-1 1v3M4 7h16" /></svg>
+                                                </button>
+                                            </div>
                                         </div>
                                     </div>
                                 ))}
@@ -502,6 +538,22 @@ export default function ActionsPage() {
 
                                 <div className="space-y-3 pt-2 border-t border-slate-100">
                                     <div className="flex items-center justify-between">
+                                        <div>
+                                            <span className="text-xs font-bold text-slate-500 uppercase tracking-wider block">Active Status</span>
+                                            <span className="text-[10px] text-slate-400 block mt-0.5">無効化すると自動タスク生成がスキップされます</span>
+                                        </div>
+                                        <button
+                                            type="button"
+                                            onClick={() => setIsActive(!isActive)}
+                                            className={`relative inline-flex h-6 w-11 flex-shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-200 ease-in-out focus:outline-none ${isActive ? 'bg-indigo-600' : 'bg-slate-200'}`}
+                                        >
+                                            <span
+                                                className={`pointer-events-none inline-block h-5 w-5 transform rounded-full bg-white shadow ring-0 transition duration-200 ease-in-out ${isActive ? 'translate-x-5' : 'translate-x-0'}`}
+                                            />
+                                        </button>
+                                    </div>
+
+                                    <div className="flex items-center justify-between pt-2 border-t border-slate-100">
                                         <label className="flex items-center gap-2 cursor-pointer">
                                             <input
                                                 type="checkbox"

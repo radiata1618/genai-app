@@ -45,9 +45,10 @@ export async function getRoutines(type = null) {
         return serialize({
             ...data,
             id: d.id,
-            // Defaults
+            // デフォルト値
             frequency: data.frequency || { type: 'DAILY', weekdays: [], month_days: [], months: [], yearly_dates: [] },
-            scheduled_time: data.scheduled_time || "05:00"
+            scheduled_time: data.scheduled_time || "05:00",
+            is_active: data.is_active !== undefined ? data.is_active : true
         });
     });
 }
@@ -66,7 +67,8 @@ export async function addRoutine(data) {
         icon: data.icon || null,
         scheduled_time: data.scheduled_time || "05:00",
         is_highlighted: data.is_highlighted || false,
-        goal_config: data.goal_config || null
+        goal_config: data.goal_config || null,
+        is_active: data.is_active !== undefined ? data.is_active : true
     };
 
     if (data.goal_config) {
