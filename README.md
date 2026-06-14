@@ -45,3 +45,6 @@ Check out our [Next.js deployment documentation](https://nextjs.org/docs/app/bui
 
 ### AIエージェント向けの開発ルール
 AntigravityなどのAIエージェント向けには、詳細なルールを [.agent/rules/llm_models.md](file:///c:/programing/genai-app/.agent/rules/llm_models.md) に定義しています。新しくAI機能を追加・改修する際はこのルールが参照されます。
+
+## UIテーマに関するルール
+- **MTG Training機能のUIカラーテーマ**: 本機能のUIは、他機能の画面と調和させるため、**ライトモード（明るい色）**で統一して開発されています。ダークモードを使用しないように注意してください。
