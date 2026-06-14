@@ -4,6 +4,7 @@ from typing import Optional
 import os
 from google import genai
 from google.genai import types
+from config import GEMINI_CHAT_MODEL
 
 router = APIRouter()
 
@@ -27,7 +28,7 @@ async def generate_content(request: GenerateRequest):
             http_options={'api_version': 'v1beta1'}
         )
 
-        model = "gemini-3-flash-preview"
+        model = GEMINI_CHAT_MODEL
 
         # Google Search Grounding Tool
         search_tool = types.Tool(

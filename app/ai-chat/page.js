@@ -4,6 +4,7 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import MobileMenuButton from "../../components/MobileMenuButton";
 import Link from "next/link";
+import { GEMINI_CHAT_MODEL, GEMINI_PRO_MODEL, GEMINI_FLASH_MODEL } from "../constants/models";
 
 const GoogleSearchWidget = ({ html }) => {
     // Inject base target="_blank" to ensure links open in new tab (avoid x-frame-options issues)
@@ -38,7 +39,7 @@ export default function AiChatPage() {
     const [messages, setMessages] = useState([]);
     const [input, setInput] = useState("");
     const [isLoading, setIsLoading] = useState(false);
-    const [selectedModel, setSelectedModel] = useState("gemini-3-flash-preview");
+    const [selectedModel, setSelectedModel] = useState(GEMINI_CHAT_MODEL);
     const [selectedImage, setSelectedImage] = useState(null); // {data, mimeType}
 
     const [useGrounding, setUseGrounding] = useState(true);
@@ -292,9 +293,9 @@ export default function AiChatPage() {
                             onChange={(e) => setSelectedModel(e.target.value)}
                             className="text-sm p-1.5 rounded-lg border border-gray-200 bg-gray-50 text-slate-600 focus:outline-none focus:ring-2 focus:ring-cyan-500 w-full max-w-[120px] sm:max-w-[180px]"
                         >
-                            <option value="gemini-3-pro-preview">Gemini 3.0 Pro</option>
-                            <option value="gemini-3-flash-preview">Gemini 3.0 Flash</option>
-                            <option value="gemini-2.5-flash">Gemini 2.5 Flash</option>
+                            <option value={GEMINI_PRO_MODEL}>Gemini 3.0 Pro</option>
+                            <option value={GEMINI_CHAT_MODEL}>Gemini 3.0 Flash</option>
+                            <option value={GEMINI_FLASH_MODEL}>Gemini 2.5 Flash</option>
                         </select>
 
                         <button

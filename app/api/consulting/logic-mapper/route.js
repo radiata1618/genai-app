@@ -3,6 +3,7 @@ import { db } from '@/app/lib/firebase';
 import { GoogleGenAI } from '@google/genai';
 import { GoogleAuth } from 'google-auth-library';
 import { FieldValue } from 'firebase-admin/firestore';
+import { GEMINI_CHAT_MODEL, GEMINI_ANALYSIS_MODEL } from '@/app/constants/models';
 
 // Configuration
 // Ideally these are in environment variables. 
@@ -13,7 +14,7 @@ const LOCATION = process.env.LOCATION || 'asia-northeast1';
 // Gemini 3 Location (must be 'global' for Preview)
 const GENAI_LOCATION = 'global';
 const EMBEDDING_MODEL_ID = 'multimodalembedding@001';
-const GENERATIVE_MODEL_ID = 'gemini-3-flash-preview';
+const GENERATIVE_MODEL_ID = GEMINI_CHAT_MODEL;
 
 /**
  * Generates Multimodal Embedding using direct REST API (via GoogleAuth)
@@ -250,9 +251,9 @@ export async function POST(request) {
             `;
 
             try {
-                console.log(`[LogicMapper] Calling Rerank with model: gemini-2.0-flash-exp`);
+                console.log(`[LogicMapper] Calling Rerank with model: ${GEMINI_ANALYSIS_MODEL}`);
                 const result = await ai.models.generateContent({
-                    model: "gemini-2.0-flash-exp",
+                    model: GEMINI_ANALYSIS_MODEL,
                     contents: [{ role: "user", parts: [{ text: prompt }] }],
                     generationConfig: { responseMimeType: "application/json" }
                 });

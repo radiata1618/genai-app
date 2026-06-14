@@ -25,6 +25,15 @@ const navItems = [
         ],
     },
     {
+        category: "DAB",
+        items: [
+            { name: "Feed", icon: "📰", href: "/dab?tab=feed" },
+            { name: "Topics", icon: "🔥", href: "/dab?tab=topics" },
+            { name: "Core Memory", icon: "🧠", href: "/dab?tab=memory" },
+            { name: "Settings", icon: "⚙️", href: "/dab?tab=settings" },
+        ],
+    },
+    {
         category: "English",
         items: [
             { name: "Preparation", icon: "📚", href: "/english/preparation" },

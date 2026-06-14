@@ -2,6 +2,7 @@ import json
 from typing import Dict, List, Any
 from google.genai import types
 from services.ai_shared import get_genai_client, trace
+from config import GEMINI_ANALYSIS_MODEL
 
 def analyze_slide_structure_batch(images_bytes: List[bytes]) -> List[Dict[str, Any]]:
     """
@@ -40,7 +41,7 @@ def analyze_slide_structure_batch(images_bytes: List[bytes]) -> List[Dict[str, A
 
         # Use gemini-2.0-flash-exp for high performance and low cost
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model=GEMINI_ANALYSIS_MODEL,
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",
@@ -154,7 +155,7 @@ def evaluate_document_quality(images_bytes: List[bytes]) -> Dict[str, Any]:
             contents.append(types.Part.from_bytes(data=img_data, mime_type="image/jpeg"))
 
         response = client.models.generate_content(
-            model="gemini-2.0-flash-exp",
+            model=GEMINI_ANALYSIS_MODEL,
             contents=contents,
             config=types.GenerateContentConfig(
                 response_mime_type="application/json",

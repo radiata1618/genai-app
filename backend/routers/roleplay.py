@@ -9,6 +9,7 @@ from database import get_db
 # Helper to fetch context
 from routers.english import PreparationTask, Phrase
 # from services.ai_shared import get_genai_client
+from config import GEMINI_LIVE_MODEL
 
 router = APIRouter(
     prefix="/roleplay",
@@ -29,7 +30,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     # Session Config
     config = {
-        "model": "gemini-live-2.5-flash-preview-native-audio-09-2025", 
+        "model": GEMINI_LIVE_MODEL, 
         "response_modalities": ["AUDIO"]
     }
     
