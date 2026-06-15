@@ -15,6 +15,7 @@ export default function MtgTrainingPage() {
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [showCompleted, setShowCompleted] = useState(false);
     const [expandedTopicIdx, setExpandedTopicIdx] = useState(null);
+    const [activeTab, setActiveTab] = useState("report");
 
     const getStatusLabel = (status) => status === 2 ? "完了" : "未完了";
     const getStatusColor = (status) => status === 2
@@ -215,6 +216,7 @@ export default function MtgTrainingPage() {
                                     setSelectedTask(task);
                                     setIsCreating(false);
                                     setExpandedTopicIdx(null);
+                                    setActiveTab("report");
                                     if (window.innerWidth < 768) setIsSidebarOpen(false);
                                 }}
                                 className={`p-4 border-b border-gray-100 cursor-pointer hover:bg-cyan-50/50 transition-all group relative
@@ -251,7 +253,7 @@ export default function MtgTrainingPage() {
             <div className="flex-1 flex flex-col overflow-hidden bg-white relative">
                 {/* ヘッダー */}
                 <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10">
-                    <div className="flex items-center gap-3">
+                    <div className="flex items-center gap-3 flex-wrap">
                         <MobileMenuButton />
                         <button
                             onClick={() => setIsSidebarOpen(!isSidebarOpen)}
@@ -259,6 +261,14 @@ export default function MtgTrainingPage() {
                             title={isSidebarOpen ? "サイドバーを閉じる" : "サイドバーを開く"}
                         >
                             {isSidebarOpen ? "◀" : "▶"}
+                        </button>
+                        <button
+                            onClick={() => setIsSidebarOpen(!isSidebarOpen)}
+                            className="lg:hidden p-2 rounded-lg hover:bg-gray-100 text-slate-500 hover:text-cyan-600 transition-all flex items-center gap-1 text-xs border border-gray-200 bg-white shadow-xs"
+                            title={isSidebarOpen ? "履歴を閉じる" : "履歴を表示"}
+                        >
+                            <span>📊 履歴</span>
+                            <span>{isSidebarOpen ? "◀" : "▶"}</span>
                         </button>
                         <button
                             onClick={() => setIsCreating(true)}
@@ -335,172 +345,219 @@ export default function MtgTrainingPage() {
                                 </button>
                             </div>
 
-                            {/* スコアダッシュボード（プログレスバー） */}
-                            <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
-                                    <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center">
-                                        <span className="mr-2">📊</span> 会話能力レーティング
-                                    </h2>
-                                    <div className="space-y-4">
-                                        {Object.entries(selectedTask.overall_scores || {}).map(([key, val]) => {
-                                            const metadata = scoreMap[key] || { label: key, desc: "" };
-                                            const percent = (val / 5) * 100;
-                                            return (
-                                                <div key={key} className="space-y-1">
-                                                    <div className="flex justify-between items-end">
-                                                        <div>
-                                                            <span className="text-xs font-bold text-slate-700">{metadata.label}</span>
-                                                            <span className="text-[10px] text-slate-400 ml-1.5">({metadata.desc})</span>
-                                                        </div>
-                                                        <span className="text-sm font-bold text-cyan-600">{val} <span className="text-[10px] text-slate-400">/ 5</span></span>
-                                                    </div>
-                                                    <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                                                        <div 
-                                                            style={{ width: `${percent}%` }}
-                                                            className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-1000"
-                                                        />
-                                                    </div>
-                                                </div>
-                                            );
-                                        })}
-                                    </div>
-                                </div>
-
-                                <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between">
-                                    <div>
-                                        <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center">
-                                            <span className="mr-2">📝</span> 全体総評
-                                        </h2>
-                                        <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
-                                            {selectedTask.overall_feedback}
-                                        </div>
-                                    </div>
-                                    <div className="mt-4 pt-4 border-t border-gray-100 text-[10px] text-slate-400">
-                                        ※ この評価は、設定されたルーブリックに基づいてGeminiにより自動定量化されています。
-                                    </div>
-                                </div>
+                            {/* タブ切り替え */}
+                            <div className="flex border-b border-gray-200">
+                                <button
+                                    onClick={() => setActiveTab("report")}
+                                    className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+                                        activeTab === "report"
+                                            ? "border-cyan-600 text-cyan-600"
+                                            : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
+                                    }`}
+                                >
+                                    <span>📊</span> 分析レポート
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab("transcript")}
+                                    className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+                                        activeTab === "transcript"
+                                            ? "border-cyan-600 text-cyan-600"
+                                            : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
+                                    }`}
+                                >
+                                    <span>📝</span> スクリプト全文
+                                </button>
                             </div>
 
-                            {/* トピック（議論セグメント）ごとの詳細評価 */}
-                            <div className="space-y-4">
-                                <h2 className="text-lg font-bold text-slate-800 tracking-wide flex items-center">
-                                    <span className="mr-2">🎯</span> セグメント・議論トピック別の振り返り
-                                </h2>
-                                <p className="text-xs text-slate-500">
-                                    会議中のどのトピックにおいてどのような発話課題（咀嚼ミス、フィラー頻出など）があったかをセクションごとに確認できます。
-                                </p>
-                                
-                                <div className="space-y-3">
-                                    {(selectedTask.topic_evaluations || []).map((topic, idx) => {
-                                        const isExpanded = expandedTopicIdx === idx;
-                                        return (
-                                            <div 
-                                                key={idx}
-                                                className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs transition-all"
-                                            >
-                                                {/* アコーディオンヘッダー */}
-                                                <button
-                                                    onClick={() => setExpandedTopicIdx(isExpanded ? null : idx)}
-                                                    className="w-full flex justify-between items-center p-4 hover:bg-gray-50 text-left transition-colors"
-                                                >
-                                                    <div>
-                                                        <div className="flex items-center gap-2">
-                                                            <span className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 text-slate-500 rounded-full">
-                                                                {topic.time_range}
-                                                            </span>
-                                                            <h3 className="font-bold text-slate-700 text-sm">{topic.topic_title}</h3>
-                                                        </div>
-                                                        <p className="text-xs text-slate-400 mt-1 line-clamp-1">
-                                                            {topic.summary}
-                                                        </p>
-                                                    </div>
-                                                    <span className="text-slate-400 text-xs">
-                                                        {isExpanded ? "▲ 閉じる" : "▼ 詳細を表示"}
-                                                    </span>
-                                                </button>
-
-                                                {/* アコーディオンボディ */}
-                                                {isExpanded && (
-                                                    <div className="p-5 border-t border-gray-150 space-y-4 bg-gray-50/50">
-                                                        {/* 各項目のスコア */}
-                                                        <div>
-                                                            <span className="text-[10px] font-bold text-slate-400 block mb-2">このトピックのスコア:</span>
-                                                            <div className="flex flex-wrap gap-2.5">
-                                                                {Object.entries(topic.scores || {}).map(([sKey, sVal]) => {
-                                                                    const lbl = scoreMap[sKey]?.label || sKey;
-                                                                    return (
-                                                                        <div key={sKey} className="bg-white px-2.5 py-1 rounded-lg border border-gray-200 text-xs flex items-center shadow-xs">
-                                                                            <span className="text-slate-500">{lbl}: </span>
-                                                                            <span className="font-bold text-cyan-600 ml-1.5">{sVal}点</span>
-                                                                        </div>
-                                                                    );
-                                                                })}
+                            {activeTab === "report" ? (
+                                <>
+                                    {/* スコアダッシュボード（プログレスバー） */}
+                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                        <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
+                                            <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center">
+                                                <span className="mr-2">📊</span> 会話能力レーティング
+                                            </h2>
+                                            <div className="space-y-4">
+                                                {Object.entries(selectedTask.overall_scores || {}).map(([key, val]) => {
+                                                    const metadata = scoreMap[key] || { label: key, desc: "" };
+                                                    const percent = (val / 5) * 100;
+                                                    return (
+                                                        <div key={key} className="space-y-1">
+                                                            <div className="flex justify-between items-end">
+                                                                <div>
+                                                                    <span className="text-xs font-bold text-slate-700">{metadata.label}</span>
+                                                                    <span className="text-[10px] text-slate-400 ml-1.5">({metadata.desc})</span>
+                                                                </div>
+                                                                <span className="text-sm font-bold text-cyan-600">{val} <span className="text-[10px] text-slate-400">/ 5</span></span>
+                                                            </div>
+                                                            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                                                                <div 
+                                                                    style={{ width: `${percent}%` }}
+                                                                    className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-1000"
+                                                                />
                                                             </div>
                                                         </div>
+                                                    );
+                                                })}
+                                            </div>
+                                        </div>
 
-                                                        {/* フィードバック詳細 */}
-                                                        <div className="space-y-1">
-                                                            <span className="text-[10px] font-bold text-slate-400 block">トピック評価・改善点:</span>
-                                                            <p className="text-xs text-slate-600 leading-relaxed">
-                                                                {topic.feedback}
-                                                            </p>
-                                                        </div>
+                                        <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between">
+                                            <div>
+                                                <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center">
+                                                    <span className="mr-2">📝</span> 全体総評
+                                                </h2>
+                                                <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
+                                                    {selectedTask.overall_feedback}
+                                                </div>
+                                            </div>
+                                            <div className="mt-4 pt-4 border-t border-gray-100 text-[10px] text-slate-400">
+                                                ※ この評価は、設定されたルーブリックに基づいてGeminiにより自動定量化されています。
+                                            </div>
+                                        </div>
+                                    </div>
 
-                                                        {/* 具体的な発言の引用 */}
-                                                        {(topic.evidence_quotes || []).length > 0 && (
-                                                            <div className="space-y-1.5">
-                                                                <span className="text-[10px] font-bold text-slate-400 block">実際のやり取り・発言引用（エビデンス）:</span>
-                                                                <div className="space-y-1">
-                                                                    {topic.evidence_quotes.map((quote, qIdx) => (
-                                                                        <div key={qIdx} className="bg-cyan-50 border-l-3 border-cyan-400 p-2.5 rounded-r text-xs text-slate-600 italic whitespace-pre-wrap">
-                                                                            "{quote}"
-                                                                        </div>
-                                                                    ))}
+                                    {/* トピック（議論セグメント）ごとの詳細評価 */}
+                                    <div className="space-y-4">
+                                        <h2 className="text-lg font-bold text-slate-800 tracking-wide flex items-center">
+                                            <span className="mr-2">🎯</span> セグメント・議論トピック別の振り返り
+                                        </h2>
+                                        <p className="text-xs text-slate-500">
+                                            会議中のどのトピックにおいてどのような発話課題（咀嚼ミス、フィラー頻出など）があったかをセクションごとに確認できます。
+                                        </p>
+                                        
+                                        <div className="space-y-3">
+                                            {(selectedTask.topic_evaluations || []).map((topic, idx) => {
+                                                const isExpanded = expandedTopicIdx === idx;
+                                                return (
+                                                    <div 
+                                                        key={idx}
+                                                        className="bg-white border border-gray-200 rounded-xl overflow-hidden shadow-xs transition-all"
+                                                    >
+                                                        {/* アコーディオンヘッダー */}
+                                                        <button
+                                                            onClick={() => setExpandedTopicIdx(isExpanded ? null : idx)}
+                                                            className="w-full flex justify-between items-center p-4 hover:bg-gray-50 text-left transition-colors"
+                                                        >
+                                                            <div>
+                                                                <div className="flex items-center gap-2">
+                                                                    <span className="text-[10px] font-bold px-2 py-0.5 bg-gray-100 text-slate-500 rounded-full">
+                                                                        {topic.time_range}
+                                                                    </span>
+                                                                    <h3 className="font-bold text-slate-700 text-sm">{topic.topic_title}</h3>
                                                                 </div>
+                                                                <p className="text-xs text-slate-400 mt-1 line-clamp-1">
+                                                                    {topic.summary}
+                                                                </p>
+                                                            </div>
+                                                            <span className="text-slate-400 text-xs">
+                                                                {isExpanded ? "▲ 閉じる" : "▼ 詳細を表示"}
+                                                            </span>
+                                                        </button>
+
+                                                        {/* アコーディオンボディ */}
+                                                        {isExpanded && (
+                                                            <div className="p-5 border-t border-gray-150 space-y-4 bg-gray-50/50">
+                                                                {/* 各項目のスコア */}
+                                                                <div>
+                                                                    <span className="text-[10px] font-bold text-slate-400 block mb-2">このトピックのスコア:</span>
+                                                                    <div className="flex flex-wrap gap-2.5">
+                                                                        {Object.entries(topic.scores || {}).map(([sKey, sVal]) => {
+                                                                            const lbl = scoreMap[sKey]?.label || sKey;
+                                                                            return (
+                                                                                <div key={sKey} className="bg-white px-2.5 py-1 rounded-lg border border-gray-200 text-xs flex items-center shadow-xs">
+                                                                                    <span className="text-slate-500">{lbl}: </span>
+                                                                                    <span className="font-bold text-cyan-600 ml-1.5">{sVal}点</span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+
+                                                                {/* フィードバック詳細 */}
+                                                                <div className="space-y-1">
+                                                                    <span className="text-[10px] font-bold text-slate-400 block">トピック評価・改善点:</span>
+                                                                    <p className="text-xs text-slate-600 leading-relaxed">
+                                                                        {topic.feedback}
+                                                                    </p>
+                                                                </div>
+
+                                                                {/* 具体的な発言の引用 */}
+                                                                {(topic.evidence_quotes || []).length > 0 && (
+                                                                    <div className="space-y-1.5">
+                                                                        <span className="text-[10px] font-bold text-slate-400 block">実際のやり取り・発言引用（エビデンス）:</span>
+                                                                        <div className="space-y-1">
+                                                                            {topic.evidence_quotes.map((quote, qIdx) => (
+                                                                                <div key={qIdx} className="bg-cyan-50 border-l-3 border-cyan-400 p-2.5 rounded-r text-xs text-slate-600 italic whitespace-pre-wrap">
+                                                                                    "{quote}"
+                                                                                </div>
+                                                                            ))}
+                                                                        </div>
+                                                                    </div>
+                                                                )}
                                                             </div>
                                                         )}
                                                     </div>
-                                                )}
-                                            </div>
-                                        );
-                                    })}
-                                </div>
-                            </div>
+                                                );
+                                            })}
+                                        </div>
+                                    </div>
 
-                            {/* フィラータイムライン */}
-                            <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
-                                <h2 className="text-base font-bold text-slate-800 mb-3 flex items-center">
-                                    <span className="mr-2">🚨</span> 検出されたフィラー（口癖・雑音）一覧
-                                </h2>
-                                <p className="text-xs text-slate-500 mb-4">
-                                    会話内で発生した「あの」「ええと」「ちょっと」などのフィラーを特定しました。無意識の口癖を意識的にコントロールするのに活用してください。
-                                </p>
-                                
-                                {(selectedTask.detected_fillers || []).length > 0 ? (
-                                    <div className="max-h-60 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
-                                        {selectedTask.detected_fillers.map((item, fIdx) => (
-                                            <div key={fIdx} className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs">
-                                                <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-mono font-bold flex-shrink-0">
-                                                    {item.timestamp || "検出"}
-                                                </span>
-                                                <div className="flex-1">
-                                                    <span className="text-slate-400">フィラー: </span>
-                                                    <span className="font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded mr-2">
-                                                        {item.filler_word}
-                                                    </span>
-                                                    <div className="text-slate-600 italic mt-1.5 whitespace-pre-wrap">
-                                                        "...{item.context}..."
+                                    {/* フィラータイムライン */}
+                                    <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
+                                        <h2 className="text-base font-bold text-slate-800 mb-3 flex items-center">
+                                            <span className="mr-2">🚨</span> 検出されたフィラー（口癖・雑音）一覧
+                                        </h2>
+                                        <p className="text-xs text-slate-500 mb-4">
+                                            会話内で発生した「あの」「ええと」「ちょっと」などのフィラーを特定しました。無意識の口癖を意識的にコントロールするのに活用してください。
+                                        </p>
+                                        
+                                        {(selectedTask.detected_fillers || []).length > 0 ? (
+                                            <div className="max-h-60 overflow-y-auto pr-2 space-y-2 custom-scrollbar">
+                                                {selectedTask.detected_fillers.map((item, fIdx) => (
+                                                    <div key={fIdx} className="flex items-start gap-3 p-2.5 rounded-lg bg-gray-50 border border-gray-200 text-xs">
+                                                        <span className="bg-amber-100 text-amber-700 border border-amber-200 px-2 py-0.5 rounded font-mono font-bold flex-shrink-0">
+                                                            {item.timestamp || "検出"}
+                                                        </span>
+                                                        <div className="flex-1">
+                                                            <span className="text-slate-400">フィラー: </span>
+                                                            <span className="font-bold text-amber-700 bg-amber-100 border border-amber-200 px-1.5 py-0.5 rounded mr-2">
+                                                                {item.filler_word}
+                                                            </span>
+                                                            <div className="text-slate-600 italic mt-1.5 whitespace-pre-wrap">
+                                                                "...{item.context}..."
+                                                            </div>
+                                                        </div>
                                                     </div>
-                                                </div>
+                                                ))}
                                             </div>
-                                        ))}
+                                        ) : (
+                                            <div className="text-center py-6 text-slate-400 text-sm">
+                                                フィラーは検出されませんでした！素晴らしい発話コントロールです。
+                                            </div>
+                                        )}
                                     </div>
-                                ) : (
-                                    <div className="text-center py-6 text-slate-400 text-sm">
-                                        フィラーは検出されませんでした！素晴らしい発話コントロールです。
-                                    </div>
-                                )}
-                            </div>
+                                </>
+                            ) : (
+                                <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm space-y-4">
+                                    <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center">
+                                        <span className="mr-2">📝</span> 会話のスクリプト全文（文字起こし）
+                                    </h2>
+                                    {selectedTask.full_transcript ? (
+                                        <div className="text-slate-700 text-sm leading-relaxed whitespace-pre-wrap bg-gray-50 p-5 rounded-xl border border-gray-150 max-h-[60vh] overflow-y-auto custom-scrollbar font-sans">
+                                            {selectedTask.full_transcript}
+                                        </div>
+                                    ) : (
+                                        <div className="text-center py-10 text-slate-400 text-sm bg-gray-50 rounded-xl border border-dashed border-gray-300">
+                                            <p className="text-3xl mb-2">⚠️</p>
+                                            <p className="font-semibold">スクリプト全文データがありません</p>
+                                            <p className="text-xs text-slate-400 mt-1">
+                                                ※この履歴は古いバージョンのシステムで作成されたか、テキストベース評価で作成されたため、文字起こし全文データが含まれていません。
+                                            </p>
+                                        </div>
+                                    )}
+                                </div>
+                            )}
                         </div>
                     ) : (
                         <div className="flex items-center justify-center min-h-[60vh] text-slate-400">
