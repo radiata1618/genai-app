@@ -111,13 +111,42 @@ class FillerItem(BaseModel):
     context: str = Field(..., description="そのフィラーが使われた前後の文脈セリフ")
     timestamp: str = Field(..., description="発生した時間帯（推定）")
 
+class MetricChecklist(BaseModel):
+    clarity_speed: bool = Field(..., description="話すスピードが聞き手にとって適切か (早口・遅すぎがない)")
+    clarity_ending: bool = Field(..., description="語尾が「〜です」「〜ます」と最後まで明瞭に発音されているか")
+    clarity_no_mumble: bool = Field(..., description="音声内でモゴモゴして聞き取りにくい箇所がほぼないか")
+    clarity_confidence: bool = Field(..., description="自信と信頼感のあるトーンや間が保たれているか")
+
+    filler_low_density: bool = Field(..., description="総発話量に対する不要なフィラー（あの、ええと等）の出現率（フィラー密度）が低い（1%未満）か")
+    filler_start: bool = Field(..., description="話し始め（文頭）での澱み（「あ、」「えー、」）がほぼないか")
+    filler_middle: bool = Field(..., description="文中での言葉に詰まった際の不要な引き延ばしや口癖（「〜でして、まあ、」）がないか")
+    filler_no_bad_habits: bool = Field(..., description="許容される相槌以外の不要な口癖（ちょっと、なんか等）が繰り返されていないか")
+
+    synthesis_listening: bool = Field(..., description="相手の話に対して適切な相槌や復唱（アクティブリスニング）があるか")
+    synthesis_summarize: bool = Field(..., description="相手の発言の要点を構造化して要約・整理してから回答しているか")
+    synthesis_align: bool = Field(..., description="相手との認識のズレを確認する問いかけ（認識合わせ）が行われているか")
+    synthesis_interactive: bool = Field(..., description="自分の意見を一方的に話さず、双方向の会話のキャッチボールができているか")
+
+    logic_prep: bool = Field(..., description="結論ファースト（PREP法）が意識された構成になっているか")
+    logic_reason: bool = Field(..., description="主張に対する理由（論拠）が明確に述べられているか")
+    logic_focus: bool = Field(..., description="話があちこちに脱線せず、一つのテーマに集中しているか")
+    logic_connective: bool = Field(..., description="接続詞（したがって、しかし等）が正しく論理をつないでいるか")
+
+    empathy_cushion: bool = Field(..., description="クッション言葉（恐れ入りますが、あいにく等）が効果的に使われているか")
+    empathy_no_interrupt: bool = Field(..., description="相手の意見を否定的に遮らず、最後まで聞く姿勢があるか")
+    empathy_polite: bool = Field(..., description="敬語の使い方に不自然さや不適切さがないか")
+    empathy_safety: bool = Field(..., description="心理的安全性を高める肯定的な反応や配慮が見られるか")
+
 # Geminiの構造化出力用のPydanticスキーマ
 class MtgTrainingResultSchema(BaseModel):
-    overall_scores: Dict[str, int] = Field(..., description="会話全体に対する各指標のスコア(1-5)。キーは clarity, filler, synthesis, logic, empathy")
+    overall_scores: Dict[str, int] = Field(..., description="会話全体に対する各指標のスコア(1-5)。キーは clarity, filler, synthesis, logic, empathy。チェックリストでTrueになった項目数(0-4)に1を加算して算出してください。")
     overall_feedback: str = Field(..., description="全体を通した定量的・客観的な評価の総評と、改善アクションプラン")
     topic_evaluations: List[TopicEvaluation] = Field(..., description="トピック（場面セグメント）ごとの詳細評価のリスト")
     detected_fillers: List[FillerItem] = Field(..., description="検出されたフィラーのリスト")
     full_transcript: str = Field(..., description="音声から文字起こしした会話全体のテキスト。ハルシネーション（幻聴）を防止するため、聞こえた通りの実際の発話のみを正確に書き起こしてください。")
+    checklist: MetricChecklist = Field(..., description="5つの指標、各4つのチェック項目に対する適合判定")
+    total_words_estimate: int = Field(..., description="音声全体における牛越（または話者）の推定総発話文字数。無音やノイズ部分は除外してください。")
+    filler_density: float = Field(..., description="総発話文字数に対する、検出された不要なフィラー（あの、ええと等）の出現率（%）。計算式: (不要なフィラーの回数 / 推定総発話文字数) * 100")
 
 class LiveAlertItem(BaseModel):
     category: str = Field(..., description="アラートの種類: 'filler' (フィラー), 'roundabout' (回りくどい), 'logic' (論理/咀嚼不足), 'clarity' (滑舌)")
@@ -138,6 +167,10 @@ class TrainingReviewTask(BaseModel):
     topic_evaluations: List[TopicEvaluation]
     detected_fillers: List[FillerItem]
     full_transcript: Optional[str] = None # 過去データとの互換性のためにOptionalとします
+    checklist: Optional[MetricChecklist] = None
+    total_words_estimate: Optional[int] = None
+    filler_density: Optional[float] = None
+    total_score: Optional[int] = None
     status: int = 0  # 0: TODO, 2: DONE
     created_at: datetime.datetime
 
@@ -274,17 +307,22 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
         rubric_definition = config.get("rubric_definition")
 
         # 3. 解析用プロンプトの構築
-        prompt = f"""添付の音声を解析し、コンサルタントとしての会話能力を評価してください。
-客観的かつ定量的な判定を行うため、以下の評価ルーブリックの記述を厳密に解釈して点数と評価を決定してください。
+        prompt = f"""添付の音声を解析し、コンサルタントとしての会話能力を詳細かつ定量的に評価してください。
+客観的かつ定量的な判定を行うため、以下の評価ルーブリックの記述を厳密に解釈して判定を行ってください。
 
 【評価ルーブリック定義】
 {rubric_definition}
 
 【指示】
-1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」をそれぞれ1〜5点（整数値）で採点し、全体の総評を作成してください。
-2. 長い会話に対応するため、会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。
-3. 会話全体の中から検出されたフィラー（「あの」「ええと」「ちょっと」等の口癖、あるいはもごもごして意味を持たない雑音）の一覧を作成し、その文脈セリフを提示してください。
-4. 会話全体を、実際に聞こえた通りに正確に文字起こしした全文を作成し、full_transcriptに設定してください。
+1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」について、スキーマで定義された各指標4つ（計20項目）のチェックリスト(checklist)について、達成されているか(True/False)を厳密かつ客観的に判定してください。
+2. 各指標の全体スコア(overall_scores: 1〜5点)は、チェックリストでTrueと判定された項目数に1を加算して設定してください（例: 4項目すべてTrueなら5点、2項目Trueなら3点）。
+3. 音声全体の推定総発話文字数（total_words_estimate）と、総発話文字数に対する不要なフィラーの割合（filler_density %）を算出してください。
+4. 【最重要】相槌とフィラーを厳密に区別してください：
+   - 減点対象のフィラー：「あの」「ええと」「ちょっと」「まあ」「なんか」「ていうか」「その」など、話し始めの澱みや言葉に詰まった際の不要な雑音。
+   - 許容される相槌：「はい」「うん（うんうん）」「そうですね」「なるほど」「ええ」など、他者の発言に対する肯定的な相槌や傾聴を示す言葉。これらは「フィラー」として検出せず、むしろ要約咀嚼(synthesis)や対話態度(empathy)の加点要素として評価してください。
+5. 長い会話に対応するため、会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標 of 評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。
+6. 会話全体の中から検出された減点対象のフィラーの一覧(detected_fillers)を作成し、そのタイムスタンプと文脈セリフを提示してください。
+7. 会話全体を、実際に聞こえた通りに正確に文字起こしした全文を作成し、full_transcriptに設定してください。
    【最重要】ハルシネーション（幻聴）を徹底的に防止するため、音声に含まれていない架空の対話やビジネス発話を絶対に捏造して出力しないでください。無音やノイズに対しては何も出力しないでください。
 """
 
@@ -303,6 +341,26 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
 
         result_data = json.loads(response.text)
 
+        # 100点満点の合計スコアを算出
+        total_score = 0
+        checklist_data = result_data.get("checklist", {})
+        if checklist_data:
+            fields = [
+                "clarity_speed", "clarity_ending", "clarity_no_mumble", "clarity_confidence",
+                "filler_low_density", "filler_start", "filler_middle", "filler_no_bad_habits",
+                "synthesis_listening", "synthesis_summarize", "synthesis_align", "synthesis_interactive",
+                "logic_prep", "logic_reason", "logic_focus", "logic_connective",
+                "empathy_cushion", "empathy_no_interrupt", "empathy_polite", "empathy_safety"
+            ]
+            for f in fields:
+                val = False
+                if isinstance(checklist_data, dict):
+                    val = checklist_data.get(f)
+                else:
+                    val = getattr(checklist_data, f, False)
+                if val is True:
+                    total_score += 5
+
         # 5. Firestoreへ結果を保存
         doc_ref = db.collection(TASKS_COLLECTION).document()
         task_id = doc_ref.id
@@ -316,6 +374,10 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
             "topic_evaluations": result_data.get("topic_evaluations", []),
             "detected_fillers": result_data.get("detected_fillers", []),
             "full_transcript": result_data.get("full_transcript", ""),
+            "checklist": result_data.get("checklist", {}),
+            "total_words_estimate": result_data.get("total_words_estimate", 0),
+            "filler_density": result_data.get("filler_density", 0.0),
+            "total_score": total_score,
             "status": 0,
             "created_at": firestore.SERVER_TIMESTAMP
         }
@@ -475,8 +537,8 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
         rubric_definition = config.get("rubric_definition")
 
         # 2. 解析用プロンプトの構築
-        prompt = f"""以下の会議の文字起こしテキスト（全体）を詳細に解析し、コンサルタントとしての会話能力を評価してください。
-客観的かつ定量的な判定を行うため、以下の評価ルーブリックの記述を厳密に解釈して点数と評価を決定してください。
+        prompt = f"""以下の会議の文字起こしテキスト（全体）を詳細に解析し、コンサルタントとしての会話能力を詳細かつ定量的に評価してください。
+客観的かつ定量的な判定を行うため、以下の評価ルーブリックの記述を厳密に解釈して判定を行ってください。
 
 【評価ルーブリック定義】
 {rubric_definition}
@@ -485,9 +547,14 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
 {req.full_transcript}
 
 【指示】
-1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」をそれぞれ1〜5点（整数値）で採点し、全体の総評を作成してください。
-2. 会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。（※テキストベースでの解析となるため、時間帯はおおよその時間、あるいはセグメント順序で補正してください）
-3. 会話全体の中から検出されたフィラー（「あの」「ええと」「ちょっと」等の口癖、あるいはもごもごして意味を持たない雑音）の一覧を作成し、その文脈セリフを提示してください。
+1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」について、スキーマで定義された各指標4つ（計20項目）のチェックリスト(checklist)について、達成されているか(True/False)を厳密かつ客観的に判定してください。
+2. 各指標の全体スコア(overall_scores: 1〜5点)は、チェックリストでTrueと判定された項目数に1を加算して設定してください（例: 4項目すべてTrueなら5点、2項目Trueなら3点）。
+3. テキスト全体の推定総文字数（total_words_estimate）と、総文字数に対する不要なフィラーの割合（filler_density %）を算出してください。
+4. 【最重要】相槌とフィラーを厳密に区別してください：
+   - 減点対象のフィラー：「あの」「ええと」「ちょっと」「まあ」「なんか」「ていうか」「その」など、文頭や合間の澱み・言葉に詰まった際の不要な雑音。
+   - 許容される相槌：「はい」「うん（うんうん）」「そうですね」「なるほど」「ええ」など、傾聴や肯定的な反応。これらは「フィラー」として検出せず、むしろ要約咀嚼(synthesis)や対話態度(empathy)の加点要素として評価してください。
+5. 会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標 of 評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。（※テキストベースでの解析となるため、時間帯はおおよそ時間、あるいはセグメント順序で補正してください）
+6. 会話全体の中から検出された不要なフィラーの一覧(detected_fillers)を作成し、その文脈セリフを提示してください。
 """
 
         # 3. Gemini API の呼び出し（構造化出力: JSON スキーマ）
@@ -499,11 +566,31 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_schema=MtgTrainingResultSchema,
-                temperature=0.2,
+                temperature=0.1, # 評価のブレ防止とハルシネーション防止に低い温度を適用
             )
         )
 
         result_data = json.loads(response.text)
+
+        # 100点満点の合計スコアを算出
+        total_score = 0
+        checklist_data = result_data.get("checklist", {})
+        if checklist_data:
+            fields = [
+                "clarity_speed", "clarity_ending", "clarity_no_mumble", "clarity_confidence",
+                "filler_low_density", "filler_start", "filler_middle", "filler_no_bad_habits",
+                "synthesis_listening", "synthesis_summarize", "synthesis_align", "synthesis_interactive",
+                "logic_prep", "logic_reason", "logic_focus", "logic_connective",
+                "empathy_cushion", "empathy_no_interrupt", "empathy_polite", "empathy_safety"
+            ]
+            for f in fields:
+                val = False
+                if isinstance(checklist_data, dict):
+                    val = checklist_data.get(f)
+                else:
+                    val = getattr(checklist_data, f, False)
+                if val is True:
+                    total_score += 5
 
         # 4. Firestoreへ結果を保存
         doc_ref = db.collection(TASKS_COLLECTION).document()
@@ -518,6 +605,10 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
             "topic_evaluations": result_data.get("topic_evaluations", []),
             "detected_fillers": result_data.get("detected_fillers", []),
             "full_transcript": req.full_transcript,
+            "checklist": result_data.get("checklist", {}),
+            "total_words_estimate": result_data.get("total_words_estimate", 0),
+            "filler_density": result_data.get("filler_density", 0.0),
+            "total_score": total_score,
             "status": 0,
             "created_at": firestore.SERVER_TIMESTAMP
         }

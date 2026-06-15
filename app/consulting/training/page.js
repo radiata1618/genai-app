@@ -168,6 +168,39 @@ export default function MtgTrainingPage() {
         empathy: { label: "対話態度と配慮", desc: "クッション言葉等による信頼形成" }
     };
 
+    const checklistMap = {
+        clarity: [
+            { key: "clarity_speed", label: "適切な会話速度" },
+            { key: "clarity_ending", label: "語尾の明瞭さ" },
+            { key: "clarity_no_mumble", label: "聞き取りやすさ" },
+            { key: "clarity_confidence", label: "自信と適切な間" }
+        ],
+        filler: [
+            { key: "filler_low_density", label: "低いフィラー密度 (<1%)" },
+            { key: "filler_start", label: "話し始め（文頭）の澱み" },
+            { key: "filler_middle", label: "話の引き延ばし防止" },
+            { key: "filler_no_bad_habits", label: "不要な口癖の抑制" }
+        ],
+        synthesis: [
+            { key: "synthesis_listening", label: "適切な相槌と復唱" },
+            { key: "synthesis_summarize", label: "要点要約後の応答" },
+            { key: "synthesis_align", label: "認識ズレの確認" },
+            { key: "synthesis_interactive", label: "双方向の対話" }
+        ],
+        logic: [
+            { key: "logic_prep", label: "結論ファースト (PREP)" },
+            { key: "logic_reason", label: "明確な論拠提示" },
+            { key: "logic_focus", label: "話の脱線防止" },
+            { key: "logic_connective", label: "接続詞の論理的接続" }
+        ],
+        empathy: [
+            { key: "empathy_cushion", label: "クッション言葉の活用" },
+            { key: "empathy_no_interrupt", label: "遮らずに聞く姿勢" },
+            { key: "empathy_polite", label: "自然で正確な敬語" },
+            { key: "empathy_safety", label: "心理的安全性への配慮" }
+        ]
+    };
+
     return (
         <div className="flex h-full bg-gray-50 text-slate-800 font-sans overflow-hidden">
             {/* モバイル用サイドバー背景 */}
@@ -327,95 +360,160 @@ export default function MtgTrainingPage() {
                                 )}
                             </div>
                         </div>
-                    ) : selectedTask ? (
-                        <div className="max-w-4xl mx-auto space-y-8 pb-16">
-                            {/* ヘッダータイトル */}
-                            <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 pb-4">
-                                <div>
-                                    <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-wide">{selectedTask.media_filename}</h1>
-                                    <p className="text-xs text-slate-500 mt-1">
-                                        評価日時: {new Date(selectedTask.created_at).toLocaleString("ja-JP")}
-                                    </p>
-                                </div>
-                                <button
-                                    onClick={(e) => handleToggleStatus(selectedTask, e)}
-                                    className={`mt-3 md:mt-0 px-4 py-1 rounded-full border text-xs font-bold transition-all ${getStatusColor(selectedTask.status || 0)}`}
-                                >
-                                    ステータス: {getStatusLabel(selectedTask.status || 0)}に変更
-                                </button>
-                            </div>
+                    ) : selectedTask ? (() => {
+                        const hasTotalScore = selectedTask.total_score !== undefined && selectedTask.total_score !== null;
+                        const displayScore = hasTotalScore 
+                            ? selectedTask.total_score 
+                            : Math.round((Object.values(selectedTask.overall_scores || {}).reduce((a, b) => a + b, 0) / (Object.keys(selectedTask.overall_scores || {}).length || 1)) * 20);
 
-                            {/* タブ切り替え */}
-                            <div className="flex border-b border-gray-200">
-                                <button
-                                    onClick={() => setActiveTab("report")}
-                                    className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-                                        activeTab === "report"
-                                            ? "border-cyan-600 text-cyan-600"
-                                            : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
-                                    }`}
-                                >
-                                    <span>📊</span> 分析レポート
-                                </button>
-                                <button
-                                    onClick={() => setActiveTab("transcript")}
-                                    className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
-                                        activeTab === "transcript"
-                                            ? "border-cyan-600 text-cyan-600"
-                                            : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
-                                    }`}
-                                >
-                                    <span>📝</span> スクリプト全文
-                                </button>
-                            </div>
-
-                            {activeTab === "report" ? (
-                                <>
-                                    {/* スコアダッシュボード（プログレスバー） */}
-                                    <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                                        <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
-                                            <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center">
-                                                <span className="mr-2">📊</span> 会話能力レーティング
-                                            </h2>
-                                            <div className="space-y-4">
-                                                {Object.entries(selectedTask.overall_scores || {}).map(([key, val]) => {
-                                                    const metadata = scoreMap[key] || { label: key, desc: "" };
-                                                    const percent = (val / 5) * 100;
-                                                    return (
-                                                        <div key={key} className="space-y-1">
-                                                            <div className="flex justify-between items-end">
-                                                                <div>
-                                                                    <span className="text-xs font-bold text-slate-700">{metadata.label}</span>
-                                                                    <span className="text-[10px] text-slate-400 ml-1.5">({metadata.desc})</span>
-                                                                </div>
-                                                                <span className="text-sm font-bold text-cyan-600">{val} <span className="text-[10px] text-slate-400">/ 5</span></span>
-                                                            </div>
-                                                            <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
-                                                                <div 
-                                                                    style={{ width: `${percent}%` }}
-                                                                    className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-1000"
-                                                                />
-                                                            </div>
-                                                        </div>
-                                                    );
-                                                })}
+                        return (
+                            <div className="max-w-4xl mx-auto space-y-8 pb-16">
+                                {/* ヘッダータイトル */}
+                                <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 pb-4 gap-4">
+                                    <div>
+                                        <div className="flex flex-wrap items-center gap-3">
+                                            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-wide">{selectedTask.media_filename}</h1>
+                                            <div className="bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold px-3.5 py-1 rounded-full text-xs shadow-md flex items-center gap-1">
+                                                <span>総合スコア:</span>
+                                                <span className="text-sm">{displayScore}</span>
+                                                <span className="text-[10px] opacity-85">/ 100点</span>
                                             </div>
                                         </div>
+                                        <p className="text-xs text-slate-500 mt-1.5">
+                                            評価日時: {new Date(selectedTask.created_at).toLocaleString("ja-JP")}
+                                        </p>
+                                    </div>
+                                    <button
+                                        onClick={(e) => handleToggleStatus(selectedTask, e)}
+                                        className={`px-4 py-1 rounded-full border text-xs font-bold transition-all ${getStatusColor(selectedTask.status || 0)}`}
+                                    >
+                                        ステータス: {getStatusLabel(selectedTask.status || 0)}に変更
+                                    </button>
+                                </div>
 
-                                        <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between">
-                                            <div>
-                                                <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center">
-                                                    <span className="mr-2">📝</span> 全体総評
+                                {/* タブ切り替え */}
+                                <div className="flex border-b border-gray-200">
+                                    <button
+                                        onClick={() => setActiveTab("report")}
+                                        className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+                                            activeTab === "report"
+                                                ? "border-cyan-600 text-cyan-600"
+                                                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
+                                        }`}
+                                    >
+                                        <span>📊</span> 分析レポート
+                                    </button>
+                                    <button
+                                        onClick={() => setActiveTab("transcript")}
+                                        className={`px-6 py-2.5 font-semibold text-sm transition-all border-b-2 -mb-px flex items-center gap-1.5 ${
+                                            activeTab === "transcript"
+                                                ? "border-cyan-600 text-cyan-600"
+                                                : "border-transparent text-slate-500 hover:text-slate-700 hover:border-gray-300"
+                                        }`}
+                                    >
+                                        <span>📝</span> スクリプト全文
+                                    </button>
+                                </div>
+
+                                {activeTab === "report" ? (
+                                    <>
+                                        {/* スコアダッシュボード（プログレスバー） */}
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                                            <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
+                                                <h2 className="text-base font-bold text-slate-800 mb-4 flex items-center">
+                                                    <span className="mr-2">📊</span> 会話能力レーティング
                                                 </h2>
-                                                <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
-                                                    {selectedTask.overall_feedback}
+                                                <div className="space-y-4">
+                                                    {Object.entries(selectedTask.overall_scores || {}).map(([key, val]) => {
+                                                        const metadata = scoreMap[key] || { label: key, desc: "" };
+                                                        const percent = (val / 5) * 100;
+                                                        
+                                                        // 各指標の100点換算スコア
+                                                        let metricScore = val * 4;
+                                                        if (selectedTask.checklist) {
+                                                            const items = checklistMap[key] || [];
+                                                            const trueCount = items.filter(item => selectedTask.checklist[item.key] === true).length;
+                                                            metricScore = trueCount * 5;
+                                                        }
+
+                                                        return (
+                                                            <div key={key} className="space-y-2 p-3 rounded-xl border border-gray-100 bg-white shadow-xs">
+                                                                <div className="flex justify-between items-end">
+                                                                    <div>
+                                                                        <span className="text-xs font-bold text-slate-700">{metadata.label}</span>
+                                                                        <span className="text-[10px] text-slate-400 ml-1.5">({metadata.desc})</span>
+                                                                    </div>
+                                                                    <span className="text-xs font-bold text-cyan-600">{metricScore} <span className="text-[10px] text-slate-400">/ 20点</span></span>
+                                                                </div>
+                                                                <div className="w-full bg-gray-100 rounded-full h-2 overflow-hidden">
+                                                                    <div 
+                                                                        style={{ width: `${percent}%` }}
+                                                                        className="bg-gradient-to-r from-cyan-500 to-blue-600 h-full rounded-full transition-all duration-1000"
+                                                                    />
+                                                                </div>
+
+                                                                {/* 詳細チェックリスト */}
+                                                                {selectedTask.checklist && (
+                                                                    <div className="grid grid-cols-1 sm:grid-cols-2 gap-1.5 mt-2 pt-2 border-t border-gray-100 bg-gray-50/50 p-2 rounded-lg text-[10px]">
+                                                                        {checklistMap[key]?.map((item) => {
+                                                                            const isPassed = selectedTask.checklist[item.key] === true;
+                                                                            return (
+                                                                                <div key={item.key} className="flex items-center gap-1.5">
+                                                                                    <span className={`font-mono font-bold ${isPassed ? "text-green-600" : "text-slate-350"}`}>
+                                                                                        {isPassed ? "✓" : "✗"}
+                                                                                    </span>
+                                                                                    <span className={isPassed ? "text-slate-600 font-medium" : "text-slate-400"}>
+                                                                                        {item.label}
+                                                                                    </span>
+                                                                                </div>
+                                                                            );
+                                                                        })}
+                                                                    </div>
+                                                                )}
+                                                            </div>
+                                                        );
+                                                    })}
                                                 </div>
                                             </div>
-                                            <div className="mt-4 pt-4 border-t border-gray-100 text-[10px] text-slate-400">
-                                                ※ この評価は、設定されたルーブリックに基づいてGeminiにより自動定量化されています。
+
+                                            <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm flex flex-col justify-between">
+                                                <div>
+                                                    <h2 className="text-base font-bold text-slate-800 mb-2 flex items-center">
+                                                        <span className="mr-2">📝</span> 全体総評
+                                                    </h2>
+                                                    <div className="text-slate-600 text-sm leading-relaxed whitespace-pre-wrap">
+                                                        {selectedTask.overall_feedback}
+                                                    </div>
+                                                </div>
+
+                                                {/* 発話量・フィラー密度の追加表示 */}
+                                                {selectedTask.total_words_estimate !== undefined && selectedTask.total_words_estimate !== null && selectedTask.total_words_estimate > 0 && (
+                                                    <div className="mt-4 pt-4 border-t border-gray-100 space-y-2">
+                                                        <h3 className="text-xs font-bold text-slate-700 flex items-center gap-1">
+                                                            <span>📊</span> 発話統計・比率分析
+                                                        </h3>
+                                                        <div className="grid grid-cols-2 gap-3 text-xs bg-cyan-50/20 p-3 rounded-xl border border-cyan-100/50">
+                                                            <div className="space-y-0.5">
+                                                                <span className="text-[10px] text-slate-400 block">推定総発話量</span>
+                                                                <span className="font-bold text-slate-700 text-sm">
+                                                                    {selectedTask.total_words_estimate} <span className="text-[10px] font-normal text-slate-400">文字</span>
+                                                                </span>
+                                                            </div>
+                                                            <div className="space-y-0.5">
+                                                                <span className="text-[10px] text-slate-400 block">不要なフィラー密度</span>
+                                                                <span className={`font-bold text-sm ${selectedTask.filler_density > 2.0 ? "text-amber-600" : "text-cyan-600"}`}>
+                                                                    {selectedTask.filler_density.toFixed(2)}%
+                                                                </span>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                )}
+
+                                                <div className="mt-4 pt-4 border-t border-gray-100 text-[10px] text-slate-400">
+                                                    ※ この評価は、設定されたルーブリックに基づいてGeminiにより自動定量化されています。
+                                                </div>
                                             </div>
                                         </div>
-                                    </div>
 
                                     {/* トピック（議論セグメント）ごとの詳細評価 */}
                                     <div className="space-y-4">
@@ -559,7 +657,8 @@ export default function MtgTrainingPage() {
                                 </div>
                             )}
                         </div>
-                    ) : (
+                        );
+                    })() : (
                         <div className="flex items-center justify-center min-h-[60vh] text-slate-400">
                             <div className="text-center bg-white border border-gray-200 p-8 rounded-2xl max-w-md shadow-xs">
                                 <p className="text-5xl mb-4">🏋️</p>
