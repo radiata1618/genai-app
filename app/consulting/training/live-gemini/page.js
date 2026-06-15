@@ -433,8 +433,8 @@ export default function LiveGeminiPage() {
     };
 
     return (
-        <div className="flex flex-col lg:h-screen bg-gray-50 text-slate-800 font-sans overflow-y-auto lg:overflow-hidden">
-            <div className="flex-1 flex flex-col relative">
+        <div className="flex flex-col h-[100dvh] w-full overflow-y-auto lg:h-screen bg-gray-50 text-slate-800 font-sans lg:overflow-hidden">
+            <div className="flex flex-col relative lg:flex-1 lg:min-h-0">
                 
                 {/* ヘッダー */}
                 <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10 sticky top-0">
@@ -458,7 +458,7 @@ export default function LiveGeminiPage() {
                 </div>
 
                 {/* メインコンテンツエリア */}
-                <div className="flex-1 flex flex-col lg:flex-row p-4 sm:p-6 gap-6 bg-gray-50">
+                <div className="flex flex-col lg:flex-row p-4 sm:p-6 gap-6 bg-gray-50 lg:flex-1 lg:min-h-0 flex-shrink-0">
                     
                     {/* 左カラム：ステータス＆リアルタイム文字起こし */}
                     <div className="w-full lg:flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
