@@ -9,7 +9,7 @@ function ClientLayoutContent({ children }) {
 
 
     return (
-        <div className="flex h-[100dvh] bg-gray-50 overflow-hidden">
+        <div className="flex h-[100dvh] bg-gray-50 overflow-y-auto md:overflow-hidden">
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
                 <div
@@ -28,9 +28,9 @@ function ClientLayoutContent({ children }) {
             </div>
 
             {/* Main Content Wrapper */}
-            <div className="flex-1 flex flex-col min-w-0 overflow-hidden">
+            <div className="flex-1 flex flex-col min-w-0 overflow-y-auto md:overflow-hidden">
                 {/* Main Content Area - Full dimensions for app-like pages */}
-                <main className="flex-1 relative h-full w-full overflow-hidden bg-slate-50">
+                <main className="flex-1 relative h-full w-full overflow-y-auto md:overflow-hidden bg-slate-50">
                     {children}
                 </main>
             </div>

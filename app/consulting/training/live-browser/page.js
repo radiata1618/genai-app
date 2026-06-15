@@ -488,7 +488,7 @@ export default function LiveBrowserPage() {
     };
 
     return (
-        <div className="flex flex-col h-[100dvh] w-full overflow-y-auto lg:h-screen bg-gray-50 text-slate-800 font-sans lg:overflow-hidden">
+        <div className="flex flex-col w-full lg:h-screen bg-gray-50 text-slate-800 font-sans lg:overflow-hidden">
             {/* メインビュー */}
             <div className="flex flex-col relative lg:flex-1 lg:min-h-0">
 
