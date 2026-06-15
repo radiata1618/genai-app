@@ -117,6 +117,7 @@ class MtgTrainingResultSchema(BaseModel):
     overall_feedback: str = Field(..., description="全体を通した定量的・客観的な評価の総評と、改善アクションプラン")
     topic_evaluations: List[TopicEvaluation] = Field(..., description="トピック（場面セグメント）ごとの詳細評価のリスト")
     detected_fillers: List[FillerItem] = Field(..., description="検出されたフィラーのリスト")
+    full_transcript: str = Field(..., description="音声から文字起こしした会話全体のテキスト。ハルシネーション（幻聴）を防止するため、聞こえた通りの実際の発話のみを正確に書き起こしてください。")
 
 class LiveAlertItem(BaseModel):
     category: str = Field(..., description="アラートの種類: 'filler' (フィラー), 'roundabout' (回りくどい), 'logic' (論理/咀嚼不足), 'clarity' (滑舌)")
@@ -136,6 +137,7 @@ class TrainingReviewTask(BaseModel):
     overall_feedback: str
     topic_evaluations: List[TopicEvaluation]
     detected_fillers: List[FillerItem]
+    full_transcript: Optional[str] = None # 過去データとの互換性のためにOptionalとします
     status: int = 0  # 0: TODO, 2: DONE
     created_at: datetime.datetime
 
@@ -282,6 +284,8 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
 1. 会話全体を通じた「滑舌と明瞭さ(clarity)」「フィラー抑制(filler)」「要約・咀嚼力(synthesis)」「論理的構成力(logic)」「対話態度と配慮(empathy)」をそれぞれ1〜5点（整数値）で採点し、全体の総評を作成してください。
 2. 長い会話に対応するため、会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。
 3. 会話全体の中から検出されたフィラー（「あの」「ええと」「ちょっと」等の口癖、あるいはもごもごして意味を持たない雑音）の一覧を作成し、その文脈セリフを提示してください。
+4. 会話全体を、実際に聞こえた通りに正確に文字起こしした全文を作成し、full_transcriptに設定してください。
+   【最重要】ハルシネーション（幻聴）を徹底的に防止するため、音声に含まれていない架空の対話やビジネス発話を絶対に捏造して出力しないでください。無音やノイズに対しては何も出力しないでください。
 """
 
         # 4. Gemini API の呼び出し（構造化出力: JSON スキーマ）
@@ -293,7 +297,7 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
                 system_instruction=system_instruction,
                 response_mime_type="application/json",
                 response_schema=MtgTrainingResultSchema,
-                temperature=0.2, # 評価のブレを防ぐために低めの温度を設定
+                temperature=0.1, # ハルシネーション抑制と評価のブレ防止のために低めの温度を設定
             )
         )
 
@@ -311,6 +315,7 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
             "overall_feedback": result_data.get("overall_feedback", "評価が正常に生成されませんでした。"),
             "topic_evaluations": result_data.get("topic_evaluations", []),
             "detected_fillers": result_data.get("detected_fillers", []),
+            "full_transcript": result_data.get("full_transcript", ""),
             "status": 0,
             "created_at": firestore.SERVER_TIMESTAMP
         }
@@ -512,6 +517,7 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
             "overall_feedback": result_data.get("overall_feedback", "評価が正常に生成されませんでした。"),
             "topic_evaluations": result_data.get("topic_evaluations", []),
             "detected_fillers": result_data.get("detected_fillers", []),
+            "full_transcript": req.full_transcript,
             "status": 0,
             "created_at": firestore.SERVER_TIMESTAMP
         }
