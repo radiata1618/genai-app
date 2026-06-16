@@ -77,6 +77,9 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     // スクロール用 Ref
     const messagesEndRef = useRef(null);
 
+    // 音声入力バッファ（PTT終了時にフラッシュするためにRefで管理）
+    const inputBufferRef = useRef(new Int16Array(0));
+
     // アシスタントが発話中かどうかのフラグ（ビジュアライザーアニメーション用）
     const [isModelSpeaking, setIsModelSpeaking] = useState(false);
 
@@ -139,6 +142,9 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         // 自分が話し始めるため、AIの音声を即座に遮断する
         interruptAudio();
 
+        // バッファをクリアして新しい発話を開始
+        inputBufferRef.current = new Int16Array(0);
+
         // サーバー経由でGeminiにActivityStart（発話開始）を通知
         if (wsRef.current?.readyState === WebSocket.OPEN) {
             wsRef.current.send(JSON.stringify({ type: "ptt_start" }));
@@ -153,11 +159,32 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         isPTTActiveRef.current = false;
         console.log("DEBUG (Agent): PTT Ended");
 
-        // サーバー経由でGeminiにActivityEnd（発話終了）を通知
-        // これがないとGeminiが「まだ話しているのか？」と判断できず返答が来ない
-        if (wsRef.current?.readyState === WebSocket.OPEN) {
-            wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        // 問題①修正: 1024サンプルに満たない末尾の音声バッファを即座に送信
+        // これがないと発話の最後の言葉（数十ms〜数百ms分）が永遠に届かない
+        if (inputBufferRef.current.length > 0) {
+            const remaining = inputBufferRef.current.slice(0); // コピーを作成
+            inputBufferRef.current = new Int16Array(0);
+            console.log(`DEBUG (Agent): Flushing ${remaining.length} remaining samples`);
+            const base64Remaining = arrayBufferToBase64(remaining.buffer);
+            wsRef.current.send(JSON.stringify({ audio: base64Remaining }));
         }
+
+        // 問題②修正: 500ms分の無音を送信してGemini VADを確実にトリガーする
+        // ActivityEndが効かない場合でも、VADが無音を検知して返答が来る
+        const CHUNK_SIZE = 1024;
+        const silenceSamples = 8000; // 16kHz × 0.5秒 = 8000サンプル
+        const silenceData = new Int16Array(silenceSamples); // 全ゼロ = 無音
+        for (let offset = 0; offset < silenceSamples; offset += CHUNK_SIZE) {
+            const chunk = silenceData.slice(offset, Math.min(offset + CHUNK_SIZE, silenceSamples));
+            const base64Silence = arrayBufferToBase64(chunk.buffer);
+            wsRef.current.send(JSON.stringify({ audio: base64Silence }));
+        }
+
+        // ActivityEnd シグナルを送信（SDKが対応していれば即座に返答）
+        wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+        console.log("DEBUG (Agent): PTT Ended - flushed buffer + sent silence + ptt_end");
     }
 
     // 接続時に一度だけログを追加
@@ -399,6 +426,8 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             newBuffer.set(inputBuffer);
             newBuffer.set(int16Chunk, inputBuffer.length);
             inputBuffer = newBuffer;
+            // PTT終了時にフラッシュできるようRefにも同期
+            inputBufferRef.current = inputBuffer;
 
             // 1024サンプル（約64ms）ごとに送信
             const CHUNK_SIZE = 1024;
@@ -406,6 +435,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 while (inputBuffer.length >= CHUNK_SIZE) {
                     const chunkToSend = inputBuffer.slice(0, CHUNK_SIZE);
                     inputBuffer = inputBuffer.slice(CHUNK_SIZE);
+                    inputBufferRef.current = inputBuffer; // Refにも同期
 
                     const base64Audio = arrayBufferToBase64(chunkToSend.buffer);
 
