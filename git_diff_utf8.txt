@@ -1,0 +1,398 @@
+diff --git a/app/dab/page.js b/app/dab/page.js
+index 941287b..b1b3d5e 100644
+--- a/app/dab/page.js
++++ b/app/dab/page.js
+@@ -322,6 +322,8 @@ function DabDashboard() {
+     const [topics, setTopics] = useState([]);
+     const [memory, setMemory] = useState(null);
+     const [feed, setFeed] = useState([]);
++    const [feedFilter, setFeedFilter] = useState('unread'); // 'unread', 'all', 'read'
++    const [feedSort, setFeedSort] = useState('priority'); // 'priority', 'newest'
+     
+     // ロード状態
+     const [loading, setLoading] = useState(true);
+@@ -562,9 +564,9 @@ function DabDashboard() {
+     };
+ 
+     // 記事の評価アクション
+-    const handleEvaluate = async (feedId, isKnown, isInterested, grainLevel) => {
++    const handleEvaluate = async (feedId, isKnown, isInterested, grainLevel, skipped = false) => {
+         try {
+-            await dabApi.evaluateFeedItem(feedId, isKnown, isInterested, grainLevel);
++            await dabApi.evaluateFeedItem(feedId, isKnown, isInterested, grainLevel, skipped);
+             
+             // ローカルステート更新（評価済みにする）
+             setFeed(prev => prev.map(item => {
+@@ -572,22 +574,70 @@ function DabDashboard() {
+                     return {
+                         ...item,
+                         read_status: 'READ',
+-                        user_evaluations: { is_known: isKnown, is_interested: isInterested, grain_level: grainLevel }
++                        user_evaluations: { is_known: isKnown, is_interested: isInterested, grain_level: grainLevel, skipped }
+                     };
+                 }
+                 return item;
+             }));
+ 
+-            // 長期記憶の動的反映のため、裏側でデータ再取得
+-            setTimeout(async () => {
+-                const memoryData = await dabApi.getMemory();
+-                const topicsData = await dabApi.getTopics();
+-                setMemory(memoryData);
+-                setTopics(topicsData);
+-            }, 1000); // バックグラウンド処理の完了を少し待ってから再取得
++            // スキップでない場合のみ、長期記憶の動的反映を行う
++            if (!skipped) {
++                setTimeout(async () => {
++                    const memoryData = await dabApi.getMemory();
++                    const topicsData = await dabApi.getTopics();
++                    setMemory(memoryData);
++                    setTopics(topicsData);
++                }, 1000); // バックグラウンド処理の完了を少し待ってから再取得
++            }
+             
+         } catch (e) {
+-            alert(`評価の保存に失敗しました: ${e.message}`);
++            alert(`処理に失敗しました: ${e.message}`);
++        }
++    };
++
++    // 一括スキップアクション
++    const handleSkipAll = async () => {
++        // 現在画面に表示されている未読フィードのIDリスト
++        const unreadFeedIds = processedFeed
++            .filter(item => !item.user_evaluations && item.read_status !== 'READ')
++            .map(item => item.id);
++
++        if (unreadFeedIds.length === 0) {
++            alert('スキップ可能な未読フィードはありません。');
++            return;
++        }
++
++        if (!confirm(`表示中の未読フィード ${unreadFeedIds.length} 件をすべてスキップ（既読化）しますか？`)) {
++            return;
++        }
++
++        setLoading(true);
++        try {
++            await dabApi.skipAllFeeds(unreadFeedIds);
++
++            // ローカルステートを一括更新
++            setFeed(prev => prev.map(item => {
++                if (unreadFeedIds.includes(item.id)) {
++                    return {
++                        ...item,
++                        read_status: 'READ',
++                        user_evaluations: {
++                            is_known: false,
++                            is_interested: false,
++                            grain_level: 'BASIC',
++                            skipped: true
++                        }
++                    };
++                }
++                return item;
++            }));
++            
++            // アコーディオンの展開を閉じる
++            setExpandedFeedId(null);
++        } catch (e) {
++            alert(`一括スキップに失敗しました: ${e.message}`);
++        } finally {
++            setLoading(false);
+         }
+     };
+ 
+@@ -670,6 +720,38 @@ function DabDashboard() {
+         return change.action;
+     };
+ 
++    // フィルタ・ソート・件数制限されたフィード記事の計算
++    const processedFeed = React.useMemo(() => {
++        let list = [...feed];
++
++        // 1. フィルタリング
++        if (feedFilter === 'unread') {
++            list = list.filter(item => !item.user_evaluations && item.read_status !== 'READ');
++        } else if (feedFilter === 'read') {
++            list = list.filter(item => !!item.user_evaluations || item.read_status === 'READ');
++        }
++
++        // 2. ソート
++        if (feedSort === 'priority') {
++            list.sort((a, b) => {
++                const prioDiff = (b.priority_score || 3) - (a.priority_score || 3);
++                if (prioDiff !== 0) return prioDiff;
++                const timeA = a.published_at?.seconds ? a.published_at.seconds * 1000 : new Date(a.published_at || a.created_at).getTime();
++                const timeB = b.published_at?.seconds ? b.published_at.seconds * 1000 : new Date(b.published_at || b.created_at).getTime();
++                return timeB - timeA;
++            });
++        } else if (feedSort === 'newest') {
++            list.sort((a, b) => {
++                const timeA = a.published_at?.seconds ? a.published_at.seconds * 1000 : new Date(a.published_at || a.created_at).getTime();
++                const timeB = b.published_at?.seconds ? b.published_at.seconds * 1000 : new Date(b.published_at || b.created_at).getTime();
++                return timeB - timeA;
++            });
++        }
++
++        // 3. 件数制限 (最大20件にスライス)
++        return list.slice(0, 20);
++    }, [feed, feedFilter, feedSort]);
++
+     const displayedTopics = pendingChanges 
+         ? applyChangesLocal(topics, pendingChanges.changes) 
+         : topics;
+@@ -890,15 +972,75 @@ function DabDashboard() {
+                                         <span className="flex items-center gap-1"><span className="w-2.5 h-1.5 rounded-sm bg-slate-200 inline-block" /> 評価済み (さばき完了)</span>
+                                     </div>
+ 
+-                                    {feed.length === 0 ? (
++                                    {/* フィルタ & ソートコントロール */}
++                                    <div className="flex flex-wrap items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm gap-3">
++                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
++                                            <button
++                                                onClick={() => setFeedFilter('unread')}
++                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
++                                                    feedFilter === 'unread'
++                                                        ? 'bg-white text-indigo-700 shadow-sm'
++                                                        : 'text-slate-650 hover:text-slate-900'
++                                                }`}
++                                            >
++                                                📥 未読 (さばき待ち)
++                                            </button>
++                                            <button
++                                                onClick={() => setFeedFilter('read')}
++                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
++                                                    feedFilter === 'read'
++                                                        ? 'bg-white text-indigo-700 shadow-sm'
++                                                        : 'text-slate-655 hover:text-slate-900'
++                                                }`}
++                                            >
++                                                ✅ 評価済み
++                                            </button>
++                                            <button
++                                                onClick={() => setFeedFilter('all')}
++                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
++                                                    feedFilter === 'all'
++                                                        ? 'bg-white text-indigo-700 shadow-sm'
++                                                        : 'text-slate-655 hover:text-slate-900'
++                                                }`}
++                                            >
++                                                🌐 すべて
++                                            </button>
++                                        </div>
++
++                                        <div className="flex items-center gap-3">
++                                            {/* 一括スキップボタン (未読フィルタかつ表示中のフィードがある場合のみ表示) */}
++                                            {feedFilter === 'unread' && processedFeed.length > 0 && (
++                                                <button
++                                                    onClick={handleSkipAll}
++                                                    className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-lg text-[10px] font-bold transition-all shadow-sm flex items-center gap-1"
++                                                    title="表示されているすべての未読記事をスキップして既読にします"
++                                                >
++                                                    <span>🧹</span> 表示中の {processedFeed.length} 件をスキップ
++                                                </button>
++                                            )}
++
++                                            <div className="flex items-center gap-1.5">
++                                            <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider">並び順:</span>
++                                            <select
++                                                value={feedSort}
++                                                onChange={(e) => setFeedSort(e.target.value)}
++                                                className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm cursor-pointer"
++                                            >
++                                                <option value="priority">🔥 優先度順</option>
++                                                <option value="newest">📅 最新順</option>
++                                            </select>
++                                        </div>
++                                    </div>
++
++                                    {processedFeed.length === 0 ? (
+                                         <div className="text-center py-16 bg-white border border-slate-200 rounded-lg">
+-                                            <p className="text-slate-400 text-xs font-medium">現在、収集されたフィード記事はありません。</p>
+-                                            <p className="text-slate-500 text-[10px] mt-0.5">収集バッチが実行されると、ここに関連情報が厳選されて並びます。</p>
++                                            <p className="text-slate-400 text-xs font-medium">現在、条件に一致するフィード記事はありません。</p>
++                                            <p className="text-slate-500 text-[10px] mt-0.5">収集バッチを実行するか、フィルタ設定を確認してください。</p>
+                                         </div>
+                                     ) : (
+                                         /* 2行スリムカードに拡張されたフィードリスト */
+                                         <div className="border border-slate-200 rounded-xl bg-white overflow-hidden shadow-sm">
+-                                            {feed.map((item, index) => {
++                                            {processedFeed.map((item, index) => {
+                                                 const isRead = item.read_status === 'READ';
+                                                 const hasEval = !!item.user_evaluations;
+                                                 const isExpanded = expandedFeedId === item.id;
+@@ -995,87 +1137,99 @@ function DabDashboard() {
+                                                                     </span>
+                                                                 </div>
+                                                             </div>
++                                                        </div>
+ 
+-                                                            {/* 新メタデータバッジ行 */}
+-                                                            {(item.author || item.read_time || item.target_level || item.benefit) && (
+-                                                                <div className="flex flex-wrap gap-1.5 text-[9px] mt-1" onClick={e => e.stopPropagation()}>
+-                                                                    {item.author && (
+-                                                                        <span className="bg-slate-100 border border-slate-200 text-slate-650 px-1.5 py-0.5 rounded flex items-center gap-1" title="著者/発信元">
+-                                                                            <span>✍️</span>
+-                                                                            <span>{item.author}</span>
+-                                                                        </span>
+-                                                                    )}
+-                                                                    {item.read_time && (
+-                                                                        <span className="bg-indigo-50 border border-indigo-100 text-indigo-750 px-1.5 py-0.5 rounded flex items-center gap-1" title="想定読了時間">
+-                                                                            <span>⏱️</span>
+-                                                                            <span>{item.read_time}</span>
+-                                                                        </span>
+-                                                                    )}
+-                                                                    {item.target_level && (
+-                                                                        <span className="bg-emerald-50 border border-emerald-250 text-emerald-800 px-1.5 py-0.5 rounded flex items-center gap-1" title="対象者レベル">
+-                                                                            <span>🎓</span>
+-                                                                            <span>{item.target_level}</span>
+-                                                                        </span>
+-                                                                    )}
+-                                                                    {item.benefit && (
+-                                                                        <span className="bg-amber-50 border border-amber-250 text-amber-800 px-1.5 py-0.5 rounded flex items-center gap-1 truncate max-w-[250px] sm:max-w-[400px]" title={`得られるベネフィット: ${item.benefit}`}>
+-                                                                            <span>💡</span>
+-                                                                            <span>{item.benefit}</span>
+-                                                                        </span>
++                                                        {/* アコーディオンの中身（詳細要約 ＋ Mermaid & AI画像） */}
++                                                        {isExpanded && (
++                                                            <div className="p-4 bg-slate-50/70 border-t border-slate-150 animate-in fade-in duration-150" onClick={e => e.stopPropagation()}>
++                                                                {/* アコーディオン上部: メタデータ, おすすめ理由, さばきボタンの移植 */}
++                                                                <div className="flex flex-col gap-3.5 mb-4 border-b border-slate-200/60 pb-3.5">
++                                                                    {/* メタデータバッジ */}
++                                                                    {(item.author || item.read_time || item.target_level || item.benefit) && (
++                                                                        <div className="flex flex-wrap gap-2 text-[10px]">
++                                                                            {item.author && (
++                                                                                <span className="bg-slate-100 border border-slate-200 text-slate-650 px-2 py-0.5 rounded flex items-center gap-1" title="著者/発信元">
++                                                                                    <span>✍️</span>
++                                                                                    <span>{item.author}</span>
++                                                                                </span>
++                                                                            )}
++                                                                            {item.read_time && (
++                                                                                <span className="bg-indigo-50 border border-indigo-100 text-indigo-750 px-2 py-0.5 rounded flex items-center gap-1" title="想定読了時間">
++                                                                                    <span>⏱️</span>
++                                                                                    <span>{item.read_time}</span>
++                                                                                </span>
++                                                                            )}
++                                                                            {item.target_level && (
++                                                                                <span className="bg-emerald-50 border border-emerald-250 text-emerald-800 px-2 py-0.5 rounded flex items-center gap-1" title="対象者レベル">
++                                                                                    <span>🎓</span>
++                                                                                    <span>{item.target_level}</span>
++                                                                                </span>
++                                                                            )}
++                                                                            {item.benefit && (
++                                                                                <span className="bg-amber-50 border border-amber-250 text-amber-800 px-2 py-0.5 rounded flex items-center gap-1" title={`得られるベネフィット: ${item.benefit}`}>
++                                                                                    <span>💡</span>
++                                                                                    <span>{item.benefit}</span>
++                                                                                </span>
++                                                                            )}
++                                                                        </div>
+                                                                     )}
+-                                                                </div>
+-                                                            )}
+ 
+-                                                            {/* 3行目: AIおすすめの理由 */}
+-                                                            {item.recommendation_reason && (
+-                                                                <div className="text-[11px] text-slate-550 bg-slate-50 border border-slate-100/50 rounded px-2 py-1 mt-1.5">
+-                                                                    💡 <strong>おすすめ理由:</strong> {item.recommendation_reason}
+-                                                                </div>
+-                                                            )}
+-
+-                                                            {/* 4行目: インライン直接評価（さばき）ボタン */}
+-                                                            <div className="flex items-center justify-between mt-1 pt-1.5 border-t border-slate-100/30" onClick={e => e.stopPropagation()}>
+-                                                                <div className="text-[10px]">
+-                                                                    {hasEval ? (
+-                                                                        <span className={`font-bold text-[9px] px-1.5 py-0.5 rounded border ${
+-                                                                            item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+-                                                                            !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
+-                                                                            'bg-slate-100 text-slate-600 border-slate-250'
+-                                                                        }`}>
+-                                                                            仕分け済: {item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
+-                                                                                     !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
+-                                                                                     '❄️ 既知・関心なし'}
+-                                                                        </span>
+-                                                                    ) : (
+-                                                                        <div className="flex flex-wrap gap-1.5 items-center">
+-                                                                            <span className="text-[9px] text-slate-450 font-bold">この情報をさばく:</span>
+-                                                                            <button
+-                                                                                onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL')}
+-                                                                                className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-2 py-0.5 rounded text-[9px] font-bold transition-all"
+-                                                                            >
+-                                                                                👍 知ってた・興味あり
+-                                                                            </button>
+-                                                                            <button
+-                                                                                onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL')}
+-                                                                                className="bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 px-2 py-0.5 rounded text-[9px] font-bold transition-all"
+-                                                                            >
+-                                                                                🔥 知らない・興味あり
+-                                                                            </button>
+-                                                                            <button
+-                                                                                onClick={() => handleEvaluate(item.id, true, false, 'BASIC')}
+-                                                                                className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-2 py-0.5 rounded text-[9px] font-bold transition-all"
+-                                                                            >
+-                                                                                ❄️ 既知・興味なし
+-                                                                            </button>
++                                                                    {/* AIおすすめの理由 */}
++                                                                    {item.recommendation_reason && (
++                                                                        <div className="text-[11px] text-slate-600 bg-white border border-slate-200/60 rounded-lg px-2.5 py-2">
++                                                                            💡 <strong>AIおすすめの理由:</strong> {item.recommendation_reason}
+                                                                         </div>
+                                                                     )}
++
++                                                                    {/* この情報をさばく（評価）ボタン */}
++                                                                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2.5 mt-0.5">
++                                                                        <div className="text-[10px]">
++                                                                            {hasEval ? (
++                                                                                <span className={`font-bold text-[9px] px-2 py-0.5 rounded border ${
++                                                                                    item.user_evaluations.skipped ? 'bg-amber-50 text-amber-700 border-amber-200' :
++                                                                                    item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
++                                                                                    !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
++                                                                                    'bg-slate-100 text-slate-600 border-slate-250'
++                                                                                }`}>
++                                                                                    仕分け済: {item.user_evaluations.skipped ? '⏭️ スキップ（評価なし）' :
++                                                                                             item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
++                                                                                             !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
++                                                                                             '❄️ 既知・関心なし'}
++                                                                                </span>
++                                                                            ) : (
++                                                                                <div className="flex flex-wrap gap-2 items-center">
++                                                                                    <span className="text-[10px] text-slate-450 font-bold">この情報を仕分ける:</span>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL')}
++                                                                                        className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
++                                                                                    >
++                                                                                        👍 知ってた・興味あり
++                                                                                    </button>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL')}
++                                                                                        className="bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
++                                                                                    >
++                                                                                        🔥 知らない・興味あり
++                                                                                    </button>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, true, false, 'BASIC')}
++                                                                                        className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
++                                                                                    >
++                                                                                        ❄️ 既知・興味なし
++                                                                                    </button>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true)}
++                                                                                        className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm ml-auto"
++                                                                                        title="この情報を評価せずにスキップ（既読化）します"
++                                                                                    >
++                                                                                        ⏭️ スキップ
++                                                                                    </button>
++                                                                                </div>
++                                                                            )}
++                                                                        </div>
++                                                                    </div>
+                                                                 </div>
+-                                                            </div>
+-                                                        </div>
+ 
+-                                                        {/* アコーディオンの中身（詳細要約 ＋ Mermaid & AI画像） */}
+-                                                        {isExpanded && (
+-                                                            <div className="p-4 bg-slate-50/70 border-t border-slate-150 animate-in fade-in duration-150">
+                                                                 <div className="grid grid-cols-1 lg:grid-cols-12 gap-5" onClick={e => e.stopPropagation()}>
+                                                                     {/* 左カラム: 構造化サマリテキスト */}
+                                                                     <div className="lg:col-span-7 space-y-3">

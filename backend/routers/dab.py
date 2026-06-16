@@ -73,6 +73,7 @@ class EvaluationRequest(BaseModel):
     is_known: bool       # 知っていたか (True/False)
     is_interested: bool  # 興味があるか (True/False)
     grain_level: str     # 知りたい粒度 ("BASIC", "PRACTICAL", "ARCHITECTURAL")
+    skipped: Optional[bool] = False  # スキップされたか (True/False)
 
 class FeedItem(BaseModel):
     id: str
@@ -93,6 +94,10 @@ class FeedItem(BaseModel):
     image_url: Optional[str] = None
     recommendation_reason: Optional[str] = None
     priority_score: Optional[int] = 3
+
+
+class SkipAllRequest(BaseModel):
+    feed_ids: List[str]
 
 
 # --- Helpers ---
@@ -460,10 +465,33 @@ async def evaluate_feed_item(
             "user_evaluations": eval_dict
         })
         
-        # バックグラウンド処理として、非同期に長期記憶（既知概念・スコア等）を更新するタスクをスケジュール
-        background_tasks.add_task(update_user_memory_async, db, related_topics, eval_dict)
+        # スキップされた場合は長期記憶のバックグラウンド更新を行わない
+        if not req.skipped:
+            # バックグラウンド処理として、非同期に長期記憶（既知概念・スコア等）を更新するタスクをスケジュール
+            background_tasks.add_task(update_user_memory_async, db, related_topics, eval_dict)
         
         return {"status": "success", "message": "Evaluation saved and background memory update scheduled."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/feed/skip-all")
+async def skip_all_feeds(req: SkipAllRequest, db: firestore.Client = Depends(get_db)):
+    """指定されたすべての記事フィードを一括でスキップ（既読化）する"""
+    try:
+        batch = db.batch()
+        for f_id in req.feed_ids:
+            doc_ref = db.collection("dab_feeds").document(f_id)
+            batch.update(doc_ref, {
+                "read_status": "READ",
+                "user_evaluations": {
+                    "is_known": False,
+                    "is_interested": False,
+                    "grain_level": "BASIC",
+                    "skipped": True
+                }
+            })
+        batch.commit()
+        return {"status": "success", "message": f"{len(req.feed_ids)} items skipped successfully."}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
