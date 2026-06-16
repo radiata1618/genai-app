@@ -20,7 +20,7 @@ export const metadata = {
     icon: '/favicon.ico',
     apple: '/icons/icon-192-v3.png',
   },
-  manifest: '/manifest.json?v=3',
+  manifest: '/manifest.json',
 };
 
 export default function RootLayout({ children }) {
