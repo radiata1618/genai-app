@@ -2,6 +2,7 @@
     "name": "GenAI App",
     "short_name": "GenAI",
     "start_url": "/dashboard",
+    "scope": "/",
     "display": "standalone",
     "background_color": "#ffffff",
     "theme_color": "#ffffff",
