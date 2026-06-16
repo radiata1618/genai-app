@@ -5,7 +5,9 @@ import traceback
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 from google import genai
 from google.genai import types
+from google.cloud.firestore import FieldFilter
 from config import GEMINI_LIVE_MODEL
+from services.ai_shared import get_firestore_client
 
 router = APIRouter(
     prefix="/agent",
@@ -20,23 +22,53 @@ client = genai.Client(
     http_options={'api_version': 'v1beta1'}
 )
 
+async def get_dab_context():
+    """FirestoreからDABのアクティブトピックとユーザーの長期記憶を読み込み、スピーキング用の文脈を作成する"""
+    try:
+        db = get_firestore_client()
+        # ACTIVEなトピックの取得
+        topics_ref = db.collection("dab_hot_topics").where(filter=FieldFilter("status", "==", "ACTIVE")).stream()
+        topics = []
+        for doc in topics_ref:
+            data = doc.to_dict()
+            topics.append(f"- {data.get('name', 'Untitled')}: {data.get('description', '')}")
+        topics_str = "\n".join(topics) if topics else "特に登録されていません。"
+
+        # ユーザーメモリの取得
+        memory_ref = db.collection("dab_user_memory").document("default_user").get()
+        learning_goals = "設定されていません。"
+        known_concepts_str = "登録されていません。"
+        if memory_ref.exists:
+            mem_data = memory_ref.to_dict()
+            learning_goals = mem_data.get("learning_goals", "設定されていません。")
+            known_concepts = mem_data.get("known_concepts", [])
+            if known_concepts:
+                known_concepts_str = ", ".join(known_concepts)
+
+        return {
+            "topics": topics_str,
+            "learning_goals": learning_goals,
+            "known_concepts": known_concepts_str
+        }
+    except Exception as e:
+        print(f"Error fetching DAB context: {e}")
+        return {
+            "topics": "取得エラー",
+            "learning_goals": "取得エラー",
+            "known_concepts": "取得エラー"
+        }
+
 @router.websocket("/ws")
 async def websocket_endpoint(websocket: WebSocket):
     # クライアントからのWebSocket接続を確立
     await websocket.accept()
     print("DEBUG (Agent): WebSocket connected", flush=True)
 
-    # セッション設定（日本語音声およびテキスト出力）
+    # セッション設定
     selected_model_key = "gemini-2.5"
     current_session_handle = None
-    
-    # 統合AIアシスタント用のシステム指示定義（日本語で動作）
-    system_instruction = (
-        "あなたは日本語を話す、極めて優秀で親切な統合AIアシスタントです。\n"
-        "ユーザーの対話相手として、親身にかつ論理的に受け受け答えを行ってください。\n"
-        "返答は自然な日本語（です・ます調）で行い、リアルタイム音声会話に適した形で、簡潔かつ明瞭に話してください。\n"
-        "将来的にタスク管理やDBAの操作等の機能がここに追加される予定です。まずは親切に会話を行ってください。"
-    )
+    language = "ja"
+    mode = "normal"
 
     try:
         # クライアントから初期セットアップデータを受信
@@ -46,6 +78,10 @@ async def websocket_endpoint(websocket: WebSocket):
         if init_data.get("type") == "setup":
              if init_data.get("model"):
                  selected_model_key = init_data.get("model")
+             if init_data.get("language"):
+                 language = init_data.get("language")
+             if init_data.get("mode"):
+                 mode = init_data.get("mode")
              # クライアントからセッションハンドルが提供された場合、復元を試みる
              if init_data.get("session_handle"):
                  current_session_handle = init_data.get("session_handle")
@@ -64,8 +100,46 @@ async def websocket_endpoint(websocket: WebSocket):
 
     config = {
         "model": model_id, 
-        "response_modalities": ["AUDIO"] # Live API は AUDIO を指定するとテキストも自動的に返します
+        "response_modalities": ["AUDIO"] 
     }
+
+    # 動的なシステムプロンプト（system_instruction）の構築
+    if mode == "dab":
+        dab_data = await get_dab_context()
+        if language == "en":
+            system_instruction = (
+                "You are a professional IT & Data Architecture expert and an English speaking coach.\n"
+                "You will conduct a technology discussion and roleplay with the user about their active Tech topics and learning goals.\n\n"
+                f"User's Learning Goals:\n{dab_data['learning_goals']}\n\n"
+                f"Current Active Tech Topics:\n{dab_data['topics']}\n\n"
+                f"User's Known Concepts:\n{dab_data['known_concepts']}\n\n"
+                "Role: Engage in a highly interactive discussion. Ask sharp, expert-level questions to the user about these topics to test their understanding or let them explain the architecture. Speak strictly in English.\n"
+                "Keep your responses concise and natural for a realtime audio conversation."
+            )
+        else:  # "ja"
+            system_instruction = (
+                "あなたはデータアーキテクチャおよび最新技術の専門家であり、ユーザーの学習を支援する優秀なメンターです。\n"
+                "ユーザーが登録している以下のDABアクティブトピックや学習目標について、技術的なディスカッションを行ってください。\n\n"
+                f"ユーザーの学習目標:\n{dab_data['learning_goals']}\n\n"
+                f"現在のアクティブトピック:\n{dab_data['topics']}\n\n"
+                f"ユーザーの既知概念:\n{dab_data['known_concepts']}\n\n"
+                "役割: ユーザーに対してこれらのトピックに関する質問を投げかけ、アーキテクチャの解説や意見を求めてください。会話はすべて日本語（です・ます調）で行い、リアルタイム音声対話に適した形で簡潔かつ明瞭に話してください。"
+            )
+    else:  # normal
+        if language == "en":
+            system_instruction = (
+                "You are a friendly and professional English conversation partner.\n"
+                "Engage in a natural, friendly chat with the user on any topic they bring up.\n"
+                "Speak strictly in English. Keep your responses concise and clear, suitable for real-time audio conversation. "
+                "If the user makes grammatical errors, gently correct them or suggest better phrasing if appropriate, but keep the conversation flowing."
+            )
+        else:  # "ja"
+            system_instruction = (
+                "あなたは日本語を話す、極めて優秀で親切な統合AIアシスタントです。\n"
+                "ユーザーの対話相手として、親身にかつ論理的に受け受け答えを行ってください。\n"
+                "返答は自然な日本語（です・ます調）で行い、リアルタイム音声会話に適した形で、簡潔かつ明瞭に話してください。\n"
+                "将来的にタスク管理やDBAの操作等の機能がここに追加される予定です。まずは親切に会話を行ってください。"
+            )
 
     # Gemini Live API への接続と双方向中継
     try:
