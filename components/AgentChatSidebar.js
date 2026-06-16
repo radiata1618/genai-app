@@ -83,6 +83,45 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     // アシスタントが発話中かどうかのフラグ（ビジュアライザーアニメーション用）
     const [isModelSpeaking, setIsModelSpeaking] = useState(false);
 
+    // リアルタイム音声対話用の仮テキスト状態
+    const [activeUserText, setActiveUserText] = useState("");
+    const [activeModelText, setActiveModelText] = useState("");
+    const activeUserTextRef = useRef("");
+    const activeModelTextRef = useRef("");
+
+    function updateUserText(text) {
+        activeUserTextRef.current = text;
+        setActiveUserText(text);
+    }
+
+    function updateModelText(text) {
+        activeModelTextRef.current = text; // Gemini Live APIのトランスクリプトは累積テキストなので上書き
+        setActiveModelText(text);
+    }
+
+    function commitCurrentTurns() {
+        const userText = activeUserTextRef.current.trim();
+        const modelText = activeModelTextRef.current.trim();
+
+        if (userText || modelText) {
+            setMessages(prev => {
+                const next = [...prev];
+                if (userText) {
+                    next.push({ role: 'user', content: userText });
+                }
+                if (modelText) {
+                    next.push({ role: 'model', content: modelText });
+                }
+                return next;
+            });
+            // リセット
+            activeUserTextRef.current = "";
+            activeModelTextRef.current = "";
+            setActiveUserText("");
+            setActiveModelText("");
+        }
+    }
+
     // 接続時に一度だけログを追加
     function changeMicMode(mode) {
         setMicMode(mode);
@@ -112,23 +151,27 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         // 3. アシスタントが発話中フラグをOFFにする
         setIsModelSpeaking(false);
 
-        // 4. チャット履歴の末尾にあるモデルの発話が途中であれば、中断マーカーをつける
-        setMessages(prev => {
-            if (prev.length === 0) return prev;
-            const lastMsg = prev[prev.length - 1];
-            if (lastMsg && lastMsg.role === 'model') {
-                if (lastMsg.content.endsWith("... [Interrupted]") || lastMsg.content.endsWith("... [中断]")) {
-                    return prev;
+        // 4. 現在の途中テキストがあれば、遮られた目印を付けてコミット
+        const userText = activeUserTextRef.current.trim();
+        const modelText = activeModelTextRef.current.trim();
+
+        if (userText || modelText) {
+            setMessages(prev => {
+                const next = [...prev];
+                if (userText) {
+                    next.push({ role: 'user', content: userText });
                 }
-                const updated = [...prev];
-                updated[updated.length - 1] = {
-                    ...lastMsg,
-                    content: lastMsg.content + "... [Interrupted]"
-                };
-                return updated;
-            }
-            return prev;
-        });
+                if (modelText) {
+                    next.push({ role: 'model', content: modelText + "... [Interrupted]" });
+                }
+                return next;
+            });
+            // リセット
+            activeUserTextRef.current = "";
+            activeModelTextRef.current = "";
+            setActiveUserText("");
+            setActiveModelText("");
+        }
     }
 
     function handlePTTStart(e) {
@@ -171,20 +214,13 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             wsRef.current.send(JSON.stringify({ audio: base64Remaining }));
         }
 
-        // 問題②修正: 500ms分の無音を送信してGemini VADを確実にトリガーする
-        // ActivityEndが効かない場合でも、VADが無音を検知して返答が来る
-        const CHUNK_SIZE = 1024;
-        const silenceSamples = 8000; // 16kHz × 0.5秒 = 8000サンプル
-        const silenceData = new Int16Array(silenceSamples); // 全ゼロ = 無音
-        for (let offset = 0; offset < silenceSamples; offset += CHUNK_SIZE) {
-            const chunk = silenceData.slice(offset, Math.min(offset + CHUNK_SIZE, silenceSamples));
-            const base64Silence = arrayBufferToBase64(chunk.buffer);
-            wsRef.current.send(JSON.stringify({ audio: base64Silence }));
-        }
-
-        // ActivityEnd シグナルを送信（SDKが対応していれば即座に返答）
-        wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
-        console.log("DEBUG (Agent): PTT Ended - flushed buffer + sent silence + ptt_end");
+        // 音声データが確実に送信されてから発話終了を認識させるため、100msのディレイを入れる
+        setTimeout(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+                console.log("DEBUG (Agent): PTT Ended - sent ptt_end after delay");
+            }
+        }, 100);
     }
 
     // 接続時に一度だけログを追加
@@ -195,6 +231,10 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     function scrollToBottom() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }
+
+    useEffect(() => {
+        scrollToBottom();
+    }, [messages, activeUserText, activeModelText]);
 
     // タイマークリア
     function clearReconnectTimer() {
@@ -222,7 +262,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     }
 
     // 音声会話セッションの開始
-    async function startSession(keepHistory = false) {
+    async function startSession(keepHistory = true) {
         if (isConnectingRef.current) return;
 
         isConnectingRef.current = true;
@@ -286,8 +326,6 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             };
 
             // Gemini からのデータストリーム受信処理
-            let currentAssistantText = "";
-
             wsRef.current.onmessage = async (event) => {
                 const data = JSON.parse(event.data);
 
@@ -307,10 +345,22 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     return;
                 }
 
+                // ユーザー音声文字起こし(input_audio_transcription)の受信
+                if (data.type === "user_transcript") {
+                    updateUserText(data.text);
+                    return;
+                }
+
+                // AI音声文字起こし(output_audio_transcription)の受信
+                if (data.type === "model_transcript") {
+                    updateModelText(data.text);
+                    return;
+                }
+
                 // ターン終了（発話終了）の検知
                 if (data.type === "turn_complete") {
                     setIsModelSpeaking(false);
-                    currentAssistantText = ""; // テキストバッファをクリア
+                    commitCurrentTurns();
                     return;
                 }
 
@@ -318,22 +368,6 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 if (data.audio) {
                     setIsModelSpeaking(true);
                     playAudioChunk(data.audio);
-                }
-
-                // リアルタイムテキスト（字幕）の更新
-                if (data.text) {
-                    currentAssistantText += data.text;
-                    setMessages(prev => {
-                        // 最後のメッセージがmodelのものであれば更新し、そうでなければ新しく追加
-                        const lastMsg = prev[prev.length - 1];
-                        if (lastMsg && lastMsg.role === 'model') {
-                            const updated = [...prev];
-                            updated[updated.length - 1] = { role: 'model', content: currentAssistantText };
-                            return updated;
-                        } else {
-                            return [...prev, { role: 'model', content: currentAssistantText }];
-                        }
-                    });
                 }
             };
 
@@ -670,10 +704,32 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 </div>
 
                 {/* 音声セッションのコントロールトグル */}
-                <div>
+                <div className="flex gap-2">
+                    {status === "disconnected" && (
+                        <button
+                            onClick={() => {
+                                sessionHandleRef.current = null;
+                                let initialContent = "";
+                                if (selectedMode === "dab") {
+                                    initialContent = selectedLanguage === "en" 
+                                        ? "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!" 
+                                        : "こんにちは！技術学習メンターです。DABの技術トピックについて日本語でディスカッションしましょう！";
+                                } else {
+                                    initialContent = selectedLanguage === "en" 
+                                        ? "Hello! I am your AI assistant. How can I help you today?" 
+                                        : "こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？";
+                                }
+                                setMessages([{ role: 'model', content: initialContent }]);
+                                addLog("会話履歴をリセットしました");
+                            }}
+                            className="px-2.5 py-1.5 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-lg border border-slate-750 transition-all active:scale-95 cursor-pointer"
+                        >
+                            🧹 Clear
+                        </button>
+                    )}
                     {status === "disconnected" ? (
                         <button
-                            onClick={startSession}
+                            onClick={() => startSession(true)}
                             className="px-3 py-1.5 bg-gradient-to-r from-cyan-500 to-teal-500 hover:from-cyan-600 hover:to-teal-600 text-white font-bold text-xs rounded-lg shadow-md hover:shadow-lg transition-all active:scale-95 cursor-pointer"
                         >
                             🎤 Start
@@ -730,6 +786,31 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                         </div>
                     </div>
                 ))}
+                {/* 現在発話中のテキスト（字幕） */}
+                {activeUserText && (
+                    <div className="flex justify-end animate-fadeIn animate-pulse">
+                        <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs bg-cyan-900/30 text-cyan-200 border border-cyan-500/20 rounded-br-none italic">
+                            {activeUserText}
+                        </div>
+                    </div>
+                )}
+                {activeModelText && (
+                    <div className="flex justify-start animate-fadeIn">
+                        <div className="max-w-[85%] rounded-2xl px-3.5 py-2.5 text-xs bg-[#1e293b] text-slate-200 border border-slate-800 rounded-bl-none">
+                            <ReactMarkdown
+                                components={{
+                                    p: ({ node, ...props }) => <p className="mb-1 last:mb-0" {...props} />,
+                                    ul: ({ node, ...props }) => <ul className="list-disc pl-4 mb-1" {...props} />,
+                                    ol: ({ node, ...props }) => <ol className="list-decimal pl-4 mb-1" {...props} />,
+                                    li: ({ node, ...props }) => <li className="mb-0.5" {...props} />,
+                                }}
+                            >
+                                {activeModelText}
+                            </ReactMarkdown>
+                            <span className="inline-block w-1.5 h-3 ml-1 bg-cyan-400 animate-blink" />
+                        </div>
+                    </div>
+                )}
                 <div ref={messagesEndRef} />
             </div>
 

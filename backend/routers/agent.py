@@ -169,7 +169,9 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"DEBUG (Agent): Resuming session with handle: {current_session_handle[:10]}...", flush=True)
                     session_config = types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
-                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle)
+                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle),
+                        output_audio_transcription=types.AudioTranscriptionConfig(),
+                        input_audio_transcription=types.AudioTranscriptionConfig()
                     )
                 else:
                     # PTTモード時はAutomatic VADを無効化し、ActivityStart/Endで制御する
@@ -201,6 +203,8 @@ async def websocket_endpoint(websocket: WebSocket):
                         "response_modalities": config["response_modalities"],
                         "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
                         "session_resumption": types.SessionResumptionConfig(transparent=True),
+                        "output_audio_transcription": types.AudioTranscriptionConfig(),
+                        "input_audio_transcription": types.AudioTranscriptionConfig()
                     }
                     if realtime_input_config is not None:
                         connect_config_kwargs["realtime_input_config"] = realtime_input_config
@@ -239,8 +243,28 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "session_handle": current_session_handle
                                         })
 
+                                # ユーザー音声文字起こし(input_audio_transcription)の処理
+                                if hasattr(response, "input_audio_transcription") and response.input_audio_transcription:
+                                    user_text = response.input_audio_transcription.text
+                                    if user_text:
+                                        print(f"DEBUG (Agent): User Transcript: {user_text}", flush=True)
+                                        await websocket.send_json({
+                                            "type": "user_transcript",
+                                            "text": user_text
+                                        })
+
                                 if server_content is None:
                                     continue
+
+                                # モデル音声文字起こし(output_transcription)の処理
+                                if hasattr(server_content, "output_transcription") and server_content.output_transcription:
+                                    model_text = server_content.output_transcription.text
+                                    if model_text:
+                                        print(f"DEBUG (Agent): Model Transcript: {model_text}", flush=True)
+                                        await websocket.send_json({
+                                            "type": "model_transcript",
+                                            "text": model_text
+                                        })
                                 
                                 if server_content.turn_complete:
                                      print("DEBUG (Agent): Gemini indicates turn_complete", flush=True)
@@ -261,7 +285,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                     # テキストデータ（字幕用）がある場合
                                     if part.text:
                                         print(f"DEBUG (Agent): Text transcript from Gemini: {part.text}", flush=True)
-                                        await websocket.send_json({"text": part.text})
+                                        await websocket.send_json({
+                                            "type": "model_transcript",
+                                            "text": part.text
+                                        })
                         except Exception as e:
                             print(f"Error sending to client in Agent: {e}", flush=True)
                         finally:

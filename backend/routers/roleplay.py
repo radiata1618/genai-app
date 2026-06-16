@@ -37,6 +37,7 @@ async def websocket_endpoint(websocket: WebSocket):
     # 1. 初期セットアップフェーズ
     current_session_handle = None
     system_instruction = "You are a helpful English tutor. Engage in a roleplay conversation."
+    mic_mode = "hands-free"
 
     try:
         # クライアントから設定を受信
@@ -84,6 +85,11 @@ async def websocket_endpoint(websocket: WebSocket):
                  current_session_handle = init_data.get("session_handle")
                  print(f"DEBUG: Restoring session from client handle: {current_session_handle[:10]}...", flush=True)
 
+             # マイクモードの取得
+             if init_data.get("mic_mode"):
+                 mic_mode = init_data.get("mic_mode")
+                 print(f"DEBUG: Mic mode from client: {mic_mode}", flush=True)
+
     except Exception as e:
         print(f"Error during setup: {e}")
         await websocket.close()
@@ -107,13 +113,37 @@ async def websocket_endpoint(websocket: WebSocket):
                         input_audio_transcription=types.AudioTranscriptionConfig()
                     )
                 else:
-                    session_config = types.LiveConnectConfig(
-                        response_modalities=config["response_modalities"],
-                        system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=types.SessionResumptionConfig(transparent=True),
-                        output_audio_transcription=types.AudioTranscriptionConfig(),
-                        input_audio_transcription=types.AudioTranscriptionConfig()
-                    )
+                    realtime_input_config = None
+                    try:
+                        if mic_mode == "push-to-talk":
+                            realtime_input_config = types.RealtimeInputConfig(
+                                automatic_activity_detection=types.AutomaticActivityDetection(
+                                    disabled=True  # PTTモード時はVADを無効化
+                                )
+                            )
+                            print("DEBUG: PTT mode - Automatic VAD disabled", flush=True)
+                        else:
+                            realtime_input_config = types.RealtimeInputConfig(
+                                automatic_activity_detection=types.AutomaticActivityDetection(
+                                    disabled=False  # Hands-Freeモード時はVADを有効化
+                                )
+                            )
+                            print(f"DEBUG: {mic_mode} mode - Automatic VAD enabled", flush=True)
+                    except (AttributeError, TypeError) as vad_err:
+                        print(f"DEBUG: VAD config not supported by SDK: {vad_err}", flush=True)
+                        realtime_input_config = None
+
+                    connect_config_kwargs = {
+                        "response_modalities": config["response_modalities"],
+                        "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
+                        "session_resumption": types.SessionResumptionConfig(transparent=True),
+                        "output_audio_transcription": types.AudioTranscriptionConfig(),
+                        "input_audio_transcription": types.AudioTranscriptionConfig()
+                    }
+                    if realtime_input_config is not None:
+                        connect_config_kwargs["realtime_input_config"] = realtime_input_config
+
+                    session_config = types.LiveConnectConfig(**connect_config_kwargs)
 
                 async with client.aio.live.connect(
                     model=config["model"],
@@ -212,6 +242,28 @@ async def websocket_endpoint(websocket: WebSocket):
                                     await websocket.send_json({"type": "pong"})
                                     continue
 
+                                # PTT開始: GeminiにActivityStartを通知（発話開始シグナル）
+                                if message.get("type") == "ptt_start":
+                                    try:
+                                        await session.send_realtime_input(
+                                            activity_start=types.ActivityStart()
+                                        )
+                                        print("DEBUG: Sent ActivityStart to Gemini", flush=True)
+                                    except Exception as e:
+                                        print(f"Error sending ActivityStart: {e}", flush=True)
+                                    continue
+
+                                # PTT終了: GeminiにActivityEndを通知（発話終了シグナル）
+                                if message.get("type") == "ptt_end":
+                                    try:
+                                        await session.send_realtime_input(
+                                            activity_end=types.ActivityEnd()
+                                        )
+                                        print("DEBUG: Sent ActivityEnd to Gemini", flush=True)
+                                    except Exception as e:
+                                        print(f"Error sending ActivityEnd: {e}", flush=True)
+                                    continue
+
                                 if "audio" in message:
                                     import base64
                                     audio_data = base64.b64decode(message["audio"])
@@ -231,7 +283,7 @@ async def websocket_endpoint(websocket: WebSocket):
                                     except Exception as send_err:
                                         print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)
                                         break 
-                                
+
                                 if "control" in message:
                                      pass
                                     
