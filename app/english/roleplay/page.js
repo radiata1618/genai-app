@@ -86,6 +86,14 @@ export default function RoleplayPage() {
 
         // 自分が話し始めるため、AIの音声を即座に割り込み停止する
         interruptAudio();
+
+        // バッファをリセットして新しい発話を開始
+        inputBufferRef.current = new Int16Array(0);
+
+        // サーバーに発話開始を通知
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "ptt_start" }));
+        }
     };
 
     const handlePTTEnd = (e) => {
@@ -95,6 +103,25 @@ export default function RoleplayPage() {
         setIsPTTActive(false);
         isPTTActiveRef.current = false;
         console.log("DEBUG: PTT Ended (Mic inactive)");
+
+        if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
+
+        // 問題①修正: 1024サンプルに満たない末尾の音声バッファを即座に送信
+        if (inputBufferRef.current.length > 0) {
+            const remaining = inputBufferRef.current.slice(0); // コピーを作成
+            inputBufferRef.current = new Int16Array(0);
+            console.log(`DEBUG: Flushing ${remaining.length} remaining samples in roleplay`);
+            const base64Remaining = arrayBufferToBase64(remaining.buffer);
+            wsRef.current.send(JSON.stringify({ audio: base64Remaining }));
+        }
+
+        // 音声データが確実に送信されてから発話終了を認識させるため、100msのディレイを入れる
+        setTimeout(() => {
+            if (wsRef.current?.readyState === WebSocket.OPEN) {
+                wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+                console.log("DEBUG: Sent ptt_end in roleplay after delay");
+            }
+        }, 100);
     };
 
     // Auto-scroll to bottom on chat update
@@ -140,6 +167,7 @@ export default function RoleplayPage() {
     const sourceNodeRef = useRef(null);
     const isRecordingRef = useRef(false);
     const sessionHandleRef = useRef(null); // セッション再開用トークン
+    const inputBufferRef = useRef(new Int16Array(0)); // 音声入力バッファ
 
     // 多重接続防止フラグ
     const isConnectingRef = useRef(false);
@@ -275,6 +303,7 @@ export default function RoleplayPage() {
                     type: "setup",
                     session_handle: sessionHandleRef.current, // 保存済みトークンがあれば送信
                     model: selectedModel, // 選択されたモデルを送信
+                    mic_mode: micModeRef.current, // マイクモードを送信
                     context: {
                         topic: prep?.topic || "Free Talk",
                         role: "English Tutor",
@@ -437,6 +466,7 @@ export default function RoleplayPage() {
             newBuffer.set(inputBuffer);
             newBuffer.set(int16Chunk, inputBuffer.length);
             inputBuffer = newBuffer;
+            inputBufferRef.current = inputBuffer; // Refに同期
 
             // 1024サンプル（約64ms）ごとに送信
             const CHUNK_SIZE = 1024;
@@ -444,6 +474,7 @@ export default function RoleplayPage() {
                 while (inputBuffer.length >= CHUNK_SIZE) {
                     const chunkToSend = inputBuffer.slice(0, CHUNK_SIZE);
                     inputBuffer = inputBuffer.slice(CHUNK_SIZE);
+                    inputBufferRef.current = inputBuffer; // Refに同期
 
                     const base64Audio = arrayBufferToBase64(chunkToSend.buffer);
 
