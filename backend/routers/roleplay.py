@@ -133,6 +133,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         print(f"DEBUG: VAD config not supported by SDK: {vad_err}", flush=True)
                         realtime_input_config = None
 
+                    thinking_enabled = init_data.get("thinking_enabled", True)
                     connect_config_kwargs = {
                         "response_modalities": config["response_modalities"],
                         "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
@@ -140,6 +141,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         "output_audio_transcription": types.AudioTranscriptionConfig(),
                         "input_audio_transcription": types.AudioTranscriptionConfig()
                     }
+                    if not thinking_enabled:
+                        connect_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                        print("DEBUG: Thinking process disabled in roleplay session", flush=True)
+
                     if realtime_input_config is not None:
                         connect_config_kwargs["realtime_input_config"] = realtime_input_config
 

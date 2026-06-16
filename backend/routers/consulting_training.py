@@ -456,7 +456,10 @@ def delete_training_task(task_id: str, db: firestore.Client = Depends(get_firest
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/live-gemini/analyze", response_model=LiveAnalysisResultSchema)
-async def analyze_live_audio(file: UploadFile = File(...)):
+async def analyze_live_audio(
+    file: UploadFile = File(...),
+    db: firestore.Client = Depends(get_firestore_client)
+):
     """数秒単位で送られてきたマイク音声バッファをGeminiで解析し、発話アラートをリアルタイム返却します"""
     try:
         content = await file.read()
@@ -492,18 +495,32 @@ async def analyze_live_audio(file: UploadFile = File(...)):
 ※アラートが一切検出されなかった場合は、alertsリストを空にして返却してください。
 """
 
+        # Firestoreからシステム設定を取得して思考設定を適用
+        thinking_enabled_sme_train = True
+        try:
+            doc_ref = db.collection(CONFIG_COLLECTION).document("sidebar_visible_config")
+            doc = doc_ref.get()
+            if doc.exists:
+                thinking_enabled_sme_train = doc.to_dict().get("thinking_enabled_sme_train", True)
+        except Exception as se:
+            print(f"Warning: Failed to fetch settings in analyze_live_audio: {se}")
+
+        # Config引数の作成
+        config_kwargs = {
+            "system_instruction": "あなたは一流のビジネスコミュニケーションコーチです。発話の欠点を素早く見つけ、建設的に指導します。",
+            "response_mime_type": "application/json",
+            "response_schema": LiveAnalysisResultSchema,
+            "temperature": 0.1
+        }
+        if not thinking_enabled_sme_train:
+            config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+            print("DEBUG: Thinking process disabled in SME Train (analyze_live_audio)", flush=True)
+
         client = get_genai_client()
-        
-        # 安定性と速度に優れた gemini-2.5-flash を使用
         response = await client.aio.models.generate_content(
             model=GEMINI_FLASH_MODEL,
             contents=[prompt, part],
-            config=types.GenerateContentConfig(
-                system_instruction="あなたは一流のビジネスコミュニケーションコーチです。発話の欠点を素早く見つけ、建設的に指導します。",
-                response_mime_type="application/json",
-                response_schema=LiveAnalysisResultSchema,
-                temperature=0.1
-            )
+            config=types.GenerateContentConfig(**config_kwargs)
         )
 
         result_data = json.loads(response.text)
@@ -517,6 +534,10 @@ async def analyze_live_audio(file: UploadFile = File(...)):
 
 class SidebarSettingsModel(BaseModel):
     hidden_items: List[str] = Field(default_factory=list, description="非表示に設定されたサイドバー項目のhrefリスト")
+    thinking_enabled_agent: bool = Field(default=True, description="AIアシスタントでの思考機能を有効にするかどうか")
+    thinking_enabled_roleplay: bool = Field(default=True, description="英会話ロールプレイでの思考機能を有効にするかどうか")
+    thinking_enabled_sme_live: bool = Field(default=True, description="SME Liveでの思考機能を有効にするかどうか")
+    thinking_enabled_sme_train: bool = Field(default=True, description="SME Trainでの思考機能を有効にするかどうか")
 
 @router.get("/sidebar/settings", response_model=SidebarSettingsModel)
 def get_sidebar_settings(db: firestore.Client = Depends(get_firestore_client)):
@@ -526,8 +547,20 @@ def get_sidebar_settings(db: firestore.Client = Depends(get_firestore_client)):
         doc = doc_ref.get()
         if doc.exists:
             data = doc.to_dict()
-            return SidebarSettingsModel(hidden_items=data.get("hidden_items", []))
-        return SidebarSettingsModel(hidden_items=[])
+            return SidebarSettingsModel(
+                hidden_items=data.get("hidden_items", []),
+                thinking_enabled_agent=data.get("thinking_enabled_agent", True),
+                thinking_enabled_roleplay=data.get("thinking_enabled_roleplay", True),
+                thinking_enabled_sme_live=data.get("thinking_enabled_sme_live", True),
+                thinking_enabled_sme_train=data.get("thinking_enabled_sme_train", True)
+            )
+        return SidebarSettingsModel(
+            hidden_items=[],
+            thinking_enabled_agent=True,
+            thinking_enabled_roleplay=True,
+            thinking_enabled_sme_live=True,
+            thinking_enabled_sme_train=True
+        )
     except Exception as e:
         print(f"Error in get_sidebar_settings: {e}")
         raise HTTPException(status_code=500, detail=f"サイドバー設定の取得に失敗しました: {str(e)}")
@@ -539,6 +572,10 @@ def update_sidebar_settings(req: SidebarSettingsModel, db: firestore.Client = De
         doc_ref = db.collection(CONFIG_COLLECTION).document("sidebar_visible_config")
         doc_ref.set({
             "hidden_items": req.hidden_items,
+            "thinking_enabled_agent": req.thinking_enabled_agent,
+            "thinking_enabled_roleplay": req.thinking_enabled_roleplay,
+            "thinking_enabled_sme_live": req.thinking_enabled_sme_live,
+            "thinking_enabled_sme_train": req.thinking_enabled_sme_train,
             "updated_at": firestore.SERVER_TIMESTAMP
         })
         return req

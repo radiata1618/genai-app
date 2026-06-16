@@ -1322,20 +1322,22 @@ async def consulting_sme_websocket(websocket: WebSocket):
                  system_instruction += f"\n\nTopic: {context['topic']}"
 
         # 2. Live API Connection Loop (KeepAlive)
+        thinking_enabled = init_data.get("thinking_enabled", True)
         while True:
             try:
                 print(f"{datetime.datetime.now()} DEBUG: Connecting to Live API {MODEL_NAME}...", flush=True)
                 
-                config = types.LiveConnectConfig(
-                    response_modalities=["AUDIO"], # Model requires AUDIO modality
-                    system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                    # Key Feature: Enable Transcription to get text output from the Audio model
-                    # This allows us to receive text almost simultaneously with audio.
-                    # We will DISCARD the audio and only send the text to the user as requested.
-                    output_audio_transcription=types.AudioTranscriptionConfig(),
-                    # Enable session resumption for stability (same as roleplay.py)
-                    session_resumption=types.SessionResumptionConfig(transparent=True)
-                )
+                connect_config_kwargs = {
+                    "response_modalities": ["AUDIO"],
+                    "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
+                    "output_audio_transcription": types.AudioTranscriptionConfig(),
+                    "session_resumption": types.SessionResumptionConfig(transparent=True)
+                }
+                if not thinking_enabled:
+                    connect_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                    print("DEBUG (SME): Thinking process disabled", flush=True)
+
+                config = types.LiveConnectConfig(**connect_config_kwargs)
 
                 async with client.aio.live.connect(model=MODEL_NAME, config=config) as session:
                     print(f"{datetime.datetime.now()} DEBUG: Connected to Gemini Live API!", flush=True)

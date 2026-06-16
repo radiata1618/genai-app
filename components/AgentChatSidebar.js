@@ -316,7 +316,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     language: selectedLanguage,
                     mode: selectedMode,
                     mic_mode: micModeRef.current, // PTTモード時にサーバー側のVADを無効化するために必要
-                    history: messages.map(m => ({ sender: m.role === 'user' ? 'user' : 'model', text: m.content }))
+                    thinking_enabled: typeof window !== "undefined" ? (localStorage.getItem("thinking_enabled_agent") !== "false") : true, history: messages.map(m => ({ sender: m.role === 'user' ? 'user' : 'model', text: m.content }))
                 };
                 wsRef.current.send(JSON.stringify(setupData));
 

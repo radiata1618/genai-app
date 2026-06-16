@@ -99,6 +99,12 @@ export default function Sidebar({ onCloseMobile }) {
             if (res.ok) {
                 const data = await res.json();
                 setHiddenItems(data.hidden_items || []);
+                if (typeof window !== "undefined") {
+                    localStorage.setItem("thinking_enabled_agent", data.thinking_enabled_agent !== false);
+                    localStorage.setItem("thinking_enabled_roleplay", data.thinking_enabled_roleplay !== false);
+                    localStorage.setItem("thinking_enabled_sme_live", data.thinking_enabled_sme_live !== false);
+                    localStorage.setItem("thinking_enabled_sme_train", data.thinking_enabled_sme_train !== false);
+                }
             }
         } catch (e) {
             console.error("Failed to load sidebar settings", e);

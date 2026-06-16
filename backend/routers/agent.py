@@ -199,6 +199,7 @@ async def websocket_endpoint(websocket: WebSocket):
                         realtime_input_config = None
 
                     # LiveConnectConfigの構築（realtime_input_configはNoneの場合は省略）
+                    thinking_enabled = init_data.get("thinking_enabled", True)
                     connect_config_kwargs = {
                         "response_modalities": config["response_modalities"],
                         "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
@@ -206,6 +207,10 @@ async def websocket_endpoint(websocket: WebSocket):
                         "output_audio_transcription": types.AudioTranscriptionConfig(),
                         "input_audio_transcription": types.AudioTranscriptionConfig()
                     }
+                    if not thinking_enabled:
+                        connect_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
+                        print("DEBUG (Agent): Thinking process disabled", flush=True)
+
                     if realtime_input_config is not None:
                         connect_config_kwargs["realtime_input_config"] = realtime_input_config
 
