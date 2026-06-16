@@ -57,14 +57,13 @@ export default function LiveBrowserPage() {
         };
     }, []);
 
-    const startListening = async () => {
+        const startListening = async () => {
         setSpeechHistory([]);
         setAlerts([]);
         setCurrentText("");
         setLatestAlert(null);
         setStats({ filler: 0, clarity: 0, roundabout: 0, total: 0 });
         setStatus("connecting");
-        allAudioChunksRef.current = [];
 
         const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
         if (!SpeechRecognition) {
@@ -74,38 +73,6 @@ export default function LiveBrowserPage() {
         }
 
         try {
-            // マイクストリームの取得
-            const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
-            streamRef.current = stream;
-
-            // マイク競合を回避するためにトラックのクローンを作成
-            const volumeStream = stream.clone();
-            const recordStream = stream.clone();
-            volumeStreamRef.current = volumeStream;
-            recordStreamRef.current = recordStream;
-
-            startVolumeIndicator(volumeStream);
-
-            // 全体録音レコーダーの起動
-            let mimeType = "audio/webm";
-            if (!MediaRecorder.isTypeSupported(mimeType)) {
-                mimeType = "audio/ogg";
-                if (!MediaRecorder.isTypeSupported(mimeType)) {
-                    mimeType = "audio/mp4";
-                    if (!MediaRecorder.isTypeSupported(mimeType)) {
-                        mimeType = "";
-                    }
-                }
-            }
-            const totalRecorder = new MediaRecorder(recordStream, mimeType ? { mimeType } : {});
-            totalRecorder.ondataavailable = (e) => {
-                if (e.data && e.data.size > 0) {
-                    allAudioChunksRef.current.push(e.data);
-                }
-            };
-            totalRecorderRef.current = totalRecorder;
-            totalRecorder.start();
-
             // 音声認識の設定
             const rec = new SpeechRecognition();
             rec.continuous = true;
@@ -164,8 +131,8 @@ export default function LiveBrowserPage() {
             rec.start();
 
         } catch (e) {
-            console.error("Microphone Access Failed:", e);
-            alert("マイクへのアクセスに失敗しました。");
+            console.error("Speech recognition failed to start:", e);
+            alert("音声認識の開始に失敗しました。マイクの使用権限を確認してください。");
             setStatus("idle");
         }
     };
@@ -182,49 +149,11 @@ export default function LiveBrowserPage() {
             }
             recognitionRef.current = null;
         }
-
-        // 全体録音レコーダーの停止
-        if (totalRecorderRef.current && totalRecorderRef.current.state !== "inactive") {
-            try {
-                totalRecorderRef.current.stop();
-            } catch (e) {
-                // 無視
-            }
-        }
-
-        // 音声解析リソースの開放
-        if (animationFrameRef.current) {
-            cancelAnimationFrame(animationFrameRef.current);
-            animationFrameRef.current = null;
-        }
-        if (audioContextRef.current) {
-            audioContextRef.current.close();
-            audioContextRef.current = null;
-        }
-        if (volumeStreamRef.current) {
-            volumeStreamRef.current.getTracks().forEach(track => track.stop());
-            volumeStreamRef.current = null;
-        }
-        if (recordStreamRef.current) {
-            recordStreamRef.current.getTracks().forEach(track => track.stop());
-            recordStreamRef.current = null;
-        }
-        if (streamRef.current) {
-            streamRef.current.getTracks().forEach(track => track.stop());
-            streamRef.current = null;
-        }
-        setVolume(0);
         setCurrentText("");
     };
 
-    // 監視終了ボタンクリック時
     const handleStopClick = () => {
         if (!isListening) return;
-
-        // 全体レコーダーを一度停止させて、最後のチャンクを確定させる
-        if (totalRecorderRef.current && totalRecorderRef.current.state === "recording") {
-            totalRecorderRef.current.stop();
-        }
 
         // デフォルトの会議名を自動生成
         const now = new Date();
@@ -531,13 +460,8 @@ export default function LiveBrowserPage() {
                                 </div>
                                 {isListening && (
                                     <div className="flex items-center space-x-1.5">
-                                        <div className="text-[10px] text-slate-400 font-mono">Mic Input</div>
-                                        <div className="w-24 bg-gray-100 h-2 rounded-full overflow-hidden border border-gray-200">
-                                            <div
-                                                style={{ width: `${Math.min(100, (volume / 100) * 100)}%` }}
-                                                className="bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 h-full rounded-full transition-all duration-75"
-                                            />
-                                        </div>
+                                        <div className="text-[10px] text-slate-400 font-mono">Status</div>
+                                        <span className="text-xs text-emerald-600 font-bold animate-pulse">● 認識中</span>
                                     </div>
                                 )}
                             </div>
@@ -719,11 +643,12 @@ export default function LiveBrowserPage() {
                                     <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">文字のみ・即時評価</span>
                                 </button>
                                 <button
-                                    onClick={handleAudioUpload}
-                                    className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-750 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
+                                    disabled
+                                    className="w-full py-2.5 px-4 bg-gray-200 text-gray-400 text-xs font-bold rounded-xl transition-all flex items-center justify-between cursor-not-allowed"
+                                    title="音声での詳細評価は「Gemini 音声解析版」タブから実行してください"
                                 >
                                     <span>🎙️ 音声で詳細評価</span>
-                                    <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">音声Up・滑舌/トーン含む</span>
+                                    <span className="opacity-80 text-[9px] bg-gray-300 text-gray-500 px-2 py-0.5 rounded-full">Gemini版限定</span>
                                 </button>
 
                                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
