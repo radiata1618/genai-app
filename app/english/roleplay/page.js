@@ -310,7 +310,7 @@ export default function RoleplayPage() {
                         phrases: [],
                         prompt: prep?.prompt || "" // トピック個別のプロンプトを含める
                     },
-                    history: chatHistory.map(h => ({ sender: h.sender, text: h.text })) // 履歴を送信
+                    thinking_enabled: typeof window !== "undefined" ? (localStorage.getItem("thinking_enabled_roleplay") !== "false") : true, history: chatHistory.map(h => ({ sender: h.sender, text: h.text })) // 履歴を送信
                 };
                 if (sessionHandleRef.current) {
                     addLog("Resuming Session...");

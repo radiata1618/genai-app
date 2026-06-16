@@ -42,7 +42,8 @@ export default function ConsultingSmePage() {
             ws.onopen = async () => {
                 console.log("WebSocket Connected");
                 // Init Handshake
-                ws.send(JSON.stringify({ type: "setup" }));
+                const thinkingEnabled = typeof window !== "undefined" ? (localStorage.getItem("thinking_enabled_sme_live") !== "false") : true;
+                ws.send(JSON.stringify({ type: "setup", thinking_enabled: thinkingEnabled }));
                 startAudioCapture();
                 setStatus("connected");
                 setIsConnected(true);
