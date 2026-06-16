@@ -99,7 +99,7 @@ export const dabApi = {
     },
 
     // 記事評価の記録
-    evaluateFeedItem: async (feedId, isKnown, isInterested, grainLevel) => {
+    evaluateFeedItem: async (feedId, isKnown, isInterested, grainLevel, skipped = false) => {
         const res = await fetch(`${API_BASE}/feed/${feedId}/evaluate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
@@ -107,9 +107,23 @@ export const dabApi = {
                 is_known: isKnown,
                 is_interested: isInterested,
                 grain_level: grainLevel,
+                skipped: skipped,
             }),
         });
         if (!res.ok) throw new Error('評価の保存に失敗しました');
+        return res.json();
+    },
+
+    // 一括スキップ（既読化）
+    skipAllFeeds: async (feedIds) => {
+        const res = await fetch(`${API_BASE}/feed/skip-all`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                feed_ids: feedIds,
+            }),
+        });
+        if (!res.ok) throw new Error('一括スキップ処理に失敗しました');
         return res.json();
     },
 

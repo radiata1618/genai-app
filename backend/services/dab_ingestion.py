@@ -207,13 +207,13 @@ async def fetch_web_trends_via_gemini(topic_name: str) -> List[Dict[str, Any]]:
                     "priority_score": int(item.get("priority_score", 3))
                 })
         
-        # 優先度スコア4以上のものだけにフィルタリングし、最大3件まで厳選
+        # 優先度スコア4以上のものだけにフィルタリングし、最大2件まで厳選
         results = sorted(results, key=lambda x: x["priority_score"], reverse=True)
-        filtered_results = [r for r in results if r["priority_score"] >= 4][:3]
+        filtered_results = [r for r in results if r["priority_score"] >= 4][:2]
         
-        # もしスコア4以上が1件もない場合は、上位3件をそのまま使用
+        # もしスコア4以上が1件もない場合は、上位2件をそのまま使用
         if not filtered_results and results:
-            filtered_results = results[:3]
+            filtered_results = results[:2]
             
         print(f"Gemini Web Search から {len(filtered_results)} 件の厳選された技術情報を抽出しました（全候補 {len(results)} 件中）。")
         return filtered_results
