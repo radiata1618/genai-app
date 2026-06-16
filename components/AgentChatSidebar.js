@@ -15,24 +15,33 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     const [logs, setLogs] = useState([]);
 
     // 言語やモードが切り替わったときに、メッセージ履歴が初期状態であれば表示を自動で更新する
+    // 言語やモードが切り替わったときに、メッセージ履歴が初期状態であれば表示を自動で更新する
     useEffect(() => {
-        if (messages.length === 1 && messages[0].role === 'model') {
-            let initialContent = "";
-            if (selectedMode === "dab") {
-                if (selectedLanguage === "en") {
-                    initialContent = "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!";
-                } else {
-                    initialContent = "こんにちは！技術学習メンターです。DABの技術トピックについて日本語でディスカッションしましょう！";
+        const timer = setTimeout(() => {
+            setMessages(prev => {
+                if (prev.length === 1 && prev[0].role === 'model') {
+                    let initialContent = "";
+                    if (selectedMode === "dab") {
+                        if (selectedLanguage === "en") {
+                            initialContent = "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!";
+                        } else {
+                            initialContent = "こんにちは！技術学習メンターです。DABの技術トピックについて日本語でディスカッションしましょう！";
+                        }
+                    } else {
+                        if (selectedLanguage === "en") {
+                            initialContent = "Hello! I am your AI assistant. How can I help you today?";
+                        } else {
+                            initialContent = "こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？";
+                        }
+                    }
+                    if (prev[0].content !== initialContent) {
+                        return [{ role: 'model', content: initialContent }];
+                    }
                 }
-            } else {
-                if (selectedLanguage === "en") {
-                    initialContent = "Hello! I am your AI assistant. How can I help you today?";
-                } else {
-                    initialContent = "こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？";
-                }
-            }
-            setMessages([{ role: 'model', content: initialContent }]);
-        }
+                return prev;
+            });
+        }, 0);
+        return () => clearTimeout(timer);
     }, [selectedLanguage, selectedMode]);
 
     // リアルタイム音声対話用 Refs
@@ -42,6 +51,15 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     const sourceNodeRef = useRef(null);
     const isRecordingRef = useRef(false);
     const sessionHandleRef = useRef(null);
+
+    // マイクモード（"hands-free" | "push-to-talk" | "muted"）と PTT アクティブ状態
+    const [micMode, setMicMode] = useState("hands-free");
+    const [isPTTActive, setIsPTTActive] = useState(false);
+
+    // Refs - マイク制御 / 音声トラッキング用
+    const micModeRef = useRef("hands-free");
+    const isPTTActiveRef = useRef(false);
+    const activeSourcesRef = useRef([]); // 再生中の AudioBufferSourceNode を保持
 
     // 多重接続防止フラグ
     const isConnectingRef = useRef(false);
@@ -63,61 +81,121 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     const [isModelSpeaking, setIsModelSpeaking] = useState(false);
 
     // 接続時に一度だけログを追加
-    const addLog = (msg) => {
+    function changeMicMode(mode) {
+        setMicMode(mode);
+        micModeRef.current = mode;
+        setIsPTTActive(false);
+        isPTTActiveRef.current = false;
+        console.log(`DEBUG (Agent): Mic mode changed to ${mode}`);
+    }
+
+    function interruptAudio() {
+        console.log("DEBUG (Agent): interruptAudio triggered");
+        
+        // 1. 再生中のすべてのソースを停止
+        activeSourcesRef.current.forEach(source => {
+            try {
+                source.stop();
+            } catch (e) {
+                // すでに再生終了している場合等のエラーを無視
+            }
+        });
+        activeSourcesRef.current = [];
+        
+        // 2. 再生キューのタイムスタンプとバッファをリセット
+        nextStartTimeRef.current = 0;
+        jitterBufferSizeRef.current = 0.5;
+
+        // 3. アシスタントが発話中フラグをOFFにする
+        setIsModelSpeaking(false);
+
+        // 4. チャット履歴の末尾にあるモデルの発話が途中であれば、中断マーカーをつける
+        setMessages(prev => {
+            if (prev.length === 0) return prev;
+            const lastMsg = prev[prev.length - 1];
+            if (lastMsg && lastMsg.role === 'model') {
+                if (lastMsg.content.endsWith("... [Interrupted]") || lastMsg.content.endsWith("... [中断]")) {
+                    return prev;
+                }
+                const updated = [...prev];
+                updated[updated.length - 1] = {
+                    ...lastMsg,
+                    content: lastMsg.content + "... [Interrupted]"
+                };
+                return updated;
+            }
+            return prev;
+        });
+    }
+
+    function handlePTTStart(e) {
+        e.preventDefault();
+        if (isPTTActiveRef.current) return;
+        
+        setIsPTTActive(true);
+        isPTTActiveRef.current = true;
+        console.log("DEBUG (Agent): PTT Started");
+
+        // 自分が話し始めるため、AIの音声を即座に遮断する
+        interruptAudio();
+    }
+
+    function handlePTTEnd(e) {
+        if (e) e.preventDefault();
+        if (!isPTTActiveRef.current) return;
+
+        setIsPTTActive(false);
+        isPTTActiveRef.current = false;
+        console.log("DEBUG (Agent): PTT Ended");
+    }
+
+    // 接続時に一度だけログを追加
+    function addLog(msg) {
         setLogs(prev => [...prev.slice(-2), msg]); // 最新3件を保持
-    };
+    }
 
-    const scrollToBottom = () => {
+    function scrollToBottom() {
         messagesEndRef.current?.scrollIntoView({ behavior: "smooth" });
-    };
-
-    useEffect(() => {
-        scrollToBottom();
-    }, [messages]);
-
-    // アンマウント時の完全クリーンアップ
-    useEffect(() => {
-        return () => {
-            userStoppedRef.current = true;
-            clearReconnectTimer();
-            clearPingTimer();
-            stopAudioSession();
-        };
-    }, []);
+    }
 
     // タイマークリア
-    const clearReconnectTimer = () => {
+    function clearReconnectTimer() {
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
         }
-    };
+    }
 
-    const clearPingTimer = () => {
+    function clearPingTimer() {
         if (pingTimerRef.current) {
             clearInterval(pingTimerRef.current);
             pingTimerRef.current = null;
         }
-    };
+    }
 
     // ハートビート開始（20秒ごと）
-    const startPingTimer = () => {
+    function startPingTimer() {
         clearPingTimer();
         pingTimerRef.current = setInterval(() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
                 wsRef.current.send(JSON.stringify({ type: "ping" }));
             }
         }, 20000);
-    };
+    }
 
     // 音声会話セッションの開始
-    const startSession = async () => {
+    async function startSession(keepHistory = false) {
         if (isConnectingRef.current) return;
 
         isConnectingRef.current = true;
         userStoppedRef.current = false;
         setStatus("connecting");
         addLog("サーバーに接続中...");
+
+        if (!keepHistory) {
+            // 初期のウェルカムメッセージのみを残してクリア
+            setMessages(prev => prev.slice(0, 1));
+        }
 
         try {
             const AudioContext = window.AudioContext || window.webkitAudioContext;
@@ -158,7 +236,8 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     session_handle: sessionHandleRef.current,
                     model: selectedModel,
                     language: selectedLanguage,
-                    mode: selectedMode
+                    mode: selectedMode,
+                    history: messages.map(m => ({ sender: m.role === 'user' ? 'user' : 'model', text: m.content }))
                 };
                 wsRef.current.send(JSON.stringify(setupData));
 
@@ -181,6 +260,13 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
 
                 // ハートビート応答
                 if (data.type === "pong") return;
+
+                // サーバーからの割り込みイベントの受信
+                if (data.type === "interrupted") {
+                    console.log("DEBUG (Agent): Received interrupted from server");
+                    interruptAudio();
+                    return;
+                }
 
                 // ターン終了（発話終了）の検知
                 if (data.type === "turn_complete") {
@@ -231,7 +317,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 clearReconnectTimer();
                 reconnectTimerRef.current = setTimeout(() => {
                     if (!userStoppedRef.current) {
-                        startSession();
+                        startSession(true); // 履歴を保持して再接続
                     }
                 }, 3000);
             };
@@ -247,10 +333,10 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             addLog("接続に失敗しました: " + err.message);
             setStatus("disconnected");
         }
-    };
+    }
 
     // 音声入力（マイク）ストリームの処理
-    const startAudioInput = async (ctx, stream) => {
+    async function startAudioInput(ctx, stream) {
         try {
             await ctx.audioWorklet.addModule("/pcm-processor.js");
         } catch (e) {
@@ -310,7 +396,16 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     inputBuffer = inputBuffer.slice(CHUNK_SIZE);
 
                     const base64Audio = arrayBufferToBase64(chunkToSend.buffer);
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+
+                    // マイクモードおよびPTTアクティブ状態に基づく送信制御
+                    let shouldSend = false;
+                    if (micModeRef.current === "hands-free") {
+                        shouldSend = true;
+                    } else if (micModeRef.current === "push-to-talk") {
+                        shouldSend = isPTTActiveRef.current;
+                    }
+
+                    if (shouldSend && wsRef.current?.readyState === WebSocket.OPEN) {
                         wsRef.current.send(JSON.stringify({ audio: base64Audio }));
                     }
                 }
@@ -321,10 +416,11 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         audioWorkletNodeRef.current.connect(ctx.destination);
         audioWorkletNodeRef.current.disconnect(); // ハウリング（ループバック）を防止
         isRecordingRef.current = true;
-    };
+    }
 
     // セッションの手動停止
-    const stopAudioSession = () => {
+    // セッションの手動停止
+    function stopAudioSession() {
         userStoppedRef.current = true;
         clearReconnectTimer();
         clearPingTimer();
@@ -336,10 +432,10 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         isConnectingRef.current = false;
         setStatus("disconnected");
         setIsModelSpeaking(false);
-    };
+    }
 
     // オーディオコンテキストとマイクノードの解放
-    const stopAudio = () => {
+    function stopAudio() {
         try {
             if (sourceNodeRef.current) {
                 sourceNodeRef.current.disconnect();
@@ -359,10 +455,10 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             console.error("Error stopping audio in Agent:", e);
         }
         isRecordingRef.current = false;
-    };
+    }
 
     // 受信した音声データの再生
-    const playAudioChunk = (base64string) => {
+    function playAudioChunk(base64string) {
         if (!audioContextRef.current) return;
         const ctx = audioContextRef.current;
 
@@ -392,9 +488,15 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             start = now + newBuffer;
         }
 
+        // 音声ソースの追跡登録
+        activeSourcesRef.current.push(source);
+        source.onended = () => {
+            activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+        };
+
         source.start(start);
         nextStartTimeRef.current = start + audioBuffer.duration;
-    };
+    }
 
     // テキストメッセージの送信処理
     const handleSendText = (e) => {
@@ -588,6 +690,86 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 ))}
                 <div ref={messagesEndRef} />
             </div>
+
+            {/* マイクモードと操作パネル */}
+            {status === "connected" && (
+                <div className="p-3 bg-[#1e293b]/50 border-t border-slate-800 flex flex-col items-center gap-2.5 flex-shrink-0 text-xs">
+                    {/* モード選択タブ */}
+                    <div className="flex bg-[#0f172a] p-0.5 rounded-lg border border-slate-800 w-full">
+                        <button
+                            onClick={() => changeMicMode("hands-free")}
+                            type="button"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                                micMode === "hands-free"
+                                    ? "bg-cyan-600 text-white shadow-sm"
+                                    : "text-slate-400 hover:text-white"
+                            }`}
+                        >
+                            Hands-Free
+                        </button>
+                        <button
+                            onClick={() => changeMicMode("push-to-talk")}
+                            type="button"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                                micMode === "push-to-talk"
+                                    ? "bg-cyan-600 text-white shadow-sm"
+                                    : "text-slate-400 hover:text-white"
+                            }`}
+                        >
+                            Push-to-Talk
+                        </button>
+                        <button
+                            onClick={() => changeMicMode("muted")}
+                            type="button"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
+                                micMode === "muted"
+                                    ? "bg-rose-600 text-white shadow-sm"
+                                    : "text-slate-400 hover:text-white"
+                            }`}
+                        >
+                            Muted
+                        </button>
+                    </div>
+
+                    {/* モードに応じたマイク操作ボタン・表示 */}
+                    <div className="w-full flex justify-center items-center h-10">
+                        {micMode === "hands-free" && (
+                            <div className="flex items-center gap-1.5 text-cyan-400 text-[10px] font-medium animate-pulse">
+                                <span className="w-1.5 h-1.5 rounded-full bg-cyan-500" />
+                                {selectedLanguage === "en" ? "Mic active (Hands-Free)" : "マイクは常時有効です"}
+                            </div>
+                        )}
+
+                        {micMode === "push-to-talk" && (
+                            <button
+                                onMouseDown={handlePTTStart}
+                                onMouseUp={handlePTTEnd}
+                                onMouseLeave={handlePTTEnd}
+                                onTouchStart={handlePTTStart}
+                                onTouchEnd={handlePTTEnd}
+                                type="button"
+                                className={`w-full py-2 rounded-full font-bold text-[11px] flex items-center justify-center gap-1.5 select-none shadow-md transition-all transform active:scale-95 cursor-pointer ${
+                                    isPTTActive
+                                        ? "bg-cyan-500 text-white scale-98 shadow-inner animate-pulse"
+                                        : "bg-slate-750 text-slate-200 border border-slate-700 hover:bg-slate-700"
+                                }`}
+                            >
+                                <span className="text-xs">{isPTTActive ? "🎙️" : "🤫"}</span>
+                                {isPTTActive 
+                                    ? (selectedLanguage === "en" ? "Speaking... (Hold)" : "話しかけてください (長押し中)") 
+                                    : (selectedLanguage === "en" ? "Hold to Talk" : "ボタンを押しながら話す")}
+                            </button>
+                        )}
+
+                        {micMode === "muted" && (
+                            <div className="flex items-center gap-1.5 text-rose-400 text-[10px] font-medium">
+                                <span className="w-1.5 h-1.5 rounded-full bg-rose-500" />
+                                {selectedLanguage === "en" ? "Muted" : "マイクはミュートされています"}
+                            </div>
+                        )}
+                    </div>
+                </div>
+            )}
 
             {/* テキスト入力エリア */}
             <div className="p-3 bg-[#1e293b]/80 border-t border-slate-800 flex-shrink-0">

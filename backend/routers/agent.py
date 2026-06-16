@@ -141,6 +141,20 @@ async def websocket_endpoint(websocket: WebSocket):
                 "将来的にタスク管理やDBAの操作等の機能がここに追加される予定です。まずは親切に会話を行ってください。"
             )
 
+    # 過去の会話履歴をコンテキストとして追加
+    history = init_data.get("history", []) if 'init_data' in locals() else []
+    if history:
+        history_lines = []
+        for h in history:
+            sender = "User" if h.get("sender") == "user" else "AI"
+            text = h.get("text", "")
+            if text:
+                history_lines.append(f"{sender}: {text}")
+        if history_lines:
+            history_str = "\n".join(history_lines)
+            system_instruction += f"\n\n[Previous Conversation History]\n{history_str}\n\nPlease continue the conversation based on the previous conversation history above."
+            print(f"DEBUG (Agent): Injected history ({len(history_lines)} lines) into system instruction", flush=True)
+
     # Gemini Live API への接続と双方向中継
     try:
         while True:
@@ -173,6 +187,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         try:
                             async for response in session.receive():
                                 server_content = response.server_content
+
+                                # 割り込みの検出 (ユーザーがモデルの返答中に発話した場合)
+                                if server_content is not None and getattr(server_content, "interrupted", False):
+                                    print("DEBUG (Agent): Gemini indicates interrupted (user speech detected)", flush=True)
+                                    await websocket.send_json({
+                                        "type": "interrupted"
+                                    })
 
                                 # セッション再開トークンの更新処理
                                 if response.session_resumption_update:
