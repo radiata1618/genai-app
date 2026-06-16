@@ -138,6 +138,11 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
 
         // 自分が話し始めるため、AIの音声を即座に遮断する
         interruptAudio();
+
+        // サーバー経由でGeminiにActivityStart（発話開始）を通知
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "ptt_start" }));
+        }
     }
 
     function handlePTTEnd(e) {
@@ -147,6 +152,12 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
         setIsPTTActive(false);
         isPTTActiveRef.current = false;
         console.log("DEBUG (Agent): PTT Ended");
+
+        // サーバー経由でGeminiにActivityEnd（発話終了）を通知
+        // これがないとGeminiが「まだ話しているのか？」と判断できず返答が来ない
+        if (wsRef.current?.readyState === WebSocket.OPEN) {
+            wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+        }
     }
 
     // 接続時に一度だけログを追加
@@ -237,6 +248,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     model: selectedModel,
                     language: selectedLanguage,
                     mode: selectedMode,
+                    mic_mode: micModeRef.current, // PTTモード時にサーバー側のVADを無効化するために必要
                     history: messages.map(m => ({ sender: m.role === 'user' ? 'user' : 'model', text: m.content }))
                 };
                 wsRef.current.send(JSON.stringify(setupData));
