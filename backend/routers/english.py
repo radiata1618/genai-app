@@ -54,6 +54,7 @@ class PreparationTask(BaseModel):
     content: str
     created_at: datetime
     status: int = 0 # 0: Unlearned, 1: Learned Once, 2: Mastered
+    prompt: Optional[str] = None
 
 class ReviewCreateRequest(BaseModel):
     video_filename: str
@@ -124,6 +125,17 @@ class ChatRequest(BaseModel):
     messages: List[ChatMessage]
     context: Optional[str] = None
     model: Optional[str] = GEMINI_FLASH_MODEL
+
+class PreparationPromptUpdateRequest(BaseModel):
+    prompt: str
+
+class RefinePromptRequest(BaseModel):
+    current_prompt: str
+    user_instruction: str
+
+class RefinePromptResponse(BaseModel):
+    new_prompt: str
+    changes: str
 
     
 # --- Helpers ---
@@ -226,8 +238,8 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
     解説は日本語で行い、学習者が「これならすぐ使える」と感じられる実践的な内容にしてください。
     """
     
+    # 1. Generate Content with Gemini
     try:
-        client = get_genai_client()
         response = client.models.generate_content(
             model=GEMINI_PRO_MODEL,
             contents=prompt,
@@ -237,20 +249,108 @@ def create_preparation(req: PreparationRequest, db: firestore.Client = Depends(g
         print(f"Gemini Error: {e}")
         raise HTTPException(status_code=500, detail=f"Gemini Generation Failed: {str(e)}")
 
-    # 2. Save to Firestore
+    # 2. Generate Initial Prompt with Gemini for the roleplay
+    prompt_generation_query = f"""
+    あなたは英語学習用のAIロールプレイチャットボットの設定プロンプトを作成する専門家です。
+    生徒が「{req.topic}」というトピックで会話練習をするための、AIのペルソナや会話のふるまいを定義したシステムプロンプト（英語）を作成してください。
+    
+    条件：
+    - AIがどのような役割を演じるべきか（例：ショップ店員、面接官、同僚など）をトピックから判断し設定する。
+    - 会話を自然に進め、生徒に積極的に質問を投げかけるように指示する。
+    - 出力はシステムプロンプトのテキスト（英語）のみとしてください。余計な解説や引用符などは一切含めないでください。
+    """
+    
+    try:
+        response_prompt = client.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt_generation_query,
+        )
+        generated_prompt = response_prompt.text.strip()
+    except Exception as e:
+        print(f"Failed to generate prompt: {e}")
+        generated_prompt = f"You are a helpful English tutor. Engage in a roleplay conversation about {req.topic}."
+
+    # 3. Save to Firestore
     doc_ref = db.collection("english_preparation").document()
     task = PreparationTask(
         id=doc_ref.id,
         topic=req.topic,
         content=content,
-        created_at=datetime.now()
+        created_at=datetime.now(),
+        prompt=generated_prompt
     )
     doc_ref.set(task.dict())
     
     return task
 
+def seed_test_topics(db: firestore.Client):
+    # 1. 幼児向けの英語教室の先生
+    kids_ref = db.collection("english_preparation").document("test-kids-teacher")
+    if not kids_ref.get().exists:
+        kids_prompt = (
+            "You are a friendly and enthusiastic English teacher for young children. "
+            "Your tone should be very cheerful, encouraging, and easy to understand. "
+            "Use simple words, short sentences, and many sound effects or emojis. "
+            "Ask interactive questions frequently to keep the child engaged. "
+            "For example, ask 'What color is this?' or 'Can you say apple?'. "
+            "Keep the conversation extremely positive and highly active. Speak slowly and clearly."
+        )
+        kids_task = PreparationTask(
+            id="test-kids-teacher",
+            topic="幼児向けの英語教室（先生：積極的に話しかけてくれる）",
+            content=(
+                "# 幼児向け英語教室 / Kids English Class\n\n"
+                "このトピックでは、幼児向けの英語教室の先生として、楽しく積極的に話しかけてくれるAIロールプレイを行います。\n\n"
+                "## おすすめフレーズ / Recommended Phrases\n\n"
+                "- **Hello! How are you today?** (ハロー！きょうの気分はどう？)\n"
+                "- **Look! What is this?** (ほら！これなあに？)\n"
+                "- **Great job! High five!** (よくできたね！ハイタッチ！)\n"
+                "- **Can you say 'apple'?** (「アップル」っていえるかな？)\n"
+                "- **Let's sing a song together!** (いっしょにうたをうたおう！)\n"
+            ),
+            created_at=datetime.now(),
+            status=0,
+            prompt=kids_prompt
+        )
+        kids_ref.set(kids_task.dict())
+
+    # 2. 大人用のビジネス英会話の先生
+    biz_ref = db.collection("english_preparation").document("test-business-teacher")
+    if not biz_ref.get().exists:
+        biz_prompt = (
+            "You are a professional business English tutor. "
+            "Engage the user in business roleplay or discussions (e.g., negotiations, presentations, meetings, project updates). "
+            "First, ask the user to decide or agree on a discussion theme or roleplay situation (e.g., 'Let's choose a situation. Would you like to practice a job interview, a product pitch, or a contract negotiation? Or do you have another idea?'). "
+            "Listen to the user's input, agree on the scenario, and then conduct the roleplay. "
+            "Ask probing questions, provide realistic business challenges, and ask for their opinion. "
+            "Actively ask questions to guide the conversation and check their thoughts, keeping a professional but supportive tone."
+        )
+        biz_task = PreparationTask(
+            id="test-business-teacher",
+            topic="大人用のビジネス英会話",
+            content=(
+                "# ビジネス英会話 / Business English\n\n"
+                "このトピックでは、ビジネスシーン（商談、面接、プレゼンテーションなど）を想定した本格的なロールプレイを行います。\n\n"
+                "## おすすめフレーズ / Recommended Phrases\n\n"
+                "- **Let's agree on a scenario first.** (最初にシチュエーションを決めましょう。)\n"
+                "- **From my perspective, the key challenge is...** (私の視点からすると、主な課題は...)\n"
+                "- **How do you propose we address this issue?** (この問題にどう対処することを提案しますか？)\n"
+                "- **Could you elaborate on your point about marketing?** (マーケティングについての点をもっと詳しく説明していただけますか？)\n"
+                "- **Let's wrap up this meeting by summarizing our next steps.** (次のステップをまとめてこの会議を終えましょう。)\n"
+            ),
+            created_at=datetime.now(),
+            status=0,
+            prompt=biz_prompt
+        )
+        biz_ref.set(biz_task.dict())
+
 @router.get("/preparation", response_model=List[PreparationTask])
 def get_preparation_list(db: firestore.Client = Depends(get_db)):
+    try:
+        seed_test_topics(db)
+    except Exception as e:
+        print(f"Error seeding test topics: {e}")
+        
     docs = db.collection("english_preparation").order_by("created_at", direction=firestore.Query.DESCENDING).stream()
     tasks = []
     for d in docs:
@@ -263,6 +363,50 @@ def get_preparation_list(db: firestore.Client = Depends(get_db)):
                  data["status"] = 0
         tasks.append(PreparationTask(**data))
     return tasks
+
+@router.patch("/preparation/{task_id}/prompt")
+def update_preparation_prompt(task_id: str, req: PreparationPromptUpdateRequest, db: firestore.Client = Depends(get_db)):
+    doc_ref = db.collection("english_preparation").document(task_id)
+    if not doc_ref.get().exists:
+        raise HTTPException(status_code=404, detail="Task not found")
+    doc_ref.update({"prompt": req.prompt})
+    return {"status": "updated", "prompt": req.prompt}
+
+@router.post("/preparation/refine-prompt", response_model=RefinePromptResponse)
+def refine_prompt(req: RefinePromptRequest):
+    prompt = f"""
+    あなたはシステムプロンプトを最適化するプロのAIエンジニアであり、英語教育のスペシャリストです。
+    現在のシステムプロンプトに対して、ユーザーから与えられた改善の指示（要望）を反映した「新しいシステムプロンプト」を作成し、
+    さらに「どの点をどのように修正したか」を日本語で説明してください。
+
+    【現在のシステムプロンプト】
+    {req.current_prompt}
+
+    【ユーザーの改善指示】
+    {req.user_instruction}
+
+    【出力フォーマット】
+    必ず以下のJSON形式で出力してください。Markdownのコードブロック（```json）は含めないでください。
+    {{
+      "new_prompt": "改善された新しいシステムプロンプト（英語）",
+      "changes": "どのような改善や修正を行ったかの解説（日本語）。箇条書きなどでわかりやすく記述してください。"
+    }}
+    """
+    try:
+        client = get_genai_client()
+        response = client.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                response_mime_type="application/json",
+                response_schema=RefinePromptResponse
+            )
+        )
+        res_data = json.loads(response.text)
+        return RefinePromptResponse(**res_data)
+    except Exception as e:
+        print(f"Refine Prompt Error: {e}")
+        raise HTTPException(status_code=500, detail=f"Failed to refine prompt: {str(e)}")
 
 @router.patch("/preparation/{task_id}/status")
 def update_preparation_status(task_id: str, status: int, db: firestore.Client = Depends(get_db)):

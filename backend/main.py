@@ -18,6 +18,7 @@ from routers import projects
 from routers import consulting
 from routers import consulting_training
 from routers import ai_chat
+from routers import agent
 
 app = FastAPI()
 
@@ -41,7 +42,9 @@ class APIKeyMiddleware(BaseHTTPMiddleware):
             return await call_next(request)
 
         # Skip check for WebSocket endpoint (Browser limitations for custom headers)
-        if request.url.path.startswith("/api/roleplay/ws") or request.url.path.startswith("/api/consulting/sme/ws"):
+        if (request.url.path.startswith("/api/roleplay/ws") or 
+            request.url.path.startswith("/api/consulting/sme/ws") or
+            request.url.path.startswith("/api/agent/ws")):
             return await call_next(request)
 
         # Retrieve API Key from header
@@ -96,6 +99,7 @@ from routers import english
 from routers import roleplay
 app.include_router(english.router, prefix="/api", tags=["english"])
 app.include_router(roleplay.router, prefix="/api", tags=["roleplay"])
+app.include_router(agent.router, prefix="/api", tags=["agent"])
 
 @app.get("/health")
 async def health_check():

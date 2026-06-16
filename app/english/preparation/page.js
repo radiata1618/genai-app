@@ -13,6 +13,23 @@ export default function PreparationPage() {
     const [isLoading, setIsLoading] = useState(false);
     const [showCompleted, setShowCompleted] = useState(false); // If false, show status 0 and 1. If true, show all.
 
+    // Prompt & Agent behavior settings states
+    const [activeTab, setActiveTab] = useState("content");
+    const [promptText, setPromptText] = useState("");
+    const [instruction, setInstruction] = useState("");
+    const [refineResult, setRefineResult] = useState(null);
+    const [isRefining, setIsRefining] = useState(false);
+    const [isSavingPrompt, setIsSavingPrompt] = useState(false);
+
+    useEffect(() => {
+        if (selectedTask) {
+            setPromptText(selectedTask.prompt || "");
+            setRefineResult(null);
+            setInstruction("");
+            setActiveTab("content"); // Reset tab on switch
+        }
+    }, [selectedTask]);
+
     // UI State
     const [isSidebarOpen, setIsSidebarOpen] = useState(true);
     const [isChatSidebarOpen, setIsChatSidebarOpen] = useState(false); // Default closed for mobile safety
@@ -160,6 +177,88 @@ export default function PreparationPage() {
         setSelectedTask(task);
         if (window.innerWidth < 768) {
             setIsSidebarOpen(false);
+        }
+    };
+
+    const handleSavePrompt = async () => {
+        if (!selectedTask) return;
+        setIsSavingPrompt(true);
+        try {
+            const res = await fetch(`/api/english/preparation/${selectedTask.id}/prompt`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: promptText }),
+            });
+            if (res.ok) {
+                const updated = { ...selectedTask, prompt: promptText };
+                setSelectedTask(updated);
+                setTasks(tasks.map(t => t.id === selectedTask.id ? updated : t));
+                alert("プロンプトを直接保存しました。");
+            } else {
+                alert("保存に失敗しました。");
+            }
+        } catch (error) {
+            console.error("Failed to save prompt", error);
+            alert("エラーが発生しました。");
+        } finally {
+            setIsSavingPrompt(false);
+        }
+    };
+
+    const handleRefinePrompt = async () => {
+        if (!promptText.trim()) {
+            alert("現在のプロンプトが空です。初期プロンプトを入力または自動生成してから壁打ちを行ってください。");
+            return;
+        }
+        setIsRefining(true);
+        try {
+            const res = await fetch("/api/english/preparation/refine-prompt", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({
+                    current_prompt: promptText,
+                    user_instruction: instruction
+                })
+            });
+            if (res.ok) {
+                const data = await res.json();
+                setRefineResult(data);
+            } else {
+                alert("プロンプトの改善生成に失敗しました。");
+            }
+        } catch (error) {
+            console.error("Failed to refine prompt", error);
+            alert("エラーが発生しました。");
+        } finally {
+            setIsRefining(false);
+        }
+    };
+
+    const handleApplyRefinedPrompt = async () => {
+        if (!refineResult || !selectedTask) return;
+        setIsSavingPrompt(true);
+        try {
+            const res = await fetch(`/api/english/preparation/${selectedTask.id}/prompt`, {
+                method: "PATCH",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ prompt: refineResult.new_prompt }),
+            });
+            if (res.ok) {
+                const updated = { ...selectedTask, prompt: refineResult.new_prompt };
+                setSelectedTask(updated);
+                setPromptText(refineResult.new_prompt);
+                setTasks(tasks.map(t => t.id === selectedTask.id ? updated : t));
+                setRefineResult(null);
+                setInstruction("");
+                alert("新しいプロンプトを確定・適用しました！");
+            } else {
+                alert("適用保存に失敗しました。");
+            }
+        } catch (error) {
+            console.error("Failed to apply refined prompt", error);
+            alert("エラーが発生しました。");
+        } finally {
+            setIsSavingPrompt(false);
         }
     };
 
@@ -335,101 +434,224 @@ export default function PreparationPage() {
                     <div className="flex-1 overflow-y-auto p-4 sm:p-8">
                         <div className="max-w-4xl mx-auto">
                             <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.topic}</h1>
-                            <div className="flex items-center space-x-4 mb-8 text-sm text-gray-500">
+                            <div className="flex items-center space-x-4 mb-6 text-sm text-gray-500">
                                 <span>Generated on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                 <span className={`px-2 py-0.5 rounded font-medium ${getStatusColor(selectedTask.status || 0)}`}>
                                     {getStatusLabel(selectedTask.status || 0)}
                                 </span>
                             </div>
-                            <article className="prose prose-slate lg:prose-lg max-w-none" onMouseUp={handleMouseUp}>
-                                <ReactMarkdown
-                                    components={{
-                                        blockquote: ({ node, ...props }) => (
-                                            <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 my-6 rounded-r-lg shadow-sm text-slate-700 relative font-medium not-italic" {...props}>
-                                                <div className="absolute -top-3 left-4 bg-cyan-100 text-cyan-700 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide">
-                                                    Dialogue
+
+                            {/* タブヘッダー */}
+                            <div className="flex border-b border-gray-200 mb-6 gap-2">
+                                <button
+                                    onClick={() => setActiveTab("content")}
+                                    className={`py-2.5 px-4 font-bold text-sm border-b-2 transition-all flex items-center gap-1.5 ${
+                                        activeTab === "content"
+                                            ? "border-cyan-600 text-cyan-600"
+                                            : "border-transparent text-slate-500 hover:text-slate-800"
+                                    }`}
+                                >
+                                    <span>📖</span> 教材コンテンツ
+                                </button>
+                                <button
+                                    onClick={() => setActiveTab("prompt")}
+                                    className={`py-2.5 px-4 font-bold text-sm border-b-2 transition-all flex items-center gap-1.5 ${
+                                        activeTab === "prompt"
+                                            ? "border-cyan-600 text-cyan-600"
+                                            : "border-transparent text-slate-500 hover:text-slate-800"
+                                    }`}
+                                >
+                                    <span>🤖</span> AI Agent設定 (プロンプト)
+                                </button>
+                            </div>
+
+                            {activeTab === "content" ? (
+                                <article className="prose prose-slate lg:prose-lg max-w-none" onMouseUp={handleMouseUp}>
+                                    <ReactMarkdown
+                                        components={{
+                                            blockquote: ({ node, ...props }) => (
+                                                <div className="bg-cyan-50 border-l-4 border-cyan-500 p-4 my-6 rounded-r-lg shadow-sm text-slate-700 relative font-medium not-italic" {...props}>
+                                                    <div className="absolute -top-3 left-4 bg-cyan-100 text-cyan-700 text-xs font-bold px-2 py-1 rounded-full uppercase tracking-wide">
+                                                        Dialogue
+                                                    </div>
+                                                    <div className="pt-2">
+                                                        {props.children}
+                                                    </div>
                                                 </div>
-                                                <div className="pt-2">
-                                                    {props.children}
+                                            ),
+                                            em: ({ node, ...props }) => {
+                                                const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                                const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                                return (
+                                                    <span className="inline-flex items-center">
+                                                        <em className="italic text-slate-600" {...props} />
+                                                        {isEnglish && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const synth = window.speechSynthesis;
+                                                                    const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                    const u = new SpeechSynthesisUtterance(cleanText);
+                                                                    u.lang = 'en-US';
+                                                                    synth.speak(u);
+                                                                }}
+                                                                className="ml-1 text-cyan-400 hover:text-cyan-600 p-0.5 rounded-full transition-colors scale-75"
+                                                                title="Listen"
+                                                            >
+                                                                🔊
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                );
+                                            },
+                                            h2: ({ node, ...props }) => (
+                                                <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
+                                            ),
+                                            h3: ({ node, ...props }) => (
+                                                <h3 className="text-xl font-semibold text-slate-700 mt-8 mb-4 border-l-4 border-cyan-200 pl-3" {...props} />
+                                            ),
+                                            ul: ({ node, ...props }) => (
+                                                <ul className="list-disc pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                            ),
+                                            ol: ({ node, ...props }) => (
+                                                <ol className="list-decimal pl-6 space-y-2 mb-6 text-slate-600" {...props} />
+                                            ),
+                                            li: ({ node, ...props }) => (
+                                                <li className="pl-1" {...props} />
+                                            ),
+                                            p: ({ node, ...props }) => (
+                                                <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
+                                            ),
+                                            strong: ({ node, ...props }) => {
+                                                const text = typeof props.children === 'string' ? props.children : props.children[0];
+                                                const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
+
+                                                return (
+                                                    <span className="inline-flex items-center">
+                                                        <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
+                                                        {isEnglish && (
+                                                            <button
+                                                                onClick={(e) => {
+                                                                    e.stopPropagation();
+                                                                    const synth = window.speechSynthesis;
+                                                                    const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
+                                                                    const u = new SpeechSynthesisUtterance(cleanText);
+                                                                    u.lang = 'en-US';
+                                                                    synth.speak(u);
+                                                                }}
+                                                                className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
+                                                                title="Listen"
+                                                            >
+                                                                🔊
+                                                            </button>
+                                                        )}
+                                                    </span>
+                                                );
+                                            },
+                                        }}
+                                    >
+                                        {selectedTask.content}
+                                    </ReactMarkdown>
+                                </article>
+                            ) : (
+                                <div className="space-y-6 animate-fadeIn">
+                                    <div className="bg-white p-6 rounded-2xl border border-gray-200 shadow-sm space-y-4">
+                                        <h3 className="text-base font-bold text-slate-800 flex items-center gap-1.5">
+                                            <span>🗣️</span> 会話プロンプト (システム指示)
+                                        </h3>
+                                        <p className="text-xs text-slate-500 leading-relaxed">
+                                            AIが会話中にとるべき役割や態度、発話の文字数制限などを定義するシステムプロンプトです（英語での記述を推奨します）。
+                                        </p>
+                                        <textarea
+                                            value={promptText}
+                                            onChange={(e) => setPromptText(e.target.value)}
+                                            rows={6}
+                                            className="w-full p-4 border border-gray-200 rounded-xl text-sm font-mono text-slate-700 bg-gray-50 focus:bg-white focus:ring-2 focus:ring-cyan-500 focus:border-cyan-500 outline-none transition-all"
+                                            placeholder="Example: You are a friendly English tutor..."
+                                        />
+                                        <div className="flex justify-end">
+                                            <button
+                                                onClick={handleSavePrompt}
+                                                disabled={isSavingPrompt}
+                                                className="px-5 py-2.5 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50"
+                                            >
+                                                {isSavingPrompt ? "保存中..." : "プロンプトを直接保存"}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 壁打ち改善チャットエリア */}
+                                    <div className="bg-slate-900 text-white p-6 rounded-2xl border border-slate-800 shadow-lg space-y-4">
+                                        <h3 className="text-base font-bold text-cyan-400 flex items-center gap-2">
+                                            <span>💡</span> AIと壁打ちしてプロンプトを改善する
+                                        </h3>
+                                        <p className="text-xs text-slate-400 leading-relaxed">
+                                            プロンプトにどのようなルールを追加したいかを日本語で指示してください。AIが現在のプロンプトを分析し、新しいプロンプト案と修正ポイントを提案します。
+                                        </p>
+                                        
+                                        <div className="flex gap-2">
+                                            <input
+                                                type="text"
+                                                value={instruction}
+                                                onChange={(e) => setInstruction(e.target.value)}
+                                                onKeyDown={(e) => {
+                                                    if (e.key === "Enter" && !e.nativeEvent.isComposing && instruction.trim() && !isRefining) {
+                                                        e.preventDefault();
+                                                        handleRefinePrompt();
+                                                    }
+                                                }}
+                                                placeholder="例: 幼児向けに、もっと簡単な英単語だけを使い、リアクションを大きくして"
+                                                className="flex-1 p-3 bg-slate-800 border border-slate-700 rounded-xl text-sm outline-none focus:border-cyan-500 text-white transition-all placeholder:text-slate-500"
+                                                disabled={isRefining}
+                                            />
+                                            <button
+                                                onClick={handleRefinePrompt}
+                                                disabled={isRefining || !instruction.trim()}
+                                                className="px-5 py-3 bg-cyan-600 hover:bg-cyan-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95 disabled:opacity-50 flex-shrink-0"
+                                            >
+                                                {isRefining ? "生成中..." : "改善案を生成"}
+                                            </button>
+                                        </div>
+
+                                        {refineResult && (
+                                            <div className="mt-4 p-5 bg-slate-850 rounded-xl border border-slate-800 space-y-4 animate-slideUp">
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-emerald-400 mb-2">✨ 修正・改善のポイント</h4>
+                                                    <div className="text-xs text-slate-300 bg-slate-900/50 p-3.5 rounded-lg border border-slate-800 whitespace-pre-wrap leading-relaxed">
+                                                        {refineResult.changes}
+                                                    </div>
+                                                </div>
+
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-cyan-400 mb-2">📝 提案された新プロンプト案</h4>
+                                                    <textarea
+                                                        value={refineResult.new_prompt}
+                                                        readOnly
+                                                        rows={6}
+                                                        className="w-full p-3 bg-slate-900/80 border border-slate-800 rounded-lg text-xs font-mono text-slate-300 outline-none"
+                                                    />
+                                                </div>
+
+                                                <div className="flex justify-end gap-2 pt-2">
+                                                    <button
+                                                        onClick={() => setRefineResult(null)}
+                                                        className="px-4 py-2 bg-slate-800 hover:bg-slate-700 text-slate-300 font-bold text-xs rounded-lg transition-all"
+                                                    >
+                                                        却下する
+                                                    </button>
+                                                    <button
+                                                        onClick={handleApplyRefinedPrompt}
+                                                        className="px-5 py-2 bg-gradient-to-r from-emerald-500 to-teal-600 hover:from-emerald-600 hover:to-teal-700 text-white font-bold text-xs rounded-lg shadow-md transition-all active:scale-95"
+                                                    >
+                                                        OK (確定して適用する)
+                                                    </button>
                                                 </div>
                                             </div>
-                                        ),
-                                        em: ({ node, ...props }) => {
-                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
-                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
-
-                                            return (
-                                                <span className="inline-flex items-center">
-                                                    <em className="italic text-slate-600" {...props} />
-                                                    {isEnglish && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const synth = window.speechSynthesis;
-                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
-                                                                const u = new SpeechSynthesisUtterance(cleanText);
-                                                                u.lang = 'en-US';
-                                                                synth.speak(u);
-                                                            }}
-                                                            className="ml-1 text-cyan-400 hover:text-cyan-600 p-0.5 rounded-full transition-colors scale-75"
-                                                            title="Listen"
-                                                        >
-                                                            🔊
-                                                        </button>
-                                                    )}
-                                                </span>
-                                            );
-                                        },
-                                        h2: ({ node, ...props }) => (
-                                            <h2 className="text-2xl font-bold text-slate-800 mt-10 mb-6 pb-2 border-b border-gray-200" {...props} />
-                                        ),
-                                        h3: ({ node, ...props }) => (
-                                            <h3 className="text-xl font-semibold text-slate-700 mt-8 mb-4 border-l-4 border-cyan-200 pl-3" {...props} />
-                                        ),
-                                        ul: ({ node, ...props }) => (
-                                            <ul className="list-disc pl-6 space-y-2 mb-6 text-slate-600" {...props} />
-                                        ),
-                                        ol: ({ node, ...props }) => (
-                                            <ol className="list-decimal pl-6 space-y-2 mb-6 text-slate-600" {...props} />
-                                        ),
-                                        li: ({ node, ...props }) => (
-                                            <li className="pl-1" {...props} />
-                                        ),
-                                        p: ({ node, ...props }) => (
-                                            <p className="mb-4 leading-relaxed text-slate-600 text-lg" {...props} />
-                                        ),
-                                        strong: ({ node, ...props }) => {
-                                            const text = typeof props.children === 'string' ? props.children : props.children[0];
-                                            const isEnglish = typeof text === 'string' && /^[A-Za-z0-9\s\-\.\?\'"!]+$/.test(text);
-
-                                            return (
-                                                <span className="inline-flex items-center">
-                                                    <strong className="font-bold text-slate-900 bg-yellow-50 px-1 rounded" {...props} />
-                                                    {isEnglish && (
-                                                        <button
-                                                            onClick={(e) => {
-                                                                e.stopPropagation();
-                                                                const synth = window.speechSynthesis;
-                                                                // Strip leading numbers, dots, and spaces (e.g. "1. Sojourn" -> "Sojourn")
-                                                                const cleanText = text.replace(/^[0-9]+[\.\s]+/, '').trim();
-                                                                const u = new SpeechSynthesisUtterance(cleanText);
-                                                                u.lang = 'en-US';
-                                                                synth.speak(u);
-                                                            }}
-                                                            className="ml-2 text-cyan-500 hover:text-cyan-700 hover:bg-cyan-50 p-1 rounded-full transition-colors"
-                                                            title="Listen"
-                                                        >
-                                                            🔊
-                                                        </button>
-                                                    )}
-                                                </span>
-                                            );
-                                        },
-                                    }}
-                                >
-                                    {selectedTask.content}
-                                </ReactMarkdown>
-                            </article>
+                                        )}
+                                    </div>
+                                </div>
+                            )}
                         </div>
                     </div>
                 ) : (

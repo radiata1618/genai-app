@@ -3,13 +3,14 @@
 import React, { useEffect } from 'react';
 import Sidebar from './Sidebar';
 import { SidebarProvider, useSidebar } from './SidebarContext';
+import AgentChatSidebar from './AgentChatSidebar';
 
 function ClientLayoutContent({ children }) {
-    const { isSidebarOpen, closeSidebar } = useSidebar();
+    const { isSidebarOpen, closeSidebar, isAgentSidebarOpen, closeAgentSidebar } = useSidebar();
 
 
     return (
-        <div className="flex h-[100dvh] bg-gray-50 overflow-y-auto md:overflow-hidden">
+        <div className="flex h-[100dvh] bg-gray-50 overflow-y-auto md:overflow-hidden relative">
             {/* Mobile Sidebar Overlay */}
             {isSidebarOpen && (
                 <div
@@ -34,6 +35,9 @@ function ClientLayoutContent({ children }) {
                     {children}
                 </main>
             </div>
+
+            {/* Global Agent Chat Sidebar (スライドアウト) */}
+            <AgentChatSidebar isOpen={isAgentSidebarOpen} onClose={closeAgentSidebar} />
         </div>
     );
 }
