@@ -432,6 +432,9 @@ export default function LiveGeminiPage() {
         );
     };
 
+    const totalChars = speechHistory.join("").length;
+    const fillerDensity = totalChars > 0 ? Math.min(100, ((stats.filler * 2.5) / totalChars) * 100) : 0;
+
     return (
         <div className="flex flex-col w-full lg:h-screen bg-gray-50 text-slate-800 font-sans lg:overflow-hidden">
             <div className="flex flex-col relative lg:flex-1 lg:min-h-0">
@@ -567,6 +570,38 @@ export default function LiveGeminiPage() {
                                 <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-100">
                                     <div className="text-[9px] font-bold text-emerald-700 uppercase">咀嚼力</div>
                                     <div className="text-lg font-black text-emerald-800 mt-1">{stats.logic}</div>
+                                </div>
+                            </div>
+
+                            {/* リアルタイムフィラー密度 */}
+                            <div className="mt-4 pt-4 border-t border-gray-150">
+                                <div className="flex justify-between items-center mb-1.5">
+                                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
+                                        📊 リアルタイム・フィラー密度
+                                        <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm font-normal">現在の会話量に対する比率</span>
+                                    </span>
+                                    <span className={`text-sm font-black font-mono px-2 py-0.5 rounded-md ${
+                                        fillerDensity > 5 ? 'text-rose-600 bg-rose-50 animate-pulse' : 
+                                        fillerDensity > 2 ? 'text-amber-600 bg-amber-50' : 
+                                        'text-emerald-600 bg-emerald-50'
+                                    }`}>
+                                        {fillerDensity.toFixed(1)} %
+                                    </span>
+                                </div>
+                                <div className="w-full bg-gray-150 h-2.5 rounded-full overflow-hidden border border-gray-200 shadow-inner">
+                                    <div 
+                                        style={{ width: `${Math.min(100, fillerDensity * 10)}%` }} 
+                                        className={`h-full rounded-full transition-all duration-300 ${
+                                            fillerDensity > 5 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 
+                                            fillerDensity > 2 ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 
+                                            'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                                        }`}
+                                    />
+                                </div>
+                                <div className="flex justify-between text-[9px] text-slate-400 mt-1 font-mono">
+                                    <span>0% (極めて優秀)</span>
+                                    <span>5% (注意)</span>
+                                    <span>10%+ (要改善)</span>
                                 </div>
                             </div>
                         </div>
