@@ -45,15 +45,25 @@ async def websocket_endpoint(websocket: WebSocket):
         print(f"DEBUG: Received setup data: {init_data}", flush=True)
         
         if init_data.get("type") == "setup":
+             # クライアントからモデル指定があれば設定を上書き
+             if init_data.get("model"):
+                 config["model"] = init_data["model"]
+                 print(f"DEBUG: Using model from client: {config['model']}", flush=True)
+
              # コンテキストに基づいてシステム指示を構築
              context = init_data.get("context", {})
-             if context.get("topic"):
-                 system_instruction += f"\n\nTopic: {context['topic']}"
-             if context.get("role"):
-                 system_instruction += f"\nRole: {context['role']}"
-             if context.get("phrases"):
-                 phrases_str = ", ".join([p.get('english', '') for p in context['phrases']])
-                 system_instruction += f"\n\nTarget Phrases to use/check: {phrases_str}"
+             if context.get("prompt"):
+                 # フロントエンドから個別のシステムプロンプトが指定された場合はそれを優先
+                 system_instruction = context["prompt"]
+                 print(f"DEBUG: Using custom system instruction from client: {system_instruction[:50]}...", flush=True)
+             else:
+                 if context.get("topic"):
+                     system_instruction += f"\n\nTopic: {context['topic']}"
+                 if context.get("role"):
+                     system_instruction += f"\nRole: {context['role']}"
+                 if context.get("phrases"):
+                     phrases_str = ", ".join([p.get('english', '') for p in context['phrases']])
+                     system_instruction += f"\n\nTarget Phrases to use/check: {phrases_str}"
              
              # クライアントからセッションハンドルが提供された場合、復元を試みる
              if init_data.get("session_handle"):
@@ -78,13 +88,17 @@ async def websocket_endpoint(websocket: WebSocket):
                     print(f"DEBUG: Resuming session with handle: {current_session_handle[:10]}...", flush=True)
                     session_config = types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
-                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle)
+                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle),
+                        output_audio_transcription=types.AudioTranscriptionConfig(),
+                        input_audio_transcription=types.AudioTranscriptionConfig()
                     )
                 else:
                     session_config = types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=types.SessionResumptionConfig(transparent=True)
+                        session_resumption=types.SessionResumptionConfig(transparent=True),
+                        output_audio_transcription=types.AudioTranscriptionConfig(),
+                        input_audio_transcription=types.AudioTranscriptionConfig()
                     )
 
                 async with client.aio.live.connect(
@@ -114,11 +128,34 @@ async def websocket_endpoint(websocket: WebSocket):
                                             "session_handle": current_session_handle
                                         })
 
+                                # ユーザー音声文字起こし(input_audio_transcription)の処理
+                                if hasattr(response, "input_audio_transcription") and response.input_audio_transcription:
+                                    user_text = response.input_audio_transcription.text
+                                    if user_text:
+                                        print(f"DEBUG: User Transcript: {user_text}", flush=True)
+                                        await websocket.send_json({
+                                            "type": "user_transcript",
+                                            "text": user_text
+                                        })
+
                                 if server_content is None:
                                     continue
                                 
+                                # モデル音声文字起こし(output_transcription)の処理
+                                if hasattr(server_content, "output_transcription") and server_content.output_transcription:
+                                    model_text = server_content.output_transcription.text
+                                    if model_text:
+                                        print(f"DEBUG: Model Transcript: {model_text}", flush=True)
+                                        await websocket.send_json({
+                                            "type": "model_transcript",
+                                            "text": model_text
+                                        })
+
                                 if server_content.turn_complete:
                                      print("DEBUG: Gemini indicates turn_complete", flush=True)
+                                     await websocket.send_json({
+                                         "type": "turn_complete"
+                                     })
 
                                 model_turn = server_content.model_turn
                                 if model_turn is None:
@@ -131,6 +168,12 @@ async def websocket_endpoint(websocket: WebSocket):
                                         import base64
                                         b64_audio = base64.b64encode(part.inline_data.data).decode("utf-8")
                                         await websocket.send_json({"audio": b64_audio})
+                                    # 予備として parts 内の text も処理
+                                    if part.text:
+                                        await websocket.send_json({
+                                            "type": "model_transcript",
+                                            "text": part.text
+                                        })
                         except Exception as e:
                             print(f"Error sending to client: {e}", flush=True)
                         finally:

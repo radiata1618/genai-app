@@ -7,10 +7,56 @@ export default function RoleplayPage() {
     const [status, setStatus] = useState("disconnected"); // disconnected, connecting, connected
     const [preps, setPreps] = useState([]);
     const [selectedPrepId, setSelectedPrepId] = useState("");
+    const [selectedModel, setSelectedModel] = useState("gemini-live-2.5-flash-native-audio");
     const [logs, setLogs] = useState([]);
+    const [chatHistory, setChatHistory] = useState([]);
+    const [activeUserText, setActiveUserText] = useState("");
+    const [activeModelText, setActiveModelText] = useState("");
 
-    // Refs - WebSocket / Audio
+    // Refs - WebSocket / Audio / Text
     const wsRef = useRef(null);
+    const activeUserTextRef = useRef("");
+    const activeModelTextRef = useRef("");
+    const chatEndRef = useRef(null);
+
+    // Auto-scroll to bottom on chat update
+    useEffect(() => {
+        chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [chatHistory, activeUserText, activeModelText]);
+
+    const updateUserText = (text) => {
+        activeUserTextRef.current = text;
+        setActiveUserText(text);
+    };
+
+    const updateModelText = (text) => {
+        activeModelTextRef.current = activeModelTextRef.current + text;
+        setActiveModelText(activeModelTextRef.current);
+    };
+
+    const commitCurrentTurns = () => {
+        const userText = activeUserTextRef.current.trim();
+        const modelText = activeModelTextRef.current.trim();
+
+        if (userText || modelText) {
+            setChatHistory(prev => {
+                const next = [...prev];
+                if (userText) {
+                    next.push({ id: Math.random().toString(), sender: "user", text: userText });
+                }
+                if (modelText) {
+                    next.push({ id: Math.random().toString(), sender: "model", text: modelText });
+                }
+                return next;
+            });
+
+            // Reset
+            activeUserTextRef.current = "";
+            activeModelTextRef.current = "";
+            setActiveUserText("");
+            setActiveModelText("");
+        }
+    };
     const audioContextRef = useRef(null);
     const audioWorkletNodeRef = useRef(null);
     const sourceNodeRef = useRef(null);
@@ -93,6 +139,13 @@ export default function RoleplayPage() {
 
         if (!selectedPrepId && !confirm("No topic selected. Start free talk?")) return;
 
+        // 会話ログの初期化
+        setChatHistory([]);
+        activeUserTextRef.current = "";
+        activeModelTextRef.current = "";
+        setActiveUserText("");
+        setActiveModelText("");
+
         isConnectingRef.current = true;
         userStoppedRef.current = false;
         setStatus("connecting");
@@ -141,10 +194,12 @@ export default function RoleplayPage() {
                 const setupData = {
                     type: "setup",
                     session_handle: sessionHandleRef.current, // 保存済みトークンがあれば送信
+                    model: selectedModel, // 選択されたモデルを送信
                     context: {
                         topic: prep?.topic || "Free Talk",
                         role: "English Tutor",
-                        phrases: []
+                        phrases: [],
+                        prompt: prep?.prompt || "" // トピック個別のプロンプトを含める
                     }
                 };
                 if (sessionHandleRef.current) {
@@ -172,6 +227,24 @@ export default function RoleplayPage() {
                 // ハートビート Pong の受信
                 if (data.type === "pong") {
                     console.log("DEBUG: Received pong");
+                    return;
+                }
+
+                // ユーザー発話テキストの受信
+                if (data.type === "user_transcript") {
+                    updateUserText(data.text);
+                    return;
+                }
+
+                // AI発話テキストの受信
+                if (data.type === "model_transcript") {
+                    updateModelText(data.text);
+                    return;
+                }
+
+                // ターン完了イベント
+                if (data.type === "turn_complete") {
+                    commitCurrentTurns();
                     return;
                 }
 
@@ -396,71 +469,148 @@ export default function RoleplayPage() {
     }
 
     return (
-        <div className="h-full bg-slate-900 text-white font-sans overflow-hidden flex flex-col">
-            <div className="flex items-center p-4 border-b border-slate-700">
+        <div className="h-screen bg-slate-900 text-white font-sans overflow-hidden flex flex-col">
+            <div className="flex items-center p-4 border-b border-slate-700 flex-shrink-0">
                 <MobileMenuButton />
                 <h1 className="text-xl font-bold ml-2">AI Roleplay (Live)</h1>
             </div>
 
-            <main className="flex-1 flex flex-col items-center justify-center p-6 relative">
+            {/* メインエリア */}
+            <div className="flex-1 flex flex-col min-h-0">
+                <main className="flex-1 flex flex-col p-6 min-h-0 relative">
+                    {status === "disconnected" ? (
+                        /* トピック選択と開始ボタン */
+                        <div className="flex-1 flex flex-col items-center justify-center max-w-md mx-auto w-full space-y-6">
+                            <div className="w-32 h-32 rounded-full border-4 border-slate-700 flex items-center justify-center bg-slate-800">
+                                <span className="text-5xl">😴</span>
+                            </div>
+                            <div className="text-center">
+                                <p className="text-lg font-bold text-slate-400">Ready to Start</p>
+                                <p className="text-xs text-slate-500 mt-1">トピックを選択して会話を始めてください。</p>
+                            </div>
+                            
+                            <div className="w-full space-y-4">
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-400">Select Topic (Optional)</label>
+                                    <select
+                                        className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-500"
+                                        value={selectedPrepId}
+                                        onChange={(e) => setSelectedPrepId(e.target.value)}
+                                    >
+                                        <option value="">Free Talk</option>
+                                        {preps.map(p => (
+                                            <option key={p.id} value={p.id}>{p.topic}</option>
+                                        ))}
+                                    </select>
+                                </div>
 
-                {/* ビジュアライザー / アバター */}
-                <div className={`w-48 h-48 rounded-full border-4 flex items-center justify-center mb-8 transition-all duration-500
-                    ${status === "connected" ? "border-cyan-500 shadow-[0_0_30px_rgba(6,182,212,0.5)] animate-pulse" : "border-slate-700"}
-                `}>
-                    <div className="text-4xl">
-                        {status === "connected" ? "🤖" : "😴"}
-                    </div>
-                </div>
+                                <div className="space-y-2">
+                                    <label className="text-sm font-medium text-slate-400">Select Model</label>
+                                    <select
+                                        className="w-full p-4 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-500"
+                                        value={selectedModel}
+                                        onChange={(e) => setSelectedModel(e.target.value)}
+                                    >
+                                        <option value="gemini-live-2.5-flash-native-audio">Gemini 2.5 Flash (Default)</option>
+                                        <option value="gemini-live-3.1-flash-preview">Gemini 3.1 Flash (Live Preview)</option>
+                                    </select>
+                                </div>
 
-                {/* ステータステキスト */}
-                <div className="mb-8 text-center h-20">
-                    <p className={`text-lg font-bold ${status === "connected" ? "text-cyan-400" : status === "connecting" ? "text-yellow-400" : "text-slate-400"}`}>
-                        {status === "disconnected" && "Ready to Start"}
-                        {status === "connecting" && "Connecting..."}
-                        {status === "connected" && "Listening..."}
-                    </p>
-                    {logs.map((l, i) => <p key={i} className="text-xs text-slate-500">{l}</p>)}
-                </div>
-
-                {/* コントロール */}
-                <div className="w-full max-w-md space-y-4">
-                    {status === "disconnected" && (
-                        <>
-                            <div className="space-y-2">
-                                <label className="text-sm font-medium text-slate-400">Select Topic (Optional)</label>
-                                <select
-                                    className="w-full p-3 bg-slate-800 border border-slate-700 rounded-xl text-white outline-none focus:border-cyan-500"
-                                    value={selectedPrepId}
-                                    onChange={(e) => setSelectedPrepId(e.target.value)}
+                                <button
+                                    onClick={startSession}
+                                    className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2 text-lg"
                                 >
-                                    <option value="">Free Talk</option>
-                                    {preps.map(p => (
-                                        <option key={p.id} value={p.id}>{p.topic}</option>
-                                    ))}
-                                </select>
+                                    <span>🎙️</span>
+                                    Start Conversation
+                                </button>
+                            </div>
+                        </div>
+                    ) : (
+                        /* 会話中のUI: アバター＋チャット履歴 */
+                        <div className="flex-1 flex flex-col min-h-0 w-full max-w-3xl mx-auto space-y-4">
+                            {/* 上部アバター＆ステータス */}
+                            <div className="flex items-center justify-between bg-slate-850 p-4 rounded-2xl border border-slate-800 flex-shrink-0 shadow-md">
+                                <div className="flex items-center gap-3">
+                                    <div className={`w-12 h-12 rounded-full border-2 border-cyan-500 flex items-center justify-center bg-slate-800 ${status === "connected" ? "animate-pulse shadow-[0_0_15px_rgba(6,182,212,0.3)]" : ""}`}>
+                                        <span className="text-2xl">{status === "connected" ? "🤖" : "🌀"}</span>
+                                    </div>
+                                    <div>
+                                        <p className="text-sm font-bold text-cyan-400">
+                                            {status === "connected" ? "Listening & Speaking" : "Connecting..."}
+                                        </p>
+                                        <p className="text-[10px] text-slate-500">Live Gemini API Session</p>
+                                    </div>
+                                </div>
+                                <div className="flex items-center gap-2">
+                                    {status === "connecting" && (
+                                        <span className="text-xs text-yellow-400 animate-pulse">Connecting...</span>
+                                    )}
+                                    <button
+                                        onClick={stopSession}
+                                        className="px-4 py-2 bg-rose-600 hover:bg-rose-500 text-white font-bold text-xs rounded-xl shadow-md transition-all active:scale-95"
+                                    >
+                                        End Session
+                                    </button>
+                                </div>
                             </div>
 
-                            <button
-                                onClick={startSession}
-                                className="w-full bg-cyan-600 hover:bg-cyan-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-95 flex items-center justify-center gap-2"
-                            >
-                                <span>🎙️</span>
-                                Start Conversation
-                            </button>
-                        </>
-                    )}
+                            {/* 会話ログ表示エリア */}
+                            <div className="flex-1 overflow-y-auto bg-slate-950/40 border border-slate-800/60 rounded-2xl p-4 space-y-4 custom-scrollbar flex flex-col">
+                                {chatHistory.length === 0 && !activeUserText && !activeModelText && (
+                                    <div className="flex-1 flex flex-col items-center justify-center text-slate-500 text-xs py-12">
+                                        <span className="text-2xl mb-2 animate-bounce">💬</span>
+                                        <p>話しかけると、ここに会話の内容がリアルタイムに表示されます。</p>
+                                    </div>
+                                )}
 
-                    {status !== "disconnected" && (
-                        <button
-                            onClick={stopSession}
-                            className="w-full bg-red-600 hover:bg-red-500 text-white font-bold py-4 rounded-xl shadow-lg transition-all transform active:scale-95"
-                        >
-                            End Session
-                        </button>
+                                {chatHistory.map((msg) => (
+                                    <div
+                                        key={msg.id}
+                                        className={`flex flex-col max-w-[85%] ${
+                                            msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start"
+                                        } animate-fadeIn`}
+                                    >
+                                        <span className="text-[9px] text-slate-500 mb-1 px-1.5 uppercase font-bold tracking-wider">
+                                            {msg.sender === "user" ? "You" : "Gemini"}
+                                        </span>
+                                        <div
+                                            className={`p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
+                                                msg.sender === "user"
+                                                    ? "bg-cyan-600 text-white rounded-tr-none"
+                                                    : "bg-slate-800 text-slate-100 border border-slate-700/60 rounded-tl-none"
+                                            }`}
+                                        >
+                                            {msg.text}
+                                        </div>
+                                    </div>
+                                ))}
+
+                                {/* アクティブな（発話中の）テキスト表示 */}
+                                {activeUserText && (
+                                    <div className="flex flex-col max-w-[85%] ml-auto items-end animate-pulse">
+                                        <span className="text-[9px] text-cyan-400 mb-1 px-1.5 uppercase font-bold">You (Speaking...)</span>
+                                        <div className="p-3.5 bg-cyan-650/20 text-cyan-200 border border-cyan-500/20 rounded-2xl rounded-tr-none text-sm italic">
+                                            {activeUserText}
+                                        </div>
+                                    </div>
+                                )}
+
+                                {activeModelText && (
+                                    <div className="flex flex-col max-w-[85%] mr-auto items-start">
+                                        <span className="text-[9px] text-slate-400 mb-1 px-1.5 uppercase font-bold">Gemini (Speaking...)</span>
+                                        <div className="p-3.5 bg-slate-800 text-slate-200 rounded-2xl rounded-tl-none text-sm border border-slate-700/60">
+                                            {activeModelText}
+                                            <span className="inline-block w-1.5 h-3.5 ml-1 bg-cyan-400 animate-blink" />
+                                        </div>
+                                    </div>
+                                )}
+
+                                <div ref={chatEndRef} />
+                            </div>
+                        </div>
                     )}
-                </div>
-            </main>
+                </main>
+            </div>
         </div>
     );
 }

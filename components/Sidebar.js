@@ -86,9 +86,12 @@ export const navItems = [
     },
 ];
 
+import { useSidebar } from "./SidebarContext";
+
 export default function Sidebar({ onCloseMobile }) {
     const pathname = usePathname();
     const [hiddenItems, setHiddenItems] = useState([]);
+    const { toggleAgentSidebar } = useSidebar();
 
     const fetchSettings = async () => {
         try {
@@ -126,6 +129,20 @@ export default function Sidebar({ onCloseMobile }) {
             {/* Logo Area */}
             <div className="h-14 flex items-center px-4 bg-[#0891b2] shadow-sm flex-shrink-0">
                 <h1 className="text-xl font-bold tracking-widest uppercase">Genai-app</h1>
+            </div>
+
+            {/* AI Assistant Toggle Button */}
+            <div className="p-3 border-b border-cyan-800 bg-[#0e7490]">
+                <button
+                    onClick={() => {
+                        toggleAgentSidebar();
+                        onCloseMobile();
+                    }}
+                    className="w-full flex items-center justify-center space-x-2 py-2.5 px-3 bg-gradient-to-r from-sky-400 via-cyan-500 to-teal-500 hover:from-sky-500 hover:to-teal-600 text-white rounded-xl font-bold text-xs shadow-lg hover:shadow-xl transform active:scale-95 transition-all duration-300 cursor-pointer text-center"
+                >
+                    <span className="text-sm animate-pulse">✨</span>
+                    <span>AIアシスタント (日本語)</span>
+                </button>
             </div>
 
             {/* Navigation */}

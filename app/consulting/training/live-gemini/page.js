@@ -18,6 +18,7 @@ export default function LiveGeminiPage() {
     const [showUploadModal, setShowUploadModal] = useState(false);
     const [sessionName, setSessionName] = useState("");
     const [uploadProgress, setUploadProgress] = useState("");
+    const [showHistoryModal, setShowHistoryModal] = useState(false);
 
     // 累積統計
     const [stats, setStats] = useState({
@@ -37,6 +38,10 @@ export default function LiveGeminiPage() {
     const chunksRef = useRef([]);
     const shouldRestartRef = useRef(false);
     const timelineEndRef = useRef(null);
+    const alertTimelineRef = useRef(null);
+    const alertEndRef = useRef(null);
+    const transcriptTimelineRef = useRef(null);
+    const transcriptEndRef = useRef(null);
 
     // 全体録音用（2重レコーダー）
     const totalRecorderRef = useRef(null);
@@ -45,12 +50,16 @@ export default function LiveGeminiPage() {
     // 音声検知フラグ（無音・環境ノイズ時のハルシネーション解析防止用）
     const hasSpeechInputRef = useRef(false);
 
-    // 新しいアラート検知時の自動スクロール
+    // 自動スクロール制御
     useEffect(() => {
         if (alerts.length === 0) return;
-        if (typeof window !== "undefined" && window.innerWidth < 1024) return;
-        timelineEndRef.current?.scrollIntoView({ behavior: "smooth" });
+        alertEndRef.current?.scrollIntoView({ behavior: "smooth" });
     }, [alerts]);
+
+    useEffect(() => {
+        if (speechHistory.length === 0) return;
+        transcriptEndRef.current?.scrollIntoView({ behavior: "smooth" });
+    }, [speechHistory]);
 
     // クリーンアップ
     useEffect(() => {
@@ -436,8 +445,8 @@ export default function LiveGeminiPage() {
     const fillerDensity = totalChars > 0 ? Math.min(100, ((stats.filler * 2.5) / totalChars) * 100) : 0;
 
     return (
-        <div className="flex flex-col w-full lg:h-screen bg-gray-50 text-slate-800 font-sans lg:overflow-hidden">
-            <div className="flex flex-col relative lg:flex-1 lg:min-h-0">
+        <div className="flex flex-col w-full h-screen bg-gray-50 text-slate-800 font-sans overflow-hidden">
+            <div className="flex flex-col relative flex-1 min-h-0">
                 
                 {/* ヘッダー */}
                 <div className="flex items-center p-3.5 border-b border-gray-200 justify-between flex-shrink-0 bg-white z-10 sticky top-0">
@@ -461,215 +470,269 @@ export default function LiveGeminiPage() {
                 </div>
 
                 {/* メインコンテンツエリア */}
-                <div className="flex flex-col lg:flex-row p-4 sm:p-6 gap-6 bg-gray-50 lg:flex-1 lg:min-h-0 flex-shrink-0">
+                <div className="flex flex-col lg:grid lg:grid-cols-12 p-2 lg:p-6 gap-3 lg:gap-6 bg-gray-50 flex-1 min-h-0 overflow-hidden">
                     
-                    {/* 左カラム：ステータス＆リアルタイム文字起こし */}
-                    <div className="w-full lg:flex-1 flex flex-col space-y-4 lg:overflow-hidden lg:h-full">
-                        {/* モニター状況カード */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between relative overflow-hidden">
-                            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 mb-4">
-                                <div className="flex items-center space-x-3">
-                                    <div className={`w-3.5 h-3.5 rounded-full flex items-center justify-center ${isRecording ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}>
-                                        {isRecording && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
-                                    </div>
-                                    <span className="text-xs font-bold tracking-wider uppercase text-slate-600">
-                                        {status === "recording" ? "音声録音＆バッファ送信中 (Gemini解析版)" : status === "connecting" ? "起動処理中..." : "待機中"}
-                                    </span>
+                    {/* ① モニター状況カード (PC左・スマホ1番目) */}
+                    <div className="order-1 lg:order-1 lg:col-span-8 bg-white p-3 lg:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between relative overflow-hidden flex-shrink-0">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2.5 mb-2.5 lg:mb-4">
+                            <div className="flex items-center space-x-2.5">
+                                <div className={`w-3 h-3 rounded-full flex items-center justify-center ${isRecording ? 'bg-emerald-500 animate-pulse' : 'bg-slate-400'}`}>
+                                    {isRecording && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
                                 </div>
-                                
-                                {isRecording && (
-                                    <div className="flex items-center space-x-3">
-                                        {isAnalyzing && (
-                                            <div className="flex items-center space-x-1.5 bg-cyan-50 text-cyan-700 border border-cyan-200 px-2.5 py-0.5 rounded-full text-[9px] font-bold animate-pulse">
-                                                <span>⚡ Gemini解析中...</span>
-                                            </div>
-                                        )}
-                                        <div className="flex items-center space-x-1.5">
-                                            <div className="text-[10px] text-slate-400 font-mono">Mic Input</div>
-                                            <div className="w-20 bg-gray-100 h-2 rounded-full overflow-hidden border border-gray-200">
-                                                <div 
-                                                    style={{ width: `${Math.min(100, (volume / 100) * 100)}%` }} 
-                                                    className="bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 h-full rounded-full transition-all duration-75"
-                                                />
-                                            </div>
+                                <span className="text-[11px] lg:text-xs font-bold tracking-wider uppercase text-slate-600">
+                                    {status === "recording" ? "音声録音＆バッファ送信中 (Gemini解析版)" : status === "connecting" ? "起動処理中..." : "待機中"}
+                                </span>
+                            </div>
+                            
+                            {isRecording && (
+                                <div className="flex items-center space-x-2.5">
+                                    {isAnalyzing && (
+                                        <div className="flex items-center space-x-1 bg-cyan-50 text-cyan-700 border border-cyan-200 px-2 py-0.5 rounded-full text-[9px] font-bold animate-pulse">
+                                            <span>⚡ Gemini解析中...</span>
+                                        </div>
+                                    )}
+                                    <div className="flex items-center space-x-1.5">
+                                        <div className="text-[9px] text-slate-400 font-mono">Mic Input</div>
+                                        <div className="w-16 lg:w-20 bg-gray-100 h-1.5 rounded-full overflow-hidden border border-gray-200">
+                                            <div 
+                                                style={{ width: `${Math.min(100, (volume / 100) * 100)}%` }} 
+                                                className="bg-gradient-to-r from-emerald-500 via-cyan-500 to-blue-500 h-full rounded-full transition-all duration-75"
+                                            />
                                         </div>
                                     </div>
-                                )}
-                            </div>
+                                </div>
+                            )}
+                        </div>
 
-                            {/* 操作コントロール */}
-                            <div className="flex items-center space-x-4">
-                                {!isRecording ? (
-                                    <button
-                                        onClick={startRecording}
-                                        className="w-full flex items-center justify-center space-x-2 py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-bold rounded-xl shadow-md transition-all transform active:scale-99 text-sm"
-                                    >
-                                        <span>🎙️ リアルタイム監視を開始</span>
-                                    </button>
-                                ) : (
-                                    <button
-                                        onClick={handleStopClick}
-                                        className="w-full flex items-center justify-center space-x-2 py-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all transform active:scale-99 text-sm"
-                                    >
-                                        <span>🛑 監視を終了</span>
-                                    </button>
-                                )}
+                        {/* 操作コントロール */}
+                        <div className="flex items-center space-x-4">
+                            {!isRecording ? (
+                                <button
+                                    onClick={startRecording}
+                                    className="w-full flex items-center justify-center space-x-2 py-2 lg:py-3 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white font-bold rounded-xl shadow-md transition-all transform active:scale-99 text-xs lg:text-sm"
+                                >
+                                    <span>🎙️ リアルタイム監視を開始</span>
+                                </button>
+                            ) : (
+                                <button
+                                    onClick={handleStopClick}
+                                    className="w-full flex items-center justify-center space-x-2 py-2 lg:py-3 bg-gradient-to-r from-rose-600 to-rose-700 hover:from-rose-500 hover:to-rose-600 text-white font-bold rounded-xl shadow-md transition-all transform active:scale-99 text-xs lg:text-sm"
+                                >
+                                    <span>🛑 監視を終了</span>
+                                </button>
+                            )}
+                        </div>
+                    </div>
+
+                    {/* ② 簡易スタッツカード (PC右・スマホ2番目) */}
+                    <div className="order-2 lg:order-2 lg:col-span-4 bg-white p-3 lg:p-5 rounded-2xl border border-gray-200 shadow-sm flex-shrink-0">
+                        <h2 className="text-[10px] lg:text-xs font-bold text-slate-400 tracking-widest uppercase mb-2 lg:mb-3.5">🎯 アラート累積統計</h2>
+                        <div className="grid grid-cols-4 gap-1.5 text-center">
+                            <div className="bg-amber-50/60 p-1 lg:p-2 rounded-xl border border-amber-100">
+                                <div className="text-[8px] lg:text-[9px] font-bold text-amber-700 uppercase">フィラー</div>
+                                <div className="text-sm lg:text-lg font-black text-amber-800 mt-0.5">{stats.filler}</div>
+                            </div>
+                            <div className="bg-rose-50/60 p-1 lg:p-2 rounded-xl border border-rose-100">
+                                <div className="text-[8px] lg:text-[9px] font-bold text-rose-700 uppercase">滑舌低下</div>
+                                <div className="text-sm lg:text-lg font-black text-rose-800 mt-0.5">{stats.clarity}</div>
+                            </div>
+                            <div className="bg-indigo-50/60 p-1 lg:p-2 rounded-xl border border-indigo-100">
+                                <div className="text-[8px] lg:text-[9px] font-bold text-indigo-700 uppercase">回りくどい</div>
+                                <div className="text-sm lg:text-lg font-black text-indigo-800 mt-0.5">{stats.roundabout}</div>
+                            </div>
+                            <div className="bg-emerald-50/60 p-1 lg:p-2 rounded-xl border border-emerald-100">
+                                <div className="text-[8px] lg:text-[9px] font-bold text-emerald-700 uppercase">咀嚼力</div>
+                                <div className="text-sm lg:text-lg font-black text-rose-800 mt-0.5">{stats.logic}</div>
                             </div>
                         </div>
 
-                        {/* リアルタイム発話文字起こしパネル */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col lg:h-full lg:flex-1 lg:min-h-0 lg:overflow-hidden">
-                            <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex items-center justify-between flex-shrink-0">
-                                <span>🗣️ Gemini文字起こし履歴 (6秒バッファごと)</span>
-                                {isRecording && <span className="text-[10px] text-cyan-655 font-mono animate-pulse">音声ブロック送信中...</span>}
-                            </h2>
-                            
-                            {/* スクロール履歴 */}
-                            <div className="space-y-3 pr-2 custom-scrollbar text-sm text-slate-700 leading-relaxed lg:flex-1 lg:overflow-y-auto">
-                                {speechHistory.length === 0 && (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs py-8">
-                                        <p>監視を開始して話し始めると、ここにGeminiによる文字起こし結果が表示されます。</p>
-                                    </div>
-                                )}
-                                
-                                {speechHistory.map((text, index) => (
-                                    <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-150 animate-fadeIn">
-                                        {text}
-                                    </div>
-                                ))}
-
-                                {isAnalyzing && (
-                                    <div className="p-3 bg-cyan-50/20 text-slate-500 italic rounded-xl border border-dashed border-cyan-200 animate-pulse flex items-center space-x-2">
-                                        <span className="animate-spin text-xs">🌀</span>
-                                        <span>音声データをGeminiが文字起こし・解析中...</span>
-                                    </div>
-                                )}
+                        {/* リアルタイムフィラー密度 */}
+                        <div className="mt-2.5 pt-2.5 lg:mt-4 lg:pt-4 border-t border-gray-150">
+                            <div className="flex justify-between items-center mb-1">
+                                <span className="text-[10px] lg:text-xs font-bold text-slate-500 flex items-center gap-1">
+                                    📊 フィラー密度
+                                    <span className="text-[8px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm font-normal hidden sm:inline-block">会話量に対する比率</span>
+                                </span>
+                                <span className={`text-xs lg:text-sm font-black font-mono px-1.5 py-0.5 rounded-md ${
+                                    fillerDensity > 5 ? 'text-rose-600 bg-rose-50 animate-pulse' : 
+                                    fillerDensity > 2 ? 'text-amber-600 bg-amber-50' : 
+                                    'text-emerald-600 bg-emerald-50'
+                                }`}>
+                                    {fillerDensity.toFixed(1)} %
+                                </span>
+                            </div>
+                            <div className="w-full bg-gray-150 h-1.5 lg:h-2.5 rounded-full overflow-hidden border border-gray-200 shadow-inner">
+                                <div 
+                                    style={{ width: `${Math.min(100, fillerDensity * 10)}%` }} 
+                                    className={`h-full rounded-full transition-all duration-300 ${
+                                        fillerDensity > 5 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 
+                                        fillerDensity > 2 ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 
+                                        'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                                    }`}
+                                />
+                            </div>
+                            <div className="flex justify-between text-[8px] text-slate-400 mt-0.5 font-mono">
+                                <span>0%</span>
+                                <span>5%</span>
+                                <span>10%+</span>
                             </div>
                         </div>
                     </div>
 
-                    {/* 右カラム：統計とアラートタイムライン */}
-                    <div className="w-full lg:w-[480px] flex flex-col space-y-4">
+                    {/* ③ リアルタイムアラートタイムライン (PC右下・スマホ3番目) */}
+                    <div className="order-3 lg:order-4 lg:col-span-4 bg-white p-3 lg:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col flex-1 lg:flex-initial lg:h-full min-h-0 relative overflow-hidden">
+                        <h2 className="text-[10px] lg:text-xs font-bold text-slate-400 tracking-widest uppercase mb-2 lg:mb-3 flex-shrink-0">⚠️ 検出された発話課題 (Gemini解析)</h2>
                         
-                        {/* 簡易スタッツカード */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex-shrink-0">
-                            <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3.5">🎯 アラート累積統計</h2>
-                            <div className="grid grid-cols-4 gap-2 text-center">
-                                <div className="bg-amber-50/60 p-2 rounded-xl border border-amber-100">
-                                    <div className="text-[9px] font-bold text-amber-700 uppercase">フィラー</div>
-                                    <div className="text-lg font-black text-amber-800 mt-1">{stats.filler}</div>
+                        {/* タイムラインリスト */}
+                        <div ref={alertTimelineRef} className="space-y-3 lg:space-y-4 pr-1 custom-scrollbar flex-1 overflow-y-auto">
+                            {alerts.length === 0 ? (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-[10px] lg:text-xs text-center py-6 lg:py-12 p-4">
+                                    <span className="text-2xl lg:text-3xl mb-1 lg:mb-2">🧠</span>
+                                    <p>まだ課題は検出されていません。</p>
                                 </div>
-                                <div className="bg-rose-50/60 p-2 rounded-xl border border-rose-100">
-                                    <div className="text-[9px] font-bold text-rose-700 uppercase">滑舌低下</div>
-                                    <div className="text-lg font-black text-rose-800 mt-1">{stats.clarity}</div>
-                                </div>
-                                <div className="bg-indigo-50/60 p-2 rounded-xl border border-indigo-100">
-                                    <div className="text-[9px] font-bold text-indigo-700 uppercase">回りくどい</div>
-                                    <div className="text-lg font-black text-indigo-800 mt-1">{stats.roundabout}</div>
-                                </div>
-                                <div className="bg-emerald-50/60 p-2 rounded-xl border border-emerald-100">
-                                    <div className="text-[9px] font-bold text-emerald-700 uppercase">咀嚼力</div>
-                                    <div className="text-lg font-black text-emerald-800 mt-1">{stats.logic}</div>
-                                </div>
-                            </div>
-
-                            {/* リアルタイムフィラー密度 */}
-                            <div className="mt-4 pt-4 border-t border-gray-150">
-                                <div className="flex justify-between items-center mb-1.5">
-                                    <span className="text-xs font-bold text-slate-500 flex items-center gap-1">
-                                        📊 リアルタイム・フィラー密度
-                                        <span className="text-[9px] bg-slate-100 text-slate-500 px-1.5 py-0.5 rounded-sm font-normal">現在の会話量に対する比率</span>
-                                    </span>
-                                    <span className={`text-sm font-black font-mono px-2 py-0.5 rounded-md ${
-                                        fillerDensity > 5 ? 'text-rose-600 bg-rose-50 animate-pulse' : 
-                                        fillerDensity > 2 ? 'text-amber-600 bg-amber-50' : 
-                                        'text-emerald-600 bg-emerald-50'
-                                    }`}>
-                                        {fillerDensity.toFixed(1)} %
-                                    </span>
-                                </div>
-                                <div className="w-full bg-gray-150 h-2.5 rounded-full overflow-hidden border border-gray-200 shadow-inner">
+                            ) : (
+                                alerts.map((alert) => (
                                     <div 
-                                        style={{ width: `${Math.min(100, fillerDensity * 10)}%` }} 
-                                        className={`h-full rounded-full transition-all duration-300 ${
-                                            fillerDensity > 5 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 
-                                            fillerDensity > 2 ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 
-                                            'bg-gradient-to-r from-emerald-400 to-emerald-600'
-                                        }`}
-                                    />
-                                </div>
-                                <div className="flex justify-between text-[9px] text-slate-400 mt-1 font-mono">
-                                    <span>0% (極めて優秀)</span>
-                                    <span>5% (注意)</span>
-                                    <span>10%+ (要改善)</span>
-                                </div>
-                            </div>
+                                        key={alert.id} 
+                                        className="p-3 lg:p-4 bg-white border border-gray-200 rounded-xl space-y-2 shadow-xs relative hover:border-cyan-300 transition-colors animate-slideUp"
+                                    >
+                                        <div className="flex justify-between items-center">
+                                            {getCategoryBadge(alert.category)}
+                                            <span className="text-[8px] lg:text-[9px] text-slate-400 font-mono">{alert.timestamp}</span>
+                                        </div>
+                                        <div className="text-[11px] lg:text-xs">
+                                            <div className="text-slate-400 font-medium mb-0.5">指摘箇所の発話:</div>
+                                            <div className="text-slate-700 bg-gray-50 px-2 py-1 rounded border border-gray-150 italic font-mono leading-tight">
+                                                「 {alert.detected_text} 」
+                                            </div>
+                                        </div>
+                                        <div className="text-[11px] lg:text-xs space-y-0.5">
+                                            <div className="text-rose-600 font-bold flex items-center">
+                                                <span className="mr-1">❌</span> アラート理由:
+                                            </div>
+                                            <p className="text-slate-600 pl-4 leading-normal">{alert.reason}</p>
+                                        </div>
+                                        <div className="text-[11px] lg:text-xs space-y-0.5 pt-1 border-t border-gray-100">
+                                            <div className="text-emerald-600 font-bold flex items-center">
+                                                <span className="mr-1">💡</span> 改善・言い換え案:
+                                            </div>
+                                            <p className="text-slate-600 pl-4 leading-normal">{alert.improvement}</p>
+                                        </div>
+                                    </div>
+                                ))
+                            )}
+                            <div ref={alertEndRef} />
                         </div>
 
-                        {/* リアルタイムアラートタイムライン */}
-                        <div className="bg-white p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col lg:h-full lg:flex-1 lg:min-h-0 relative lg:overflow-hidden">
-                            <h2 className="text-xs font-bold text-slate-400 tracking-widest uppercase mb-3 flex-shrink-0">⚠️ 検出された発話課題 (Gemini解析)</h2>
-                            
-                            {/* タイムラインリスト */}
-                            <div className="space-y-4 pr-1 custom-scrollbar lg:flex-1 lg:overflow-y-auto">
-                                {alerts.length === 0 ? (
-                                    <div className="h-full flex flex-col items-center justify-center text-slate-400 text-xs text-center py-12 p-4">
-                                        <span className="text-3xl mb-2">🧠</span>
-                                        <p>まだ課題は検出されていません。</p>
+                        {latestAlert && (
+                            <div className="absolute bottom-3 left-3 right-3 bg-white border-2 border-rose-500 p-3 lg:p-4 rounded-xl shadow-xl animate-bounce flex items-start space-x-2.5 z-20">
+                                <span className="text-xl lg:text-2xl flex-shrink-0">⚠️</span>
+                                <div className="flex-1 min-w-0">
+                                    <div className="flex justify-between items-center mb-0.5">
+                                        <span className="text-[10px] lg:text-xs font-bold text-rose-600 uppercase tracking-wider">即時警告アラート (Gemini)</span>
+                                        {getCategoryBadge(latestAlert.category)}
                                     </div>
-                                ) : (
-                                    alerts.map((alert) => (
-                                        <div 
-                                            key={alert.id} 
-                                            className="p-4 bg-white border border-gray-200 rounded-xl space-y-2.5 shadow-xs relative hover:border-cyan-300 transition-colors animate-slideUp"
-                                        >
-                                            <div className="flex justify-between items-center">
-                                                {getCategoryBadge(alert.category)}
-                                                <span className="text-[9px] text-slate-400 font-mono">{alert.timestamp}</span>
-                                            </div>
-                                            <div className="text-xs">
-                                                <div className="text-slate-400 font-medium mb-1">指摘箇所の発話:</div>
-                                                <div className="text-slate-700 bg-gray-50 px-2.5 py-1.5 rounded border border-gray-150 italic font-mono">
-                                                    「 {alert.detected_text} 」
-                                                </div>
-                                            </div>
-                                            <div className="text-xs space-y-1">
-                                                <div className="text-rose-600 font-bold flex items-center">
-                                                    <span className="mr-1">❌</span> アラート理由:
-                                                </div>
-                                                <p className="text-slate-600 pl-4 leading-relaxed">{alert.reason}</p>
-                                            </div>
-                                            <div className="text-xs space-y-1 pt-1 border-t border-gray-100">
-                                                <div className="text-emerald-600 font-bold flex items-center">
-                                                    <span className="mr-1">💡</span> 改善・言い換え案:
-                                                </div>
-                                                <p className="text-slate-600 pl-4 leading-relaxed">{alert.improvement}</p>
-                                            </div>
-                                        </div>
-                                    ))
-                                )}
-                                <div ref={timelineEndRef} />
+                                    <p className="text-[11px] lg:text-xs text-slate-800 font-bold truncate">「{latestAlert.detected_text}」</p>
+                                    <p className="text-[10px] lg:text-[11px] text-rose-500 mt-0.5">{latestAlert.reason}</p>
+                                </div>
                             </div>
+                        )}
+                    </div>
 
-                            {latestAlert && (
-                                <div className="absolute bottom-4 left-4 right-4 bg-white border-2 border-rose-500 p-4 rounded-xl shadow-xl animate-bounce flex items-start space-x-3 z-20">
-                                    <span className="text-2xl flex-shrink-0">⚠️</span>
-                                    <div className="flex-1 min-w-0">
-                                        <div className="flex justify-between items-center mb-1">
-                                            <span className="text-xs font-bold text-rose-600 uppercase tracking-wider">即時警告アラート (Gemini)</span>
-                                            {getCategoryBadge(latestAlert.category)}
-                                        </div>
-                                        <p className="text-xs text-slate-800 font-bold truncate">「{latestAlert.detected_text}」</p>
-                                        <p className="text-[11px] text-rose-500 mt-1">{latestAlert.reason}</p>
-                                    </div>
+                    {/* ④ リアルタイム発話文字起こしパネル (PC左下・スマホ4番目) */}
+                    <div className="order-4 lg:order-3 lg:col-span-8 bg-white p-3 lg:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col h-[88px] lg:h-full lg:flex-1 min-h-0 overflow-hidden relative">
+                        <h2 className="text-[10px] lg:text-xs font-bold text-slate-400 tracking-widest uppercase mb-2 flex items-center justify-between flex-shrink-0">
+                            <span className="flex items-center gap-1.5">🗣️ 文字起こし 
+                                <span className="text-[8px] bg-slate-100 text-slate-500 px-1 py-0.5 rounded-sm font-normal lg:inline-block hidden">6秒ごと確定</span>
+                            </span>
+                            <div className="flex items-center gap-2">
+                                <button 
+                                    onClick={() => setShowHistoryModal(true)}
+                                    className="px-2 py-0.5 bg-cyan-50 hover:bg-cyan-100 text-cyan-700 rounded text-[9px] lg:text-[10px] font-bold border border-cyan-200 transition-colors flex items-center gap-1 shadow-2xs"
+                                    title="文字起こし全文の確認"
+                                >
+                                    📋 全文 ({speechHistory.length})
+                                </button>
+                                {isRecording && <span className="text-[8px] lg:text-[10px] text-cyan-655 font-mono animate-pulse">解析中...</span>}
+                            </div>
+                        </h2>
+                        
+                        {/* スクロール履歴 */}
+                        <div ref={transcriptTimelineRef} className="space-y-2 lg:space-y-3 pr-2 custom-scrollbar text-[11px] lg:text-sm text-slate-700 leading-relaxed flex-1 overflow-y-auto min-h-0">
+                            {speechHistory.length === 0 && (
+                                <div className="h-full flex flex-col items-center justify-center text-slate-400 text-[10px] lg:text-xs py-2 lg:py-8">
+                                    <p>マイク音声をリアルタイムでテキスト化します...</p>
                                 </div>
                             )}
+                            
+                            {speechHistory.map((text, index) => (
+                                <div key={index} className="p-2 lg:p-3 bg-gray-50 rounded-xl border border-gray-150 animate-fadeIn">
+                                    {text}
+                                </div>
+                            ))}
+
+                            {isAnalyzing && (
+                                <div className="p-2 lg:p-3 bg-cyan-50/20 text-slate-500 italic rounded-xl border border-dashed border-cyan-200 animate-pulse flex items-center space-x-1.5">
+                                    <span className="animate-spin text-[10px]">🌀</span>
+                                    <span>音声認識処理中...</span>
+                                </div>
+                            )}
+                            <div ref={transcriptEndRef} />
                         </div>
                     </div>
 
                 </div>
 
             </div>
+
+            {/* 文字起こし履歴全文モーダル */}
+            {showHistoryModal && (
+                <div className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs z-50 flex items-center justify-center p-4">
+                    <div className="bg-white rounded-2xl border border-gray-200 p-5 max-w-2xl w-full h-[80vh] flex flex-col shadow-2xl space-y-4 animate-scaleUp">
+                        <div className="flex justify-between items-center border-b border-gray-150 pb-3 flex-shrink-0">
+                            <h3 className="text-sm lg:text-base font-bold text-slate-800 flex items-center gap-1.5">
+                                <span>🗣️ 文字起こし全文ログ</span>
+                                <span className="text-xs bg-cyan-50 text-cyan-700 px-2 py-0.5 rounded-full font-bold">
+                                    全 {speechHistory.length} 件
+                                </span>
+                            </h3>
+                            <button 
+                                onClick={() => {
+                                    const text = speechHistory.join("\n");
+                                    navigator.clipboard.writeText(text);
+                                    alert("文字起こし全文をクリップボードにコピーしました！");
+                                }}
+                                className="px-2.5 py-1 bg-gray-100 hover:bg-gray-200 text-slate-600 rounded text-xs font-bold border border-gray-300 transition-colors shadow-2xs"
+                            >
+                                📋 全文コピー
+                            </button>
+                        </div>
+                        
+                        {/* モーダル内スクロール履歴 */}
+                        <div className="flex-1 overflow-y-auto space-y-3 pr-2 custom-scrollbar text-sm text-slate-700 leading-relaxed min-h-0 p-1">
+                            {speechHistory.length === 0 ? (
+                                <p className="text-slate-400 text-center py-12 text-xs">文字起こしデータはまだありません。</p>
+                            ) : (
+                                speechHistory.map((text, index) => (
+                                    <div key={index} className="p-3 bg-gray-50 rounded-xl border border-gray-150 relative">
+                                        <span className="absolute top-2 right-3 text-[9px] text-slate-400 font-mono">#{index + 1}</span>
+                                        <p className="pr-8">{text}</p>
+                                    </div>
+                                ))
+                            )}
+                        </div>
+
+                        <div className="pt-3 border-t border-gray-150 flex-shrink-0 flex justify-end">
+                            <button
+                                onClick={() => setShowHistoryModal(false)}
+                                className="px-4 py-2 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl shadow-md transition-colors"
+                            >
+                                閉じる
+                            </button>
+                        </div>
+                    </div>
+                </div>
+            )}
 
             {/* 評価アップロード選択モーダル */}
             {showUploadModal && (
