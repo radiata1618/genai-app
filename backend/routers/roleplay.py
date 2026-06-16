@@ -40,7 +40,7 @@ async def websocket_endpoint(websocket: WebSocket):
 
     try:
         # クライアントから設定を受信
-        # フォーマット: { "type": "setup", "config": { ... }, "context": { ... } }
+        # フォーマット: { "type": "setup", "config": { ... }, "context": { ... }, "history": [ ... ] }
         init_data = await websocket.receive_json()
         print(f"DEBUG: Received setup data: {init_data}", flush=True)
         
@@ -64,6 +64,20 @@ async def websocket_endpoint(websocket: WebSocket):
                  if context.get("phrases"):
                      phrases_str = ", ".join([p.get('english', '') for p in context['phrases']])
                      system_instruction += f"\n\nTarget Phrases to use/check: {phrases_str}"
+
+             # 過去の会話履歴をコンテキストとして追加
+             history = init_data.get("history", [])
+             if history:
+                 history_lines = []
+                 for h in history:
+                     sender = "User" if h.get("sender") == "user" else "AI"
+                     text = h.get("text", "")
+                     if text:
+                         history_lines.append(f"{sender}: {text}")
+                 if history_lines:
+                     history_str = "\n".join(history_lines)
+                     system_instruction += f"\n\n[Previous Conversation History]\n{history_str}\n\nPlease continue the roleplay based on the previous conversation history above."
+                     print(f"DEBUG: Injected history ({len(history_lines)} lines) into system instruction", flush=True)
              
              # クライアントからセッションハンドルが提供された場合、復元を試みる
              if init_data.get("session_handle"):
@@ -116,6 +130,13 @@ async def websocket_endpoint(websocket: WebSocket):
                         try:
                             async for response in session.receive():
                                 server_content = response.server_content
+
+                                # 割り込みの検出 (ユーザーがモデルの返答中に発話した場合)
+                                if server_content is not None and getattr(server_content, "interrupted", False):
+                                    print("DEBUG: Gemini indicates interrupted (user speech detected)", flush=True)
+                                    await websocket.send_json({
+                                        "type": "interrupted"
+                                    })
 
                                 # セッション再開トークンの更新
                                 if response.session_resumption_update:

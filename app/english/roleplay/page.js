@@ -12,12 +12,69 @@ export default function RoleplayPage() {
     const [chatHistory, setChatHistory] = useState([]);
     const [activeUserText, setActiveUserText] = useState("");
     const [activeModelText, setActiveModelText] = useState("");
+    // State - マイクモード (hands-free: 常時, push-to-talk: 長押し, muted: 消音)
+    const [micMode, setMicMode] = useState("hands-free");
+    const [isPTTActive, setIsPTTActive] = useState(false);
 
     // Refs - WebSocket / Audio / Text
     const wsRef = useRef(null);
     const activeUserTextRef = useRef("");
     const activeModelTextRef = useRef("");
     const chatEndRef = useRef(null);
+
+    // Refs - マイク制御 / 音声トラッキング用
+    const micModeRef = useRef("hands-free");
+    const isPTTActiveRef = useRef(false);
+    const activeSourcesRef = useRef([]); // 再生中の AudioBufferSourceNode を保持
+
+    const changeMicMode = (mode) => {
+        setMicMode(mode);
+        micModeRef.current = mode;
+        setIsPTTActive(false);
+        isPTTActiveRef.current = false;
+        console.log(`DEBUG: Mic mode changed to ${mode}`);
+    };
+
+    // AIの音声再生とテキスト生成を強制中断し、履歴にコミットする
+    const interruptAudio = () => {
+        console.log("DEBUG: interruptAudio triggered");
+
+        // 1. 再生中のすべてのソースを停止
+        activeSourcesRef.current.forEach(source => {
+            try {
+                source.stop();
+            } catch (e) {
+                // すでに再生終了している場合などのエラーを無視
+            }
+        });
+        activeSourcesRef.current = [];
+
+        // 2. 再生キューのタイムスタンプとバッファをリセット
+        nextStartTimeRef.current = 0;
+        jitterBufferSizeRef.current = 0.5;
+
+        // 3. 現在の途中テキストがあれば、遮られた目印を付けてコミット
+        const userText = activeUserTextRef.current.trim();
+        const modelText = activeModelTextRef.current.trim();
+
+        if (userText || modelText) {
+            setChatHistory(prev => {
+                const next = [...prev];
+                if (userText) {
+                    next.push({ id: Math.random().toString(), sender: "user", text: userText });
+                }
+                if (modelText) {
+                    next.push({ id: Math.random().toString(), sender: "model", text: modelText + "... [Interrupted]" });
+                }
+                return next;
+            });
+            // リセット
+            activeUserTextRef.current = "";
+            activeModelTextRef.current = "";
+            setActiveUserText("");
+            setActiveModelText("");
+        }
+    };
 
     // Auto-scroll to bottom on chat update
     useEffect(() => {
@@ -130,7 +187,7 @@ export default function RoleplayPage() {
         }, 20000);
     };
 
-    const startSession = async () => {
+    const startSession = async (keepHistory = false) => {
         // 多重接続防止
         if (isConnectingRef.current) {
             console.log("DEBUG: Already connecting, skipping.");
@@ -140,7 +197,9 @@ export default function RoleplayPage() {
         if (!selectedPrepId && !confirm("No topic selected. Start free talk?")) return;
 
         // 会話ログの初期化
-        setChatHistory([]);
+        if (!keepHistory) {
+            setChatHistory([]);
+        }
         activeUserTextRef.current = "";
         activeModelTextRef.current = "";
         setActiveUserText("");
@@ -200,7 +259,8 @@ export default function RoleplayPage() {
                         role: "English Tutor",
                         phrases: [],
                         prompt: prep?.prompt || "" // トピック個別のプロンプトを含める
-                    }
+                    },
+                    history: chatHistory.map(h => ({ sender: h.sender, text: h.text })) // 履歴を送信
                 };
                 if (sessionHandleRef.current) {
                     addLog("Resuming Session...");
@@ -227,6 +287,13 @@ export default function RoleplayPage() {
                 // ハートビート Pong の受信
                 if (data.type === "pong") {
                     console.log("DEBUG: Received pong");
+                    return;
+                }
+
+                // サーバーからの割り込みイベントの受信
+                if (data.type === "interrupted") {
+                    console.log("DEBUG: Received interrupted from server");
+                    interruptAudio();
                     return;
                 }
 
@@ -274,7 +341,7 @@ export default function RoleplayPage() {
                 reconnectTimerRef.current = setTimeout(() => {
                     if (!userStoppedRef.current) {
                         addLog("Reconnecting...");
-                        startSession();
+                        startSession(true); // 履歴を保持して再接続
                     }
                 }, 3000);
             };
@@ -358,7 +425,16 @@ export default function RoleplayPage() {
                     inputBuffer = inputBuffer.slice(CHUNK_SIZE);
 
                     const base64Audio = arrayBufferToBase64(chunkToSend.buffer);
-                    if (wsRef.current?.readyState === WebSocket.OPEN) {
+
+                    // マイクモードおよびPTTアクティブ状態に基づく送信制御
+                    let shouldSend = false;
+                    if (micModeRef.current === "hands-free") {
+                        shouldSend = true;
+                    } else if (micModeRef.current === "push-to-talk") {
+                        shouldSend = isPTTActiveRef.current;
+                    }
+
+                    if (shouldSend && wsRef.current?.readyState === WebSocket.OPEN) {
                         wsRef.current.send(JSON.stringify({ audio: base64Audio }));
                     }
                 }
@@ -444,6 +520,12 @@ export default function RoleplayPage() {
             start = now + newBuffer;
         }
 
+        // 再生ソースの追跡登録
+        activeSourcesRef.current.push(source);
+        source.onended = () => {
+            activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+        };
+
         source.start(start);
         nextStartTimeRef.current = start + audioBuffer.duration;
     };
@@ -488,7 +570,7 @@ export default function RoleplayPage() {
                                 <p className="text-lg font-bold text-slate-400">Ready to Start</p>
                                 <p className="text-xs text-slate-500 mt-1">トピックを選択して会話を始めてください。</p>
                             </div>
-                            
+
                             <div className="w-full space-y-4">
                                 <div className="space-y-2">
                                     <label className="text-sm font-medium text-slate-400">Select Topic (Optional)</label>
@@ -566,19 +648,17 @@ export default function RoleplayPage() {
                                 {chatHistory.map((msg) => (
                                     <div
                                         key={msg.id}
-                                        className={`flex flex-col max-w-[85%] ${
-                                            msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start"
-                                        } animate-fadeIn`}
+                                        className={`flex flex-col max-w-[85%] ${msg.sender === "user" ? "ml-auto items-end" : "mr-auto items-start"
+                                            } animate-fadeIn`}
                                     >
                                         <span className="text-[9px] text-slate-500 mb-1 px-1.5 uppercase font-bold tracking-wider">
                                             {msg.sender === "user" ? "You" : "Gemini"}
                                         </span>
                                         <div
-                                            className={`p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${
-                                                msg.sender === "user"
+                                            className={`p-3.5 rounded-2xl text-sm leading-relaxed shadow-sm whitespace-pre-wrap ${msg.sender === "user"
                                                     ? "bg-cyan-600 text-white rounded-tr-none"
                                                     : "bg-slate-800 text-slate-100 border border-slate-700/60 rounded-tl-none"
-                                            }`}
+                                                }`}
                                         >
                                             {msg.text}
                                         </div>
