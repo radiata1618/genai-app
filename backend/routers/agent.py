@@ -172,28 +172,40 @@ async def websocket_endpoint(websocket: WebSocket):
                         session_resumption=types.SessionResumptionConfig(handle=current_session_handle)
                     )
                 else:
-                    # PTTモードの場合はAutomatic VADを無効化し、ActivityStart/Endで発話区区を明示的に制御する
-                    if mic_mode == "push-to-talk":
-                        realtime_input_config = types.RealtimeInputConfig(
-                            automatic_activity_detection=types.AutomaticActivityDetection(
-                                disabled=True  # PTTモード時はVADを無効化
+                    # PTTモード時はAutomatic VADを無効化し、ActivityStart/Endで制御する
+                    # try-exceptでSDKバージョン非対応時でもセッション作成が失敗しないように保護
+                    realtime_input_config = None
+                    try:
+                        if mic_mode == "push-to-talk":
+                            realtime_input_config = types.RealtimeInputConfig(
+                                automatic_activity_detection=types.AutomaticActivityDetection(
+                                    disabled=True  # PTTモード時はVADを無効化
+                                )
                             )
-                        )
-                        print("DEBUG (Agent): PTT mode - Automatic VAD disabled", flush=True)
-                    else:
-                        realtime_input_config = types.RealtimeInputConfig(
-                            automatic_activity_detection=types.AutomaticActivityDetection(
-                                disabled=False  # Hands-Freeモード時はVADを有効化
+                            print("DEBUG (Agent): PTT mode - Automatic VAD disabled", flush=True)
+                        else:
+                            realtime_input_config = types.RealtimeInputConfig(
+                                automatic_activity_detection=types.AutomaticActivityDetection(
+                                    disabled=False  # Hands-Freeモード時はVADを有効化
+                                )
                             )
-                        )
-                        print(f"DEBUG (Agent): {mic_mode} mode - Automatic VAD enabled", flush=True)
+                            print(f"DEBUG (Agent): {mic_mode} mode - Automatic VAD enabled", flush=True)
+                    except (AttributeError, TypeError) as vad_err:
+                        # SDKがRealtimeInputConfigやAutomaticActivityDetectionをサポートしない場合は
+                        # デフォルト（VAD有効）のまま続行する
+                        print(f"DEBUG (Agent): VAD config not supported by SDK, using defaults: {vad_err}", flush=True)
+                        realtime_input_config = None
 
-                    session_config = types.LiveConnectConfig(
-                        response_modalities=config["response_modalities"],
-                        system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=types.SessionResumptionConfig(transparent=True),
-                        realtime_input_config=realtime_input_config
-                    )
+                    # LiveConnectConfigの構築（realtime_input_configはNoneの場合は省略）
+                    connect_config_kwargs = {
+                        "response_modalities": config["response_modalities"],
+                        "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
+                        "session_resumption": types.SessionResumptionConfig(transparent=True),
+                    }
+                    if realtime_input_config is not None:
+                        connect_config_kwargs["realtime_input_config"] = realtime_input_config
+
+                    session_config = types.LiveConnectConfig(**connect_config_kwargs)
 
                 async with client.aio.live.connect(
                     model=config["model"],
