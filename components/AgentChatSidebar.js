@@ -5,12 +5,35 @@ import ReactMarkdown from 'react-markdown';
 export default function AgentChatSidebar({ isOpen, onClose }) {
     // 状態管理
     const [status, setStatus] = useState("disconnected"); // disconnected, connecting, connected
+    const [selectedLanguage, setSelectedLanguage] = useState("ja"); // ja, en
+    const [selectedMode, setSelectedMode] = useState("normal"); // normal, dab
     const [messages, setMessages] = useState([
         { role: 'model', content: 'こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？' }
     ]);
     const [input, setInput] = useState("");
     const [selectedModel, setSelectedModel] = useState("gemini-2.5");
     const [logs, setLogs] = useState([]);
+
+    // 言語やモードが切り替わったときに、メッセージ履歴が初期状態であれば表示を自動で更新する
+    useEffect(() => {
+        if (messages.length === 1 && messages[0].role === 'model') {
+            let initialContent = "";
+            if (selectedMode === "dab") {
+                if (selectedLanguage === "en") {
+                    initialContent = "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!";
+                } else {
+                    initialContent = "こんにちは！技術学習メンターです。DABの技術トピックについて日本語でディスカッションしましょう！";
+                }
+            } else {
+                if (selectedLanguage === "en") {
+                    initialContent = "Hello! I am your AI assistant. How can I help you today?";
+                } else {
+                    initialContent = "こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？";
+                }
+            }
+            setMessages([{ role: 'model', content: initialContent }]);
+        }
+    }, [selectedLanguage, selectedMode]);
 
     // リアルタイム音声対話用 Refs
     const wsRef = useRef(null);
@@ -133,7 +156,9 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 const setupData = {
                     type: "setup",
                     session_handle: sessionHandleRef.current,
-                    model: selectedModel
+                    model: selectedModel,
+                    language: selectedLanguage,
+                    mode: selectedMode
                 };
                 wsRef.current.send(JSON.stringify(setupData));
 
@@ -420,7 +445,10 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     <span className="text-xl animate-pulse">✨</span>
                     <div>
                         <h2 className="font-bold text-slate-100 text-sm">統合AIアシスタント</h2>
-                        <span className="text-[10px] text-slate-400">Japanese Live Mode</span>
+                        <span className="text-[10px] text-slate-400">
+                            {selectedLanguage === "en" ? "English" : "日本語"}{" "}
+                            {selectedMode === "dab" ? "DAB Study Mode" : "Live Chat Mode"}
+                        </span>
                     </div>
                 </div>
                 <button onClick={onClose} className="p-1.5 rounded-full hover:bg-slate-800 text-slate-400 hover:text-white transition-colors cursor-pointer">
@@ -428,18 +456,47 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                 </button>
             </div>
 
-            {/* モデル選択エリア */}
-            <div className="px-4 py-2 border-b border-slate-800 bg-[#1e293b]/40 flex justify-between items-center text-xs flex-shrink-0">
-                <span className="text-slate-400 font-medium">使用モデル:</span>
-                <select
-                    value={selectedModel}
-                    onChange={(e) => setSelectedModel(e.target.value)}
-                    disabled={status !== "disconnected"}
-                    className="bg-[#0f172a] text-slate-200 border border-slate-800 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-[11px]"
-                >
-                    <option value="gemini-2.5">Gemini 2.5 Flash</option>
-                    <option value="gemini-3.1">Gemini 3.1 Flash (Live Preview)</option>
-                </select>
+            {/* 設定エリア */}
+            <div className="px-4 py-3 border-b border-slate-800 bg-[#1e293b]/40 space-y-2 flex-shrink-0 text-xs">
+                {/* モデル選択 */}
+                <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">使用モデル:</span>
+                    <select
+                        value={selectedModel}
+                        onChange={(e) => setSelectedModel(e.target.value)}
+                        disabled={status !== "disconnected"}
+                        className="bg-[#0f172a] text-slate-200 border border-slate-800 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-[11px] w-40"
+                    >
+                        <option value="gemini-2.5">Gemini 2.5 Flash</option>
+                        <option value="gemini-3.1">Gemini 3.1 Flash (Live Preview)</option>
+                    </select>
+                </div>
+                {/* 言語選択 */}
+                <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">対話言語:</span>
+                    <select
+                        value={selectedLanguage}
+                        onChange={(e) => setSelectedLanguage(e.target.value)}
+                        disabled={status !== "disconnected"}
+                        className="bg-[#0f172a] text-slate-200 border border-slate-800 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-[11px] w-40"
+                    >
+                        <option value="ja">日本語 (Japanese)</option>
+                        <option value="en">英語 (English)</option>
+                    </select>
+                </div>
+                {/* モード選択 */}
+                <div className="flex justify-between items-center">
+                    <span className="text-slate-400 font-medium">対話モード:</span>
+                    <select
+                        value={selectedMode}
+                        onChange={(e) => setSelectedMode(e.target.value)}
+                        disabled={status !== "disconnected"}
+                        className="bg-[#0f172a] text-slate-200 border border-slate-800 rounded px-2.5 py-1 focus:outline-none focus:ring-1 focus:ring-cyan-500 cursor-pointer disabled:opacity-50 disabled:cursor-not-allowed text-[11px] w-40"
+                    >
+                        <option value="normal">通常会話 (Normal)</option>
+                        <option value="dab">DAB学習 (Global Tech)</option>
+                    </select>
+                </div>
             </div>
 
             {/* 音声対話ステータス・ビジュアライザー表示エリア */}
@@ -454,12 +511,16 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                     </div>
                     <div>
                         <div className={`text-xs font-bold ${status === "connected" ? 'text-cyan-400' : status === "connecting" ? 'text-amber-400' : 'text-slate-400'}`}>
-                            {status === "disconnected" && "オフライン"}
-                            {status === "connecting" && "接続中..."}
-                            {status === "connected" && (isModelSpeaking ? "アシスタント発話中..." : "リスニング中...")}
+                            {status === "disconnected" && (selectedLanguage === "en" ? "Offline" : "オフライン")}
+                            {status === "connecting" && (selectedLanguage === "en" ? "Connecting..." : "接続中...")}
+                            {status === "connected" && (
+                                isModelSpeaking 
+                                    ? (selectedLanguage === "en" ? "Speaking..." : "アシスタント発話中...") 
+                                    : (selectedLanguage === "en" ? "Listening..." : "リスニング中...")
+                            )}
                         </div>
                         <div className="text-[9px] text-slate-500 overflow-hidden text-ellipsis whitespace-nowrap max-w-[180px]">
-                            {logs[logs.length - 1] || "「Start」を押して会話を開始"}
+                            {logs[logs.length - 1] || (selectedLanguage === "en" ? "Click 'Start' to talk" : "「Start」を押して会話を開始")}
                         </div>
                     </div>
                 </div>
@@ -535,7 +596,11 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                         type="text"
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
-                        placeholder={status === "connected" ? "メッセージを入力..." : "Startを押して会話を開始してください"}
+                        placeholder={
+                            status === "connected" 
+                                ? (selectedLanguage === "en" ? "Type a message..." : "メッセージを入力...") 
+                                : (selectedLanguage === "en" ? "Click 'Start' to talk" : "Startを押して会話を開始してください")
+                        }
                         disabled={status !== "connected"}
                         className="w-full pl-4 pr-10 py-2.5 bg-[#0f172a] border border-slate-800 rounded-full focus:outline-none focus:ring-1 focus:ring-cyan-500 focus:border-cyan-500 disabled:opacity-50 disabled:cursor-not-allowed transition-all text-xs text-slate-200 placeholder-slate-500"
                     />
