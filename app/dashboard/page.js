@@ -43,6 +43,13 @@ function DashboardContent() {
     const inputRef = useRef(null);
     const searchParams = useSearchParams();
 
+    // Voice & Toast State
+    const [toast, setToast] = useState(null);
+    const [showVoiceModal, setShowVoiceModal] = useState(false);
+    const [voiceText, setVoiceText] = useState('');
+    const [isListening, setIsListening] = useState(false);
+    const [voiceCountdown, setVoiceCountdown] = useState(null);
+
     // Drag State
     const [draggedItem, setDraggedItem] = useState(null);
     const [todayStr, setTodayStr] = useState('');
@@ -109,6 +116,14 @@ function DashboardContent() {
             // Check for focus param (from shortcut)
             if (searchParams.get('focus') === 'input') {
                 setTimeout(() => inputRef.current?.focus(), 500);
+            }
+
+            // Check for action param (from shortcut)
+            if (searchParams.get('action') === 'voice-add') {
+                setShowVoiceModal(true);
+                setTimeout(() => {
+                    handleStartListening();
+                }, 800);
             }
         }
 
@@ -216,6 +231,171 @@ function DashboardContent() {
                 return newTasks;
             });
             alert('Failed to add task');
+        }
+    };
+
+    // --- Voice Input Logic ---
+    const recognitionRef = useRef(null);
+    const voiceTextRef = useRef('');
+
+    useEffect(() => {
+        voiceTextRef.current = voiceText;
+    }, [voiceText]);
+
+    useEffect(() => {
+        if (toast) {
+            const timer = setTimeout(() => {
+                setToast(null);
+            }, 3000);
+            return () => clearTimeout(timer);
+        }
+    }, [toast]);
+
+    useEffect(() => {
+        if (voiceCountdown === null) return;
+        if (voiceCountdown === 0) {
+            handleVoiceSubmit(voiceTextRef.current);
+            return;
+        }
+
+        const timer = setTimeout(() => {
+            setVoiceCountdown(prev => (prev !== null ? prev - 1 : null));
+        }, 1000);
+
+        return () => clearTimeout(timer);
+    }, [voiceCountdown]);
+
+    const showToast = (message, type = 'success') => {
+        setToast({ message, type });
+    };
+
+    const speakFeedback = (text) => {
+        if ('speechSynthesis' in window) {
+            window.speechSynthesis.cancel();
+            const utterance = new SpeechSynthesisUtterance(text);
+            utterance.lang = 'ja-JP';
+            window.speechSynthesis.speak(utterance);
+        }
+    };
+
+    const handleStartListening = () => {
+        const SpeechRecognition = window.SpeechRecognition || window.webkitSpeechRecognition;
+        if (!SpeechRecognition) {
+            showToast('お使いのブラウザは音声認識をサポートしていません', 'error');
+            return;
+        }
+
+        if (recognitionRef.current) {
+            try {
+                recognitionRef.current.abort();
+            } catch (e) {}
+        }
+
+        const rec = new SpeechRecognition();
+        rec.lang = 'ja-JP';
+        rec.interimResults = true;
+        rec.continuous = false; // 一語で終わるように無音検知を自動化
+
+        rec.onstart = () => {
+            setIsListening(true);
+            setVoiceText('');
+            setVoiceCountdown(null);
+        };
+
+        rec.onresult = (event) => {
+            let interimTranscript = '';
+            let finalTranscript = '';
+
+            for (let i = event.resultIndex; i < event.results.length; ++i) {
+                if (event.results[i].isFinal) {
+                    finalTranscript += event.results[i][0].transcript;
+                } else {
+                    interimTranscript += event.results[i][0].transcript;
+                }
+            }
+
+            const currentText = finalTranscript || interimTranscript;
+            if (currentText) {
+                setVoiceText(currentText);
+            }
+        };
+
+        rec.onerror = (event) => {
+            console.error("Speech recognition error", event.error);
+            if (event.error === 'not-allowed') {
+                showToast('マイクの使用が許可されていません', 'error');
+            } else if (event.error !== 'aborted') {
+                showToast('音声認識エラーが発生しました', 'error');
+            }
+            setIsListening(false);
+        };
+
+        rec.onend = () => {
+            setIsListening(false);
+            const text = voiceTextRef.current.trim();
+            if (text) {
+                setVoiceCountdown(3);
+            }
+        };
+
+        recognitionRef.current = rec;
+        try {
+            rec.start();
+        } catch (e) {
+            console.error(e);
+        }
+    };
+
+    const handleStopListening = () => {
+        if (recognitionRef.current) {
+            recognitionRef.current.stop();
+        }
+        setIsListening(false);
+    };
+
+    const handleVoiceSubmit = async (textToSubmit) => {
+        const titleVal = textToSubmit ? textToSubmit.trim() : voiceText.trim();
+        if (!titleVal) return;
+
+        setIsSubmitting(true);
+        setVoiceCountdown(null);
+
+        const tempId = `temp_${Date.now()}`;
+        const optimisticTask = {
+            id: tempId,
+            title: titleVal,
+            status: 'TODO',
+            source_type: 'BACKLOG',
+            source_id: 'temp',
+            target_date: todayStr,
+            created_at: new Date().toISOString(),
+            order: 99999,
+            is_highlighted: false,
+            current_goal_progress: null
+        };
+
+        setTasks(prev => [...prev, optimisticTask]);
+
+        try {
+            await addQuickTask(titleVal, todayStr);
+            showToast(`タスク「${titleVal}」を追加しました`, 'success');
+            speakFeedback('追加しました');
+            setShowVoiceModal(false);
+
+            const t = await getDailyTasks(todayStr);
+            setTasks(t);
+            saveCache(t);
+        } catch (e) {
+            console.error(e);
+            setTasks(prev => {
+                const newTasks = prev.filter(t => t.id !== tempId);
+                saveCache(newTasks);
+                return newTasks;
+            });
+            showToast('追加に失敗しました', 'error');
+            speakFeedback('追加に失敗しました');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -715,6 +895,115 @@ function DashboardContent() {
                             >
                                 {postponeDate ? 'Confirm Date' : 'Return to Backlog'}
                             </button>
+                        </div>
+                    </div>
+                </div>
+            )}
+
+            {/* Toast Notification */}
+            {toast && (
+                <div className={`fixed top-4 left-1/2 -translate-x-1/2 z-[100] px-4 py-3 rounded-xl shadow-xl transition-all duration-300 transform animate-in slide-in-from-top-4
+                    ${toast.type === 'success' ? 'bg-emerald-500 text-white' : 'bg-rose-500 text-white'}
+                `}>
+                    <div className="flex items-center gap-2 font-medium text-sm">
+                        <span>{toast.type === 'success' ? '✅' : '❌'}</span>
+                        <span>{toast.message}</span>
+                    </div>
+                </div>
+            )}
+
+            {/* Voice Input Modal */}
+            {showVoiceModal && (
+                <div className="fixed inset-0 z-[80] flex items-center justify-center p-4 bg-slate-900/60 backdrop-blur-md animate-in fade-in duration-200">
+                    <div className="bg-white rounded-2xl shadow-2xl p-6 w-full max-w-md animate-in zoom-in-95 duration-200 relative flex flex-col items-center">
+                        <button
+                            onClick={() => {
+                                handleStopListening();
+                                setShowVoiceModal(false);
+                            }}
+                            className="absolute right-4 top-4 text-slate-400 hover:text-slate-600 p-1"
+                        >
+                            <svg className="w-6 h-6" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M6 18L18 6M6 6l12 12" />
+                            </svg>
+                        </button>
+
+                        <h3 className="text-base font-bold text-slate-800 mb-6 text-center">
+                            音声でタスク追加
+                        </h3>
+
+                        {/* Microphone Status & Animation */}
+                        <div className="relative flex items-center justify-center w-28 h-28 mb-6">
+                            {isListening && (
+                                <div className="absolute inset-0 bg-indigo-100 rounded-full animate-ping opacity-75"></div>
+                            )}
+                            <button
+                                onClick={isListening ? handleStopListening : handleStartListening}
+                                className={`relative z-10 w-20 h-20 rounded-full flex items-center justify-center text-white shadow-lg transition-all active:scale-95
+                                    ${isListening 
+                                        ? 'bg-indigo-600 hover:bg-indigo-700' 
+                                        : 'bg-slate-400 hover:bg-slate-500'
+                                    }
+                                `}
+                            >
+                                {isListening ? (
+                                    <svg className="w-10 h-10 animate-pulse" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" />
+                                    </svg>
+                                ) : (
+                                    <svg className="w-10 h-10" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                                        <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M19 11a7 7 0 01-7 7m0 0a7 7 0 01-7-7m7 7v4m0 0H8m4 0h4m-4-8a3 3 0 01-3-3V5a3 3 0 116 0v6a3 3 0 01-3 3z" opacity="0.5" />
+                                    </svg>
+                                )}
+                            </button>
+                        </div>
+
+                        {/* Status Message */}
+                        <div className="text-center mb-6 min-h-[60px] px-2 w-full">
+                            {isListening ? (
+                                <p className="text-xs text-indigo-500 font-bold mb-2 animate-pulse">🎤 お話しください...</p>
+                            ) : voiceCountdown !== null ? (
+                                <p className="text-xs text-amber-500 font-bold mb-2">⏱️ {voiceCountdown}秒後に自動登録します</p>
+                            ) : (
+                                <p className="text-xs text-slate-400 font-medium mb-2">マイクボタンをタップして開始</p>
+                            )}
+
+                            <div className="text-slate-800 font-semibold text-base break-words">
+                                {voiceText || (isListening ? '...' : '')}
+                            </div>
+                        </div>
+
+                        {/* Action Buttons */}
+                        <div className="w-full flex gap-3">
+                            {voiceCountdown !== null ? (
+                                <>
+                                    <button
+                                        onClick={() => {
+                                            setVoiceCountdown(null);
+                                            handleStartListening();
+                                        }}
+                                        className="flex-1 py-3 text-slate-500 hover:text-slate-700 font-bold text-sm bg-slate-100 hover:bg-slate-200 rounded-xl transition-all"
+                                    >
+                                        やり直す
+                                    </button>
+                                    <button
+                                        onClick={() => handleVoiceSubmit(voiceText)}
+                                        className="flex-1 py-3 text-white font-bold text-sm bg-indigo-600 hover:bg-indigo-700 rounded-xl shadow-md transition-all active:scale-95"
+                                    >
+                                        今すぐ追加
+                                    </button>
+                                </>
+                            ) : (
+                                <button
+                                    onClick={() => {
+                                        handleStopListening();
+                                        setShowVoiceModal(false);
+                                    }}
+                                    className="w-full py-3 text-slate-500 hover:text-slate-700 font-bold text-sm bg-slate-100 hover:bg-slate-200 rounded-xl transition-all"
+                                >
+                                    閉じる
+                                </button>
+                            )}
                         </div>
                     </div>
                 </div>
