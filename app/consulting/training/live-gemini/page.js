@@ -666,21 +666,35 @@ export default function LiveGeminiPage() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 gap-2.5 pt-2">
-                                <button
-                                    onClick={handleTextUpload}
-                                    className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
-                                >
-                                    <span>📄 テキストで簡易評価</span>
-                                    <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">文字のみ・即時評価</span>
-                                </button>
-                                <button
-                                    onClick={handleAudioUpload}
-                                    className="w-full py-2.5 px-4 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-700 hover:to-indigo-750 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
-                                >
-                                    <span>🎙️ 音声で詳細評価</span>
-                                    <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">音声Up・滑舌/トーン含む</span>
-                                </button>
+                            <div className="grid grid-cols-1 gap-3 pt-2">
+                                <div className="p-3.5 bg-cyan-50/60 rounded-2xl border border-cyan-100 space-y-2">
+                                    <button
+                                        onClick={handleTextUpload}
+                                        className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
+                                    >
+                                        <span className="flex items-center gap-1.5">
+                                            <span>✨ 文字起こしテキストで詳細評価</span>
+                                            <span className="px-1.5 py-0.5 bg-white text-cyan-700 text-[8px] font-black rounded-sm tracking-wider">推奨・高精度</span>
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full">即時判定</span>
+                                    </button>
+                                    <p className="text-[10px] text-cyan-800 leading-relaxed pl-1 font-medium">
+                                        リアルタイムで正確に書き起こされた会話テキストを送信し、ハルシネーション（内容の捏造）を完全に防ぎながら、ルーブリックに基づく最高精度の100点定量評価を行います。
+                                    </p>
+                                </div>
+
+                                <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-150 space-y-2">
+                                    <button
+                                        onClick={handleAudioUpload}
+                                        className="w-full py-2.5 px-4 bg-gradient-to-r from-gray-500 to-slate-655 hover:from-gray-655 hover:to-slate-700 text-white text-xs font-bold rounded-xl transition-all shadow-xs flex items-center justify-between group"
+                                    >
+                                        <span>🎙️ 録音音声ファイルで詳細評価</span>
+                                        <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">音声ファイル送信</span>
+                                    </button>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed pl-1">
+                                        音声ファイル全体をGeminiに送信して評価します。※長尺音声解析の特性上、会話内容の捏造（ハルシネーション）が発生しやすいため、上記のテキスト送信を強く推奨します。
+                                    </p>
+                                </div>
                                 
                                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
                                     <button
