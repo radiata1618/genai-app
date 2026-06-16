@@ -69,6 +69,7 @@ async def websocket_endpoint(websocket: WebSocket):
     current_session_handle = None
     language = "ja"
     mode = "normal"
+    mic_mode = "hands-free"  # "hands-free" | "push-to-talk" | "muted"
 
     try:
         # クライアントから初期セットアップデータを受信
@@ -82,6 +83,9 @@ async def websocket_endpoint(websocket: WebSocket):
                  language = init_data.get("language")
              if init_data.get("mode"):
                  mode = init_data.get("mode")
+             # マイクモードの取得（PTTモードではVADを無効化する）
+             if init_data.get("mic_mode"):
+                 mic_mode = init_data.get("mic_mode")
              # クライアントからセッションハンドルが提供された場合、復元を試みる
              if init_data.get("session_handle"):
                  current_session_handle = init_data.get("session_handle")
@@ -168,10 +172,27 @@ async def websocket_endpoint(websocket: WebSocket):
                         session_resumption=types.SessionResumptionConfig(handle=current_session_handle)
                     )
                 else:
+                    # PTTモードの場合はAutomatic VADを無効化し、ActivityStart/Endで発話区区を明示的に制御する
+                    if mic_mode == "push-to-talk":
+                        realtime_input_config = types.RealtimeInputConfig(
+                            automatic_activity_detection=types.AutomaticActivityDetection(
+                                disabled=True  # PTTモード時はVADを無効化
+                            )
+                        )
+                        print("DEBUG (Agent): PTT mode - Automatic VAD disabled", flush=True)
+                    else:
+                        realtime_input_config = types.RealtimeInputConfig(
+                            automatic_activity_detection=types.AutomaticActivityDetection(
+                                disabled=False  # Hands-Freeモード時はVADを有効化
+                            )
+                        )
+                        print(f"DEBUG (Agent): {mic_mode} mode - Automatic VAD enabled", flush=True)
+
                     session_config = types.LiveConnectConfig(
                         response_modalities=config["response_modalities"],
                         system_instruction=types.Content(parts=[types.Part(text=system_instruction)]),
-                        session_resumption=types.SessionResumptionConfig(transparent=True)
+                        session_resumption=types.SessionResumptionConfig(transparent=True),
+                        realtime_input_config=realtime_input_config
                     )
 
                 async with client.aio.live.connect(
@@ -244,6 +265,29 @@ async def websocket_endpoint(websocket: WebSocket):
                                 # ハートビート Ping への応答
                                 if message.get("type") == "ping":
                                     await websocket.send_json({"type": "pong"})
+                                    continue
+
+                                # PTT開始: GeminiにActivityStartを通知（発話開始シグナル）
+                                if message.get("type") == "ptt_start":
+                                    try:
+                                        await session.send_realtime_input(
+                                            activity_start=types.ActivityStart()
+                                        )
+                                        print("DEBUG (Agent): Sent ActivityStart to Gemini", flush=True)
+                                    except Exception as e:
+                                        print(f"Error sending ActivityStart: {e}", flush=True)
+                                    continue
+
+                                # PTT終了: GeminiにActivityEndを通知（発話終了シグナル）
+                                # これにより、無音状態でもGeminiが「ユーザーの発話が終わった」と認識して即座に返答する
+                                if message.get("type") == "ptt_end":
+                                    try:
+                                        await session.send_realtime_input(
+                                            activity_end=types.ActivityEnd()
+                                        )
+                                        print("DEBUG (Agent): Sent ActivityEnd to Gemini", flush=True)
+                                    except Exception as e:
+                                        print(f"Error sending ActivityEnd: {e}", flush=True)
                                     continue
 
                                 # クライアントからの音声データ
