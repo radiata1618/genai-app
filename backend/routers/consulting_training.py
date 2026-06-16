@@ -320,7 +320,7 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
 4. 【最重要】相槌とフィラーを厳密に区別してください：
    - 減点対象のフィラー：「あの」「ええと」「ちょっと」「まあ」「なんか」「ていうか」「その」など、話し始めの澱みや言葉に詰まった際の不要な雑音。
    - 許容される相槌：「はい」「うん（うんうん）」「そうですね」「なるほど」「ええ」など、他者の発言に対する肯定的な相槌や傾聴を示す言葉。これらは「フィラー」として検出せず、むしろ要約咀嚼(synthesis)や対話態度(empathy)の加点要素として評価してください。
-5. 長い会話に対応するため、会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標 of 評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。
+5. 長い会話に対応するため、会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。
 6. 会話全体の中から検出された減点対象のフィラーの一覧(detected_fillers)を作成し、そのタイムスタンプと文脈セリフを提示してください。
 7. 会話全体を、実際に聞こえた通りに正確に文字起こしした全文を作成し、full_transcriptに設定してください。
    【最重要】ハルシネーション（幻聴）を徹底的に防止するため、音声に含まれていない架空の対話やビジネス発話を絶対に捏造して出力しないでください。無音やノイズに対しては何も出力しないでください。
@@ -339,7 +339,33 @@ async def create_training_review(req: TrainingReviewCreateRequest, db: firestore
             )
         )
 
-        result_data = json.loads(response.text)
+        import re
+        try:
+            result_data = json.loads(response.text)
+        except json.JSONDecodeError as je:
+            print(f"JSONDecodeError occurred: {je}. Attempting auto-recovery...")
+            try:
+                # 文字列リテラル内のエスケープされていない生の改行コードを \n に置換
+                fixed_text = re.sub(r'(?<=[:\s]")[^"]*(?=")', lambda m: m.group(0).replace('\n', '\\n'), response.text)
+                result_data = json.loads(fixed_text)
+            except Exception as e:
+                print(f"Auto-recovery failed: {e}. Falling back to default empty result.")
+                result_data = {
+                    "overall_scores": {"clarity": 1, "filler": 1, "synthesis": 1, "logic": 1, "empathy": 1},
+                    "overall_feedback": "解析データのJSON構造が正しく生成されませんでした。音声が短すぎるか、無音の可能性があります。",
+                    "topic_evaluations": [],
+                    "detected_fillers": [],
+                    "full_transcript": "（解析エラー：音声を正常に認識できませんでした）",
+                    "checklist": {
+                        "clarity_speed": False, "clarity_ending": False, "clarity_no_mumble": False, "clarity_confidence": False,
+                        "filler_low_density": False, "filler_start": False, "filler_middle": False, "filler_no_bad_habits": False,
+                        "synthesis_listening": False, "synthesis_summarize": False, "synthesis_align": False, "synthesis_interactive": False,
+                        "logic_prep": False, "logic_reason": False, "logic_focus": False, "logic_connective": False,
+                        "empathy_cushion": False, "empathy_no_interrupt": False, "empathy_polite": False, "empathy_safety": False
+                    },
+                    "total_words_estimate": 0,
+                    "filler_density": 0.0
+                }
 
         # 100点満点の合計スコアを算出
         total_score = 0
@@ -553,7 +579,7 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
 4. 【最重要】相槌とフィラーを厳密に区別してください：
    - 減点対象のフィラー：「あの」「ええと」「ちょっと」「まあ」「なんか」「ていうか」「その」など、文頭や合間の澱み・言葉に詰まった際の不要な雑音。
    - 許容される相槌：「はい」「うん（うんうん）」「そうですね」「なるほど」「ええ」など、傾聴や肯定的な反応。これらは「フィラー」として検出せず、むしろ要約咀嚼(synthesis)や対話態度(empathy)の加点要素として評価してください。
-5. 会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標 of 評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。（※テキストベースでの解析となるため、時間帯はおおよそ時間、あるいはセグメント順序で補正してください）
+5. 会議内の主要なトピック（場面セグメント）を検出し、トピックごとに各指標の評価、簡潔な要約、具体的な指摘事項、およびその判断基準となったセリフ（発言）を具体的に引用して出力してください。（※テキストベースでの解析となるため、時間帯はおおよその時間、あるいはセグメント順序で補正してください）
 6. 会話全体の中から検出された不要なフィラーの一覧(detected_fillers)を作成し、その文脈セリフを提示してください。
 """
 
@@ -570,7 +596,33 @@ async def create_training_review_text(req: TrainingReviewTextCreateRequest, db: 
             )
         )
 
-        result_data = json.loads(response.text)
+        import re
+        try:
+            result_data = json.loads(response.text)
+        except json.JSONDecodeError as je:
+            print(f"JSONDecodeError occurred: {je}. Attempting auto-recovery...")
+            try:
+                # 文字列リテラル内のエスケープされていない生の改行コードを \n に置換
+                fixed_text = re.sub(r'(?<=[:\s]")[^"]*(?=")', lambda m: m.group(0).replace('\n', '\\n'), response.text)
+                result_data = json.loads(fixed_text)
+            except Exception as e:
+                print(f"Auto-recovery failed: {e}. Falling back to default empty result.")
+                result_data = {
+                    "overall_scores": {"clarity": 1, "filler": 1, "synthesis": 1, "logic": 1, "empathy": 1},
+                    "overall_feedback": "解析データのJSON構造が正しく生成されませんでした。テキストが短すぎるか、パースエラーが発生しました。",
+                    "topic_evaluations": [],
+                    "detected_fillers": [],
+                    "full_transcript": req.full_transcript,
+                    "checklist": {
+                        "clarity_speed": False, "clarity_ending": False, "clarity_no_mumble": False, "clarity_confidence": False,
+                        "filler_low_density": False, "filler_start": False, "filler_middle": False, "filler_no_bad_habits": False,
+                        "synthesis_listening": False, "synthesis_summarize": False, "synthesis_align": False, "synthesis_interactive": False,
+                        "logic_prep": False, "logic_reason": False, "logic_focus": False, "logic_connective": False,
+                        "empathy_cushion": False, "empathy_no_interrupt": False, "empathy_polite": False, "empathy_safety": False
+                    },
+                    "total_words_estimate": len(req.full_transcript),
+                    "filler_density": 0.0
+                }
 
         # 100点満点の合計スコアを算出
         total_score = 0
