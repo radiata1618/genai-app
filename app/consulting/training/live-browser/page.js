@@ -634,22 +634,36 @@ export default function LiveBrowserPage() {
                                 </div>
                             </div>
                         ) : (
-                            <div className="grid grid-cols-1 gap-2.5 pt-2">
-                                <button
-                                    onClick={handleTextUpload}
-                                    className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-cyan-700 hover:from-cyan-700 hover:to-cyan-800 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
-                                >
-                                    <span>📄 テキストで簡易評価</span>
-                                    <span className="opacity-80 text-[9px] bg-white/20 px-2 py-0.5 rounded-full">文字のみ・即時評価</span>
-                                </button>
-                                <button
-                                    disabled
-                                    className="w-full py-2.5 px-4 bg-gray-200 text-gray-400 text-xs font-bold rounded-xl transition-all flex items-center justify-between cursor-not-allowed"
-                                    title="音声での詳細評価は「Gemini 音声解析版」タブから実行してください"
-                                >
-                                    <span>🎙️ 音声で詳細評価</span>
-                                    <span className="opacity-80 text-[9px] bg-gray-300 text-gray-500 px-2 py-0.5 rounded-full">Gemini版限定</span>
-                                </button>
+                            <div className="grid grid-cols-1 gap-3 pt-2">
+                                <div className="p-3.5 bg-cyan-50/60 rounded-2xl border border-cyan-100 space-y-2">
+                                    <button
+                                        onClick={handleTextUpload}
+                                        className="w-full py-2.5 px-4 bg-gradient-to-r from-cyan-600 to-blue-600 hover:from-cyan-700 hover:to-blue-700 text-white text-xs font-bold rounded-xl transition-all shadow-md flex items-center justify-between group"
+                                    >
+                                        <span className="flex items-center gap-1.5">
+                                            <span>✨ 文字起こしテキストで詳細評価</span>
+                                            <span className="px-1.5 py-0.5 bg-white text-cyan-700 text-[8px] font-black rounded-sm tracking-wider">推奨・高精度</span>
+                                        </span>
+                                        <span className="text-[9px] bg-white/20 px-2 py-0.5 rounded-full">即時判定</span>
+                                    </button>
+                                    <p className="text-[10px] text-cyan-800 leading-relaxed pl-1 font-medium">
+                                        ブラウザの音声認識ログを送信し、ハルシネーション（内容の捏造）を完全に防ぎながら、ルーブリックに基づく最高精度の100点定量評価を行います。
+                                    </p>
+                                </div>
+
+                                <div className="p-3.5 bg-gray-50 rounded-2xl border border-gray-150 space-y-2 opacity-70">
+                                    <button
+                                        disabled
+                                        className="w-full py-2.5 px-4 bg-gray-200 text-gray-400 text-xs font-bold rounded-xl transition-all flex items-center justify-between cursor-not-allowed"
+                                        title="音声での詳細評価は「Gemini 音声解析版」タブから実行してください"
+                                    >
+                                        <span>🎙️ 録音音声ファイルで詳細評価</span>
+                                        <span className="bg-gray-300 text-gray-500 text-[9px] px-2 py-0.5 rounded-full">Gemini版限定</span>
+                                    </button>
+                                    <p className="text-[10px] text-slate-500 leading-relaxed pl-1">
+                                        ※Browser認識版（案A）ではマイク競合による認識エラーを防止するため、音声録音ファイルを生成しません。音声付きの解析は「Gemini音声解析版（案B）」をご利用ください。
+                                    </p>
+                                </div>
 
                                 <div className="grid grid-cols-2 gap-2 pt-2 border-t border-gray-100">
                                     <button
