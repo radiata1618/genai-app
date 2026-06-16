@@ -20,10 +20,10 @@
     ],
     "shortcuts": [
         {
-            "name": "Add Task",
-            "short_name": "Add",
-            "description": "Add a new task for today",
-            "url": "/dashboard?focus=input",
+            "name": "音声でタスク追加",
+            "short_name": "音声追加",
+            "description": "音声入力で素早くタスクを追加します",
+            "url": "/dashboard?action=voice-add",
             "icons": [
                 {
                     "src": "/icons/icon-192-v3.png",
