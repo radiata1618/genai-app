@@ -76,6 +76,27 @@ export default function RoleplayPage() {
         }
     };
 
+    const handlePTTStart = (e) => {
+        e.preventDefault();
+        if (isPTTActiveRef.current) return;
+        
+        setIsPTTActive(true);
+        isPTTActiveRef.current = true;
+        console.log("DEBUG: PTT Started (Mic active)");
+
+        // 自分が話し始めるため、AIの音声を即座に割り込み停止する
+        interruptAudio();
+    };
+
+    const handlePTTEnd = (e) => {
+        if (e) e.preventDefault();
+        if (!isPTTActiveRef.current) return;
+
+        setIsPTTActive(false);
+        isPTTActiveRef.current = false;
+        console.log("DEBUG: PTT Ended (Mic inactive)");
+    };
+
     // Auto-scroll to bottom on chat update
     useEffect(() => {
         chatEndRef.current?.scrollIntoView({ behavior: "smooth" });
@@ -144,7 +165,7 @@ export default function RoleplayPage() {
         };
     }, []);
 
-    const fetchPreps = async () => {
+    async function fetchPreps() {
         try {
             const res = await fetch("/api/english/preparation");
             if (res.ok) {
@@ -154,30 +175,30 @@ export default function RoleplayPage() {
         } catch (error) {
             console.error("Failed to fetch preps", error);
         }
-    };
+    }
 
-    const addLog = (msg) => {
+    function addLog(msg) {
         setLogs(prev => [...prev.slice(-4), msg]); // 最新5件を保持
-    };
+    }
 
     // 再接続タイマーのクリア
-    const clearReconnectTimer = () => {
+    function clearReconnectTimer() {
         if (reconnectTimerRef.current) {
             clearTimeout(reconnectTimerRef.current);
             reconnectTimerRef.current = null;
         }
-    };
+    }
 
     // ハートビートタイマーのクリア
-    const clearPingTimer = () => {
+    function clearPingTimer() {
         if (pingTimerRef.current) {
             clearInterval(pingTimerRef.current);
             pingTimerRef.current = null;
         }
-    };
+    }
 
     // ハートビート Ping 送信開始（20秒ごと）
-    const startPingTimer = () => {
+    function startPingTimer() {
         clearPingTimer();
         pingTimerRef.current = setInterval(() => {
             if (wsRef.current?.readyState === WebSocket.OPEN) {
@@ -185,9 +206,9 @@ export default function RoleplayPage() {
                 console.log("DEBUG: Sent heartbeat ping");
             }
         }, 20000);
-    };
+    }
 
-    const startSession = async (keepHistory = false) => {
+    async function startSession(keepHistory = false) {
         // 多重接続防止
         if (isConnectingRef.current) {
             console.log("DEBUG: Already connecting, skipping.");
@@ -357,7 +378,7 @@ export default function RoleplayPage() {
             alert("Failed to start: " + e.message);
             setStatus("disconnected");
         }
-    };
+    }
 
     const startAudioInput = async (ctx, stream) => {
         try {
@@ -446,7 +467,7 @@ export default function RoleplayPage() {
         audioWorkletNodeRef.current.disconnect(); // 入力音声のフィードバックを防止
     };
 
-    const stopSession = () => {
+    function stopSession() {
         // 意図的な停止フラグを立てる（自動再接続を防ぐ）
         userStoppedRef.current = true;
         clearReconnectTimer();
@@ -458,9 +479,9 @@ export default function RoleplayPage() {
         }
         isConnectingRef.current = false;
         setStatus("disconnected");
-    };
+    }
 
-    const stopAudio = () => {
+    function stopAudio() {
         try {
             if (sourceNodeRef.current) {
                 sourceNodeRef.current.disconnect();
@@ -480,7 +501,7 @@ export default function RoleplayPage() {
             console.error("Error stopping audio:", e);
         }
         isRecordingRef.current = false;
-    };
+    }
 
     // 音声再生ロジック
     const playAudioChunk = (base64string) => {
@@ -686,6 +707,78 @@ export default function RoleplayPage() {
                                 )}
 
                                 <div ref={chatEndRef} />
+                            </div>
+
+                            {/* マイクモードと操作パネル */}
+                            <div className="bg-slate-800/80 border border-slate-700/60 rounded-2xl p-4 flex flex-col items-center gap-3 flex-shrink-0 shadow-md">
+                                {/* モード選択タブ */}
+                                <div className="flex bg-slate-900/80 p-1 rounded-xl border border-slate-700/50 w-full max-w-sm">
+                                    <button
+                                        onClick={() => changeMicMode("hands-free")}
+                                        className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all ${
+                                            micMode === "hands-free"
+                                                ? "bg-cyan-600 text-white shadow-sm"
+                                                : "text-slate-400 hover:text-white"
+                                        }`}
+                                    >
+                                        Hands-Free
+                                    </button>
+                                    <button
+                                        onClick={() => changeMicMode("push-to-talk")}
+                                        className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all ${
+                                            micMode === "push-to-talk"
+                                                ? "bg-cyan-600 text-white shadow-sm"
+                                                : "text-slate-400 hover:text-white"
+                                        }`}
+                                    >
+                                        Push-to-Talk
+                                    </button>
+                                    <button
+                                        onClick={() => changeMicMode("muted")}
+                                        className={`flex-1 text-center py-2 text-xs font-bold rounded-lg transition-all ${
+                                            micMode === "muted"
+                                                ? "bg-rose-600 text-white shadow-sm"
+                                                : "text-slate-400 hover:text-white"
+                                        }`}
+                                    >
+                                        Muted
+                                    </button>
+                                </div>
+
+                                {/* モードに応じたマイク操作ボタン・表示 */}
+                                <div className="w-full flex justify-center items-center h-16">
+                                    {micMode === "hands-free" && (
+                                        <div className="flex items-center gap-2 text-cyan-400 text-xs font-medium animate-pulse">
+                                            <span className="w-2.5 h-2.5 rounded-full bg-cyan-500" />
+                                            マイクは常時ONです。そのままお話しください。
+                                        </div>
+                                    )}
+
+                                    {micMode === "push-to-talk" && (
+                                        <button
+                                            onMouseDown={handlePTTStart}
+                                            onMouseUp={handlePTTEnd}
+                                            onMouseLeave={handlePTTEnd}
+                                            onTouchStart={handlePTTStart}
+                                            onTouchEnd={handlePTTEnd}
+                                            className={`px-8 py-3.5 rounded-full font-bold text-sm flex items-center gap-2 select-none shadow-md transition-all transform active:scale-95 ${
+                                                isPTTActive
+                                                    ? "bg-cyan-500 text-white scale-98 shadow-inner animate-pulse"
+                                                    : "bg-slate-700 text-slate-200 border border-slate-600 hover:bg-slate-650"
+                                            }`}
+                                        >
+                                            <span className="text-base">{isPTTActive ? "🎙️" : "🤫"}</span>
+                                            {isPTTActive ? "話しかけてください (長押し中)" : "ボタンを押しながら話す"}
+                                        </button>
+                                    )}
+
+                                    {micMode === "muted" && (
+                                        <div className="flex items-center gap-2 text-rose-400 text-xs font-medium">
+                                            <span className="w-2.5 h-2.5 rounded-full bg-rose-500" />
+                                            マイクはミュートされています。AIからの声のみを受信します。
+                                        </div>
+                                    )}
+                                </div>
                             </div>
                         </div>
                     )}
