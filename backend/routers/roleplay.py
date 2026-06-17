@@ -280,10 +280,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                     is_silence = all(b == 0 for b in audio_data[:100])
                                     print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                                    # 低遅延ストリーミング送信
+                                    # 低遅延ストリーミング送信 (クライアントの8000Hz化に合わせてrate=8000に変更)
                                     try:
                                         await session.send_realtime_input(
-                                            media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
+                                            media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=8000")
                                         )
                                     except Exception as send_err:
                                         print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)

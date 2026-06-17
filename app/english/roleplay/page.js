@@ -106,22 +106,10 @@ export default function RoleplayPage() {
 
         if (!wsRef.current || wsRef.current.readyState !== WebSocket.OPEN) return;
 
-        // 問題①修正: 1024サンプルに満たない末尾の音声バッファを即座に送信
-        if (inputBufferRef.current.length > 0) {
-            const remaining = inputBufferRef.current.slice(0); // コピーを作成
-            inputBufferRef.current = new Int16Array(0);
-            console.log(`DEBUG: Flushing ${remaining.length} remaining samples in roleplay`);
-            const base64Remaining = arrayBufferToBase64(remaining.buffer);
-            wsRef.current.send(JSON.stringify({ audio: base64Remaining }));
-        }
-
-        // 音声データが確実に送信されてから発話終了を認識させるため、100msのディレイを入れる
-        setTimeout(() => {
-            if (wsRef.current?.readyState === WebSocket.OPEN) {
-                wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
-                console.log("DEBUG: Sent ptt_end in roleplay after delay");
-            }
-        }, 100);
+        // タップを離した瞬間に軽量・高速に応答させるため、残りの未送信バッファは送信せず
+        // 即座に発話終了シグナル（ptt_end）を送信します。
+        wsRef.current.send(JSON.stringify({ type: "ptt_end" }));
+        console.log("DEBUG: Sent ptt_end in roleplay instantly");
     };
 
     // Auto-scroll to bottom on chat update
@@ -438,8 +426,8 @@ export default function RoleplayPage() {
             const rawFloat32Data = event.data;
             let finalFloat32Data = rawFloat32Data;
 
-            // 16000Hz へダウンサンプリング（線形補間）
-            const targetRate = 16000;
+            // 8000Hz へダウンサンプリング（データ軽量化のため 16000Hz から 8000Hz に変更）
+            const targetRate = 8000;
             const currentRate = ctx.sampleRate;
             if (currentRate > targetRate) {
                 const ratio = currentRate / targetRate;
