@@ -191,7 +191,7 @@ export default function Sidebar({ onCloseMobile }) {
                     onClick={onCloseMobile}
                     className="flex items-center justify-center space-x-2 py-2 px-3 bg-[#155e75] hover:bg-[#1b4e5d] rounded-lg text-xs font-bold transition-all border border-cyan-700 text-cyan-100 hover:text-white animate-fadeIn"
                 >
-                    <span>⚙️ サイドバー表示設定</span>
+                    <span>⚙️ システム設定</span>
                 </Link>
             </div>
         </aside>
