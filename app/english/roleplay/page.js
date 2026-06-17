@@ -333,7 +333,19 @@ export default function RoleplayPage() {
                 // サーバーからの割り込みイベントの受信
                 if (data.type === "interrupted") {
                     console.log("DEBUG: Received interrupted from server");
-                    interruptAudio();
+                    // すでにPTTがアクティブな場合、またはすでにAIの再生が停止している場合は、
+                    // 二重に割り込み処理（テキストのクリア）を走らせない。
+                    // AIが実際に再生中である場合のみ、割り込み停止処理を実行します。
+                    if (!isPTTActiveRef.current && activeSourcesRef.current.length > 0) {
+                        interruptAudio();
+                    } else {
+                        // 音声の停止のみを行い、テキストのコミット・クリアは行わない
+                        activeSourcesRef.current.forEach(source => {
+                            try { source.stop(); } catch (e) {}
+                        });
+                        activeSourcesRef.current = [];
+                        setIsAISpeaking(false);
+                    }
                     return;
                 }
 
