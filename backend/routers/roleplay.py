@@ -104,50 +104,50 @@ async def websocket_endpoint(websocket: WebSocket):
                 # Gemini Live API セッションを初期化
                 print(f"DEBUG: Connecting to Live API...", flush=True)
 
+                # リアルタイム入力設定の構築（PTT時はVAD無効化、Hands-Free時はVAD有効化）
+                realtime_input_config = None
+                try:
+                    if mic_mode == "push-to-talk":
+                        realtime_input_config = types.RealtimeInputConfig(
+                            automatic_activity_detection=types.AutomaticActivityDetection(
+                                disabled=True  # PTTモード時はVADを無効化
+                            )
+                        )
+                        print("DEBUG: PTT mode - Automatic VAD disabled", flush=True)
+                    else:
+                        realtime_input_config = types.RealtimeInputConfig(
+                            automatic_activity_detection=types.AutomaticActivityDetection(
+                                disabled=False  # Hands-Freeモード時はVADを有効化
+                            )
+                        )
+                        print(f"DEBUG: {mic_mode} mode - Automatic VAD enabled", flush=True)
+                except (AttributeError, TypeError) as vad_err:
+                    print(f"DEBUG: VAD config not supported by SDK: {vad_err}", flush=True)
+                    realtime_input_config = None
+
+                thinking_enabled = init_data.get("thinking_enabled", True)
+
+                # 共通接続引数の構築
+                connect_config_kwargs = {
+                    "response_modalities": config["response_modalities"],
+                    "output_audio_transcription": types.AudioTranscriptionConfig(),
+                    "input_audio_transcription": types.AudioTranscriptionConfig()
+                }
+
+                if realtime_input_config is not None:
+                    connect_config_kwargs["realtime_input_config"] = realtime_input_config
+
                 if current_session_handle:
                     print(f"DEBUG: Resuming session with handle: {current_session_handle[:10]}...", flush=True)
-                    session_config = types.LiveConnectConfig(
-                        response_modalities=config["response_modalities"],
-                        session_resumption=types.SessionResumptionConfig(handle=current_session_handle),
-                        output_audio_transcription=types.AudioTranscriptionConfig(),
-                        input_audio_transcription=types.AudioTranscriptionConfig()
-                    )
+                    connect_config_kwargs["session_resumption"] = types.SessionResumptionConfig(handle=current_session_handle)
+                    session_config = types.LiveConnectConfig(**connect_config_kwargs)
                 else:
-                    realtime_input_config = None
-                    try:
-                        if mic_mode == "push-to-talk":
-                            realtime_input_config = types.RealtimeInputConfig(
-                                automatic_activity_detection=types.AutomaticActivityDetection(
-                                    disabled=True  # PTTモード時はVADを無効化
-                                )
-                            )
-                            print("DEBUG: PTT mode - Automatic VAD disabled", flush=True)
-                        else:
-                            realtime_input_config = types.RealtimeInputConfig(
-                                automatic_activity_detection=types.AutomaticActivityDetection(
-                                    disabled=False  # Hands-Freeモード時はVADを有効化
-                                )
-                            )
-                            print(f"DEBUG: {mic_mode} mode - Automatic VAD enabled", flush=True)
-                    except (AttributeError, TypeError) as vad_err:
-                        print(f"DEBUG: VAD config not supported by SDK: {vad_err}", flush=True)
-                        realtime_input_config = None
-
-                    thinking_enabled = init_data.get("thinking_enabled", True)
-                    connect_config_kwargs = {
-                        "response_modalities": config["response_modalities"],
-                        "system_instruction": types.Content(parts=[types.Part(text=system_instruction)]),
-                        "session_resumption": types.SessionResumptionConfig(transparent=True),
-                        "output_audio_transcription": types.AudioTranscriptionConfig(),
-                        "input_audio_transcription": types.AudioTranscriptionConfig()
-                    }
+                    connect_config_kwargs["system_instruction"] = types.Content(parts=[types.Part(text=system_instruction)])
+                    connect_config_kwargs["session_resumption"] = types.SessionResumptionConfig(transparent=True)
                     if not thinking_enabled:
                         connect_config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_budget=0)
                         print("DEBUG: Thinking process disabled in roleplay session", flush=True)
-
-                    if realtime_input_config is not None:
-                        connect_config_kwargs["realtime_input_config"] = realtime_input_config
-
+                    
                     session_config = types.LiveConnectConfig(**connect_config_kwargs)
 
                 async with client.aio.live.connect(
@@ -280,10 +280,10 @@ async def websocket_endpoint(websocket: WebSocket):
                                     is_silence = all(b == 0 for b in audio_data[:100])
                                     print(f"DEBUG: Received audio len={len(audio_data)}, is_silence_start={is_silence}", flush=True)
 
-                                    # 低遅延ストリーミング送信 (クライアントの8000Hz化に合わせてrate=8000に変更)
+                                    # 低遅延ストリーミング送信 (16000Hzに戻す)
                                     try:
                                         await session.send_realtime_input(
-                                            media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=8000")
+                                            media=types.Blob(data=audio_data, mime_type="audio/pcm;rate=16000")
                                         )
                                     except Exception as send_err:
                                         print(f"Error in session.send_realtime_input: {send_err} - Closing connection", flush=True)

@@ -8,6 +8,7 @@ export default function RoleplayPage() {
     const [preps, setPreps] = useState([]);
     const [selectedPrepId, setSelectedPrepId] = useState("");
     const [selectedModel, setSelectedModel] = useState("gemini-live-2.5-flash-native-audio");
+    const [isAISpeaking, setIsAISpeaking] = useState(false);
     const [logs, setLogs] = useState([]);
     const [chatHistory, setChatHistory] = useState([]);
     const [activeUserText, setActiveUserText] = useState("");
@@ -48,6 +49,7 @@ export default function RoleplayPage() {
             }
         });
         activeSourcesRef.current = [];
+        setIsAISpeaking(false);
 
         // 2. 再生キューのタイムスタンプとバッファをリセット
         nextStartTimeRef.current = 0;
@@ -426,8 +428,8 @@ export default function RoleplayPage() {
             const rawFloat32Data = event.data;
             let finalFloat32Data = rawFloat32Data;
 
-            // 8000Hz へダウンサンプリング（データ軽量化のため 16000Hz から 8000Hz に変更）
-            const targetRate = 8000;
+            // 16000Hz へダウンサンプリング（Gemini Live API の標準入力レートに合わせる）
+            const targetRate = 16000;
             const currentRate = ctx.sampleRate;
             if (currentRate > targetRate) {
                 const ratio = currentRate / targetRate;
@@ -562,8 +564,12 @@ export default function RoleplayPage() {
 
         // 再生ソースの追跡登録
         activeSourcesRef.current.push(source);
+        setIsAISpeaking(true);
         source.onended = () => {
             activeSourcesRef.current = activeSourcesRef.current.filter(s => s !== source);
+            if (activeSourcesRef.current.length === 0) {
+                setIsAISpeaking(false);
+            }
         };
 
         source.start(start);
@@ -657,8 +663,16 @@ export default function RoleplayPage() {
                                         <span className="text-2xl">{status === "connected" ? "🤖" : "🌀"}</span>
                                     </div>
                                     <div>
-                                        <p className="text-sm font-bold text-cyan-400">
-                                            {status === "connected" ? "Listening & Speaking" : "Connecting..."}
+                                        <p className={`text-sm font-bold ${
+                                            status !== "connected" ? "text-slate-400" :
+                                            isAISpeaking ? "text-green-400" :
+                                            micMode === "push-to-talk" ? (isPTTActive ? "text-cyan-400" : "text-yellow-400") :
+                                            "text-cyan-400"
+                                        }`}>
+                                            {status !== "connected" ? "Connecting..." :
+                                             isAISpeaking ? "Speaking (AI発話中)" :
+                                             micMode === "push-to-talk" ? (isPTTActive ? "Listening (話してください)" : "Waiting (応答を待っています)") :
+                                             "Listening & Speaking (Hands-Free)"}
                                         </p>
                                         <p className="text-[10px] text-slate-500">Live Gemini API Session</p>
                                     </div>
