@@ -393,7 +393,7 @@ function MtgTrainingPageContent() {
                                 <div className="flex flex-col md:flex-row md:items-center justify-between border-b border-gray-200 pb-4 gap-4">
                                     <div>
                                         <div className="flex flex-wrap items-center gap-3">
-                                            <h1 className="text-2xl sm:text-3xl font-bold text-slate-800 tracking-wide">{selectedTask.media_filename}</h1>
+                                            <h1 className="text-sm sm:text-lg font-bold text-slate-800 tracking-wide break-all">{selectedTask.media_filename}</h1>
                                             <div className="bg-gradient-to-r from-cyan-600 to-blue-600 text-white font-bold px-3.5 py-1 rounded-full text-xs shadow-md flex items-center gap-1">
                                                 <span>総合スコア:</span>
                                                 <span className="text-sm">{displayScore}</span>

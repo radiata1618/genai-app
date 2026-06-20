@@ -329,7 +329,7 @@ export default function ConsultingReviewPage() {
                     ) : selectedTask ? (
                         <div className="flex-1 overflow-y-auto p-4 sm:p-8">
                             <div className="max-w-4xl mx-auto">
-                                <h1 className="text-2xl sm:text-3xl font-extrabold text-slate-900 mb-2">{selectedTask.media_filename}</h1>
+                                <h1 className="text-sm sm:text-lg font-bold text-slate-900 mb-2 break-all">{selectedTask.media_filename}</h1>
                                 <div className="flex items-center space-x-4 mb-4 text-sm text-gray-500">
                                     <span>Analyzed on {new Date(selectedTask.created_at).toLocaleString("ja-JP", { year: "numeric", month: "2-digit", day: "2-digit", hour: "2-digit", minute: "2-digit" })}</span>
                                 </div>
