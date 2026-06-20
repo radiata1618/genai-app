@@ -255,10 +255,11 @@ export default function LiveGeminiPage() {
             });
 
             if (res.ok) {
-                alert("評価が保存されました！履歴画面に戻ります。");
+                const data = await res.json();
+                alert("評価が保存されました！");
                 stopRecording();
                 setShowUploadModal(false);
-                router.push("/consulting/training");
+                router.push(`/consulting/training?taskId=${data.id}`);
             } else {
                 throw new Error(await res.text());
             }
@@ -317,10 +318,11 @@ export default function LiveGeminiPage() {
             });
 
             if (reviewRes.ok) {
-                alert("評価が完了しました！履歴画面へ戻ります。");
+                const data = await reviewRes.json();
+                alert("評価が完了しました！");
                 stopRecording();
                 setShowUploadModal(false);
-                router.push("/consulting/training");
+                router.push(`/consulting/training?taskId=${data.id}`);
             } else {
                 throw new Error(await reviewRes.text());
             }

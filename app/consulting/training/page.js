@@ -1,9 +1,13 @@
 "use client";
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, Suspense } from "react";
 import Link from "next/link";
+import { useSearchParams } from "next/navigation";
 import MobileMenuButton from "../../../components/MobileMenuButton";
 
-export default function MtgTrainingPage() {
+function MtgTrainingPageContent() {
+    const searchParams = useSearchParams();
+    const taskIdParam = searchParams.get("taskId");
+
     const [tasks, setTasks] = useState([]);
     const [selectedTask, setSelectedTask] = useState(null);
     const [isCreating, setIsCreating] = useState(false);
@@ -36,6 +40,23 @@ export default function MtgTrainingPage() {
         window.addEventListener('resize', handleResize);
         return () => window.removeEventListener('resize', handleResize);
     }, []);
+
+    // クエリパラメータの taskId に基づく自動選択
+    useEffect(() => {
+        if (taskIdParam && tasks.length > 0) {
+            const matchedTask = tasks.find(t => t.id === taskIdParam);
+            if (matchedTask) {
+                setSelectedTask(matchedTask);
+                setIsCreating(false);
+                setExpandedTopicIdx(null);
+                setActiveTab("report");
+                // モバイル表示のときはサイドバーを閉じて詳細を見せる
+                if (window.innerWidth < 1024) {
+                    setIsSidebarOpen(false);
+                }
+            }
+        }
+    }, [tasks, taskIdParam]);
 
     const fetchTasks = async () => {
         try {
@@ -417,6 +438,90 @@ export default function MtgTrainingPage() {
 
                                 {activeTab === "report" ? (
                                     <>
+                                        {/* クイックサマリダッシュボード（プレミアムスタッツカード） */}
+                                        <div className="grid grid-cols-2 lg:grid-cols-4 gap-4">
+                                            {/* 総合スコア */}
+                                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">🏆 総合評価</span>
+                                                <div className="flex items-baseline gap-1 mt-2">
+                                                    <span className="text-3xl font-black text-transparent bg-clip-text bg-gradient-to-r from-cyan-600 to-blue-600">{displayScore}</span>
+                                                    <span className="text-xs text-slate-400 font-bold">/ 100 点</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 mt-2 font-medium">
+                                                    {displayScore >= 80 ? "卓越したコミュニケーション" : displayScore >= 60 ? "標準的なビジネスレベル" : "要改善（指導推奨）"}
+                                                </div>
+                                            </div>
+
+                                            {/* フィラー密度メーター */}
+                                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                                                <div className="flex justify-between items-center">
+                                                    <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">📊 フィラー密度</span>
+                                                    {selectedTask.filler_density !== undefined && (
+                                                        <span className={`text-[10px] font-black px-1.5 py-0.5 rounded-md ${
+                                                            selectedTask.filler_density > 2.0 ? 'text-rose-600 bg-rose-50' : 
+                                                            selectedTask.filler_density > 1.0 ? 'text-amber-600 bg-amber-50' : 
+                                                            'text-emerald-600 bg-emerald-50'
+                                                        }`}>
+                                                            {selectedTask.filler_density.toFixed(2)} %
+                                                        </span>
+                                                    )}
+                                                </div>
+                                                {selectedTask.filler_density !== undefined ? (
+                                                    <div className="mt-2">
+                                                        <div className="w-full bg-gray-100 h-2 rounded-full overflow-hidden border border-gray-150">
+                                                            <div 
+                                                                style={{ width: `${Math.min(100, selectedTask.filler_density * 20)}%` }} 
+                                                                className={`h-full rounded-full transition-all duration-500 ${
+                                                                    selectedTask.filler_density > 2.0 ? 'bg-gradient-to-r from-rose-500 to-rose-600' : 
+                                                                    selectedTask.filler_density > 1.0 ? 'bg-gradient-to-r from-amber-500 to-amber-600' : 
+                                                                    'bg-gradient-to-r from-emerald-400 to-emerald-600'
+                                                                }`}
+                                                            />
+                                                        </div>
+                                                        <div className="flex justify-between text-[8px] text-slate-400 mt-1 font-mono">
+                                                            <span>0%</span>
+                                                            <span>2.5%</span>
+                                                            <span>5%+</span>
+                                                        </div>
+                                                    </div>
+                                                ) : (
+                                                    <div className="text-xs text-slate-400 mt-2">データなし</div>
+                                                )}
+                                            </div>
+
+                                            {/* 総発話量 */}
+                                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">🗣️ 推定発話量</span>
+                                                <div className="flex items-baseline gap-1 mt-2">
+                                                    <span className="text-2xl font-black text-slate-700">
+                                                        {selectedTask.total_words_estimate !== undefined ? selectedTask.total_words_estimate : "—"}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 font-bold">文字</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 mt-2 font-medium">
+                                                    {selectedTask.total_words_estimate > 1000 ? "十分な会話量" : "やや短い発話量"}
+                                                </div>
+                                            </div>
+
+                                            {/* 検出フィラー数 */}
+                                            <div className="bg-white p-4 sm:p-5 rounded-2xl border border-gray-200 shadow-sm flex flex-col justify-between">
+                                                <span className="text-[10px] font-bold text-slate-400 tracking-wider uppercase">🚨 検出フィラー数</span>
+                                                <div className="flex items-baseline gap-1 mt-2">
+                                                    <span className={`text-2xl font-black ${
+                                                        (selectedTask.detected_fillers || []).length > 10 ? "text-rose-600" :
+                                                        (selectedTask.detected_fillers || []).length > 3 ? "text-amber-600" :
+                                                        "text-emerald-600"
+                                                    }`}>
+                                                        {(selectedTask.detected_fillers || []).length}
+                                                    </span>
+                                                    <span className="text-xs text-slate-400 font-bold">回</span>
+                                                </div>
+                                                <div className="text-[10px] text-slate-500 mt-2 font-medium">
+                                                    口癖の発生頻度
+                                                </div>
+                                            </div>
+                                        </div>
+
                                         {/* スコアダッシュボード（プログレスバー） */}
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
                                             <div className="bg-white border border-gray-200 p-6 rounded-2xl shadow-sm">
@@ -678,5 +783,13 @@ export default function MtgTrainingPage() {
                 </div>
             </div>
         </div>
+    );
+}
+
+export default function MtgTrainingPage() {
+    return (
+        <Suspense fallback={<div className="flex items-center justify-center min-h-screen bg-gray-50 text-slate-500 text-xs">読み込み中...</div>}>
+            <MtgTrainingPageContent />
+        </Suspense>
     );
 }
