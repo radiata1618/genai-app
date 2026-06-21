@@ -322,9 +322,31 @@ function DabDashboard() {
     const [topics, setTopics] = useState([]);
     const [memory, setMemory] = useState(null);
     const [feed, setFeed] = useState([]);
-    const [feedFilter, setFeedFilter] = useState('unread'); // 'unread', 'all', 'read'
+    const [feedFilter, setFeedFilter] = useState('unread'); // 'unread', 'all', 'read', 'expert'
     const [feedSort, setFeedSort] = useState('priority'); // 'priority', 'newest'
     
+    // 有識者（Expert）状態
+    const [experts, setExperts] = useState([]);
+    const [expertsAnalytics, setExpertsAnalytics] = useState({});
+    const [discoveredExperts, setDiscoveredExperts] = useState([]);
+    const [isDiscovering, setIsDiscovering] = useState(false);
+    
+    // 詳細評価フォームのステート
+    const [reliabilityScore, setReliabilityScore] = useState(3);
+    const [practicalityScore, setPracticalityScore] = useState(3);
+    const [noveltyScore, setNoveltyScore] = useState(3);
+    const [valueScore, setValueScore] = useState(3);
+
+    // 有識者登録フォーム一時入力ステート
+    const [showNewExpertForm, setShowNewExpertForm] = useState(false);
+    const [newExpertName, setNewExpertName] = useState('');
+    const [newExpertId, setNewExpertId] = useState('');
+    const [newExpertZenn, setNewExpertZenn] = useState('');
+    const [newExpertGithub, setNewExpertGithub] = useState('');
+    const [newExpertWebsite, setNewExpertWebsite] = useState('');
+    const [newExpertX, setNewExpertX] = useState('');
+    const [newExpertTopics, setNewExpertTopics] = useState([]);
+
     // ロード状態
     const [loading, setLoading] = useState(true);
     
@@ -378,20 +400,118 @@ function DabDashboard() {
     const fetchInitialData = async () => {
         setLoading(true);
         try {
-            const [topicsData, memoryData, feedData] = await Promise.all([
+            const [topicsData, memoryData, feedData, expertsData, analyticsData] = await Promise.all([
                 dabApi.getTopics(),
                 dabApi.getMemory(),
-                dabApi.getFeed().catch(() => []) // フィードがまだ空でもエラーにしない
+                dabApi.getFeed().catch(() => []),
+                dabApi.getExperts().catch(() => []),
+                dabApi.getExpertsAnalytics().catch(() => ({}))
             ]);
             setTopics(topicsData);
             setMemory(memoryData);
             setFeed(feedData);
+            setExperts(expertsData);
+            setExpertsAnalytics(analyticsData);
         } catch (e) {
             console.error('初期データの取得に失敗しました', e);
         } finally {
             setLoading(false);
         }
     };
+
+    // 有識者の手動登録
+    const handleCreateExpertSubmit = async (e) => {
+        e.preventDefault();
+        if (!newExpertId.trim() || !newExpertName.trim()) {
+            alert('有識者IDと名前は必須です');
+            return;
+        }
+
+        const newExpert = {
+            id: newExpertId.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
+            name: newExpertName.trim(),
+            topic_ids: newExpertTopics,
+            accounts: {
+                zenn: newExpertZenn.trim(),
+                github: newExpertGithub.trim(),
+                website: newExpertWebsite.trim(),
+                x: newExpertX.trim()
+            }
+        };
+
+        setLoading(true);
+        try {
+            const saved = await dabApi.createExpert(newExpert);
+            setExperts(prev => [...prev, saved]);
+            setShowNewExpertForm(false);
+            
+            // 入力リセット
+            setNewExpertId('');
+            setNewExpertName('');
+            setNewExpertZenn('');
+            setNewExpertGithub('');
+            setNewExpertWebsite('');
+            setNewExpertX('');
+            setNewExpertTopics([]);
+            
+            alert('有識者をフォロー登録しました！');
+        } catch (error) {
+            alert(`登録に失敗しました: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 有識者の登録解除
+    const handleDeleteExpert = async (expertId) => {
+        if (!confirm('この有識者のフォローを解除しますか？')) return;
+        setLoading(true);
+        try {
+            await dabApi.deleteExpert(expertId);
+            setExperts(prev => prev.filter(e => e.id !== expertId));
+            alert('有識者フォローを解除しました。');
+        } catch (error) {
+            alert(`フォロー解除に失敗しました: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // AIによる有識者探索の実行
+    const handleDiscoverExperts = async () => {
+        setIsDiscovering(true);
+        try {
+            const results = await dabApi.discoverNewExperts();
+            setDiscoveredExperts(results);
+        } catch (error) {
+            alert(`有識者の探索に失敗しました: ${error.message}`);
+        } finally {
+            setIsDiscovering(false);
+        }
+    };
+
+    // 探索結果からの有識者フォロー追加
+    const handleFollowFromDiscovery = async (expert) => {
+        const expertData = {
+            id: expert.id,
+            name: expert.name,
+            topic_ids: topics.filter(t => expert.topic_suggestions?.includes(t.name)).map(t => t.id),
+            accounts: expert.accounts || {}
+        };
+        
+        setLoading(true);
+        try {
+            const saved = await dabApi.createExpert(expertData);
+            setExperts(prev => [...prev, saved]);
+            setDiscoveredExperts(prev => prev.filter(e => e.id !== expert.id));
+            alert(`有識者「${expert.name}」をフォローしました！`);
+        } catch (error) {
+            alert(`フォローに失敗しました: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
 
     // Imagen 3 Fast 試験生成ハンドラー
     const handleTestImagen = async (item) => {
@@ -564,9 +684,16 @@ function DabDashboard() {
     };
 
     // 記事の評価アクション
-    const handleEvaluate = async (feedId, isKnown, isInterested, grainLevel, skipped = false) => {
+    const handleEvaluate = async (feedId, isKnown, isInterested, grainLevel, skipped = false, useDetail = false) => {
         try {
-            await dabApi.evaluateFeedItem(feedId, isKnown, isInterested, grainLevel, skipped);
+            const detailEval = useDetail ? {
+                reliability: reliabilityScore,
+                practicality: practicalityScore,
+                novelty: noveltyScore,
+                value: valueScore
+            } : null;
+
+            await dabApi.evaluateFeedItem(feedId, isKnown, isInterested, grainLevel, skipped, detailEval);
             
             // ローカルステート更新（評価済みにする）
             setFeed(prev => prev.map(item => {
@@ -574,7 +701,13 @@ function DabDashboard() {
                     return {
                         ...item,
                         read_status: 'READ',
-                        user_evaluations: { is_known: isKnown, is_interested: isInterested, grain_level: grainLevel, skipped }
+                        user_evaluations: { 
+                            is_known: isKnown, 
+                            is_interested: isInterested, 
+                            grain_level: grainLevel, 
+                            skipped,
+                            detail_eval: detailEval
+                        }
                     };
                 }
                 return item;
@@ -583,12 +716,22 @@ function DabDashboard() {
             // スキップでない場合のみ、長期記憶の動的反映を行う
             if (!skipped) {
                 setTimeout(async () => {
-                    const memoryData = await dabApi.getMemory();
-                    const topicsData = await dabApi.getTopics();
+                    const [memoryData, topicsData, analyticsData] = await Promise.all([
+                        dabApi.getMemory(),
+                        dabApi.getTopics(),
+                        dabApi.getExpertsAnalytics().catch(() => ({}))
+                    ]);
                     setMemory(memoryData);
                     setTopics(topicsData);
+                    setExpertsAnalytics(analyticsData);
                 }, 1000); // バックグラウンド処理の完了を少し待ってから再取得
             }
+
+            // スコアをデフォルトにリセット
+            setReliabilityScore(3);
+            setPracticalityScore(3);
+            setNoveltyScore(3);
+            setValueScore(3);
             
         } catch (e) {
             alert(`処理に失敗しました: ${e.message}`);
@@ -729,6 +872,8 @@ function DabDashboard() {
             list = list.filter(item => !item.user_evaluations && item.read_status !== 'READ');
         } else if (feedFilter === 'read') {
             list = list.filter(item => !!item.user_evaluations || item.read_status === 'READ');
+        } else if (feedFilter === 'expert') {
+            list = list.filter(item => !!item.expert_id);
         }
 
         // 2. ソート
@@ -1005,6 +1150,16 @@ function DabDashboard() {
                                             >
                                                 🌐 すべて
                                             </button>
+                                            <button
+                                                onClick={() => setFeedFilter('expert')}
+                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${
+                                                    feedFilter === 'expert'
+                                                        ? 'bg-white text-indigo-700 shadow-sm'
+                                                        : 'text-slate-655 hover:text-slate-900'
+                                                }`}
+                                            >
+                                                ✨ 有識者
+                                            </button>
                                         </div>
 
                                         <div className="flex items-center gap-3">
@@ -1075,6 +1230,11 @@ function DabDashboard() {
                                                                 <span className="text-[9px] font-extrabold bg-indigo-50 border border-indigo-150 text-indigo-700 px-1.5 py-0.2 rounded-md">
                                                                     {item.source}
                                                                 </span>
+                                                                {item.expert_id && (
+                                                                    <span className="text-[9px] font-extrabold bg-pink-50 border border-pink-150 text-pink-700 px-1.5 py-0.2 rounded-md flex items-center gap-0.5 shadow-sm">
+                                                                        ✨ 有識者
+                                                                    </span>
+                                                                )}
                                                                 <span className="font-mono text-slate-400">
                                                                     {formatDate(item.published_at || item.created_at)}
                                                                 </span>
@@ -1183,48 +1343,80 @@ function DabDashboard() {
                                                                     )}
 
                                                                     {/* この情報をさばく（評価）ボタン */}
-                                                                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2.5 mt-0.5">
-                                                                        <div className="text-[10px]">
+                                                                    <div className="flex items-center justify-between border-t border-slate-200/60 pt-2.5 mt-0.5 w-full">
+                                                                        <div className="text-[10px] w-full">
                                                                             {hasEval ? (
-                                                                                <span className={`font-bold text-[9px] px-2 py-0.5 rounded border ${
-                                                                                    item.user_evaluations.skipped ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                                                    item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                                                                    !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                                                                    'bg-slate-100 text-slate-600 border-slate-250'
-                                                                                }`}>
-                                                                                    仕分け済: {item.user_evaluations.skipped ? '⏭️ スキップ（評価なし）' :
-                                                                                             item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
-                                                                                             !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
-                                                                                             '❄️ 既知・関心なし'}
-                                                                                </span>
+                                                                                <div className="flex flex-col gap-2">
+                                                                                    <span className={`font-bold text-[9px] px-2 py-0.5 rounded border inline-block w-fit ${
+                                                                                        item.user_evaluations.skipped ? 'bg-amber-50 text-amber-700 border-amber-200' :
+                                                                                        item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+                                                                                        !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
+                                                                                        'bg-slate-100 text-slate-600 border-slate-250'
+                                                                                    }`}>
+                                                                                        仕分け済: {item.user_evaluations.skipped ? '⏭️ スキップ（評価なし）' :
+                                                                                                 item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
+                                                                                                 !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
+                                                                                                 '❄️ 既知・関心なし'}
+                                                                                    </span>
+                                                                                    {item.user_evaluations.detail_eval && (
+                                                                                        <div className="flex gap-4 text-[9px] text-slate-500 bg-slate-100 p-2 rounded-lg border border-slate-200/70 w-fit">
+                                                                                            <span className="flex items-center gap-0.5">🛡️ 信頼性: <strong>{item.user_evaluations.detail_eval.reliability}</strong></span>
+                                                                                            <span className="flex items-center gap-0.5">🛠️ 実用性: <strong>{item.user_evaluations.detail_eval.practicality}</strong></span>
+                                                                                            <span className="flex items-center gap-0.5">✨ 新規性: <strong>{item.user_evaluations.detail_eval.novelty}</strong></span>
+                                                                                            <span className="flex items-center gap-0.5">💎 価値: <strong>{item.user_evaluations.detail_eval.value}</strong></span>
+                                                                                        </div>
+                                                                                    )}
+                                                                                </div>
                                                                             ) : (
-                                                                                <div className="flex flex-wrap gap-2 items-center">
-                                                                                    <span className="text-[10px] text-slate-450 font-bold">この情報を仕分ける:</span>
-                                                                                    <button
-                                                                                        onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL')}
-                                                                                        className="bg-emerald-50 hover:bg-emerald-100 border border-emerald-200 text-emerald-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
-                                                                                    >
-                                                                                        👍 知ってた・興味あり
-                                                                                    </button>
-                                                                                    <button
-                                                                                        onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL')}
-                                                                                        className="bg-purple-50 hover:bg-purple-100 border border-purple-200 text-purple-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
-                                                                                    >
-                                                                                        🔥 知らない・興味あり
-                                                                                    </button>
-                                                                                    <button
-                                                                                        onClick={() => handleEvaluate(item.id, true, false, 'BASIC')}
-                                                                                        className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
-                                                                                    >
-                                                                                        ❄️ 既知・興味なし
-                                                                                    </button>
-                                                                                    <button
-                                                                                        onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true)}
-                                                                                        className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm ml-auto"
-                                                                                        title="この情報を評価せずにスキップ（既読化）します"
-                                                                                    >
-                                                                                        ⏭️ スキップ
-                                                                                    </button>
+                                                                                <div className="flex flex-col gap-3 w-full bg-slate-100/50 border border-slate-200/70 rounded-xl p-3.5 shadow-inner">
+                                                                                    {/* 詳細評価観点スライダー */}
+                                                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-2 border-b border-slate-200/50">
+                                                                                        <div className="flex flex-col gap-1">
+                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">🛡️ 信頼性: <span className="text-indigo-600 font-black">{reliabilityScore}</span></span>
+                                                                                            <input type="range" min="1" max="5" value={reliabilityScore} onChange={e => setReliabilityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+                                                                                        </div>
+                                                                                        <div className="flex flex-col gap-1">
+                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">🛠️ 実用性: <span className="text-indigo-600 font-black">{practicalityScore}</span></span>
+                                                                                            <input type="range" min="1" max="5" value={practicalityScore} onChange={e => setPracticalityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+                                                                                        </div>
+                                                                                        <div className="flex flex-col gap-1">
+                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">✨ 新規性: <span className="text-indigo-600 font-black">{noveltyScore}</span></span>
+                                                                                            <input type="range" min="1" max="5" value={noveltyScore} onChange={e => setNoveltyScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+                                                                                        </div>
+                                                                                        <div className="flex flex-col gap-1">
+                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">💎 価値: <span className="text-indigo-600 font-black">{valueScore}</span></span>
+                                                                                            <input type="range" min="1" max="5" value={valueScore} onChange={e => setValueScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-255 rounded-lg appearance-none cursor-pointer" />
+                                                                                        </div>
+                                                                                    </div>
+                                                                                    
+                                                                                    <div className="flex flex-wrap gap-2 items-center">
+                                                                                        <span className="text-[10px] text-slate-450 font-bold">仕分ける:</span>
+                                                                                        <button
+                                                                                            onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL', false, true)}
+                                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
+                                                                                        >
+                                                                                            👍 既知・関心あり
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL', false, true)}
+                                                                                            className="bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
+                                                                                        >
+                                                                                            🔥 未知・関心あり
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleEvaluate(item.id, true, false, 'BASIC', false, true)}
+                                                                                            className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
+                                                                                        >
+                                                                                            ❄️ 既知・興味なし
+                                                                                        </button>
+                                                                                        <button
+                                                                                            onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true)}
+                                                                                            className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm ml-auto"
+                                                                                            title="この情報を評価せずにスキップ（既読化）します"
+                                                                                        >
+                                                                                            ⏭️ スキップ
+                                                                                        </button>
+                                                                                    </div>
                                                                                 </div>
                                                                             )}
                                                                         </div>
@@ -1351,6 +1543,244 @@ function DabDashboard() {
                                             {memory?.learning_goals || 'データアーキテクチャコンサルタントとしての自己学習目標。'}
                                         </div>
                                     </div>
+                                </div>
+                            )}
+
+                            {/* 有識者フォローボード */}
+                            {activeTab === 'experts' && (
+                                <div className="space-y-4 animate-in fade-in duration-200">
+                                    <div className="flex justify-between items-center bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+                                        <div>
+                                            <h3 className="text-sm font-bold text-slate-800 flex items-center gap-1">✨ 有識者フォローボード</h3>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">
+                                                あなたが信頼する有識者や特定リポジトリ、メディアのアカウントを登録して、ノイズのない高品質な情報をキャッチアップします。
+                                            </p>
+                                        </div>
+                                        <div className="flex gap-2">
+                                            <button
+                                                onClick={() => setShowNewExpertForm(!showNewExpertForm)}
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow transition-all"
+                                            >
+                                                {showNewExpertForm ? '✕ 閉じる' : '➕ 有識者を追加'}
+                                            </button>
+                                            <button
+                                                onClick={handleDiscoverExperts}
+                                                disabled={isDiscovering}
+                                                className="bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-indigo-200 font-bold text-[10px] px-3 py-1.5 rounded-lg shadow-sm transition-all animate-fadeIn"
+                                            >
+                                                {isDiscovering ? '🔍 探索中...' : '🤖 AI有識者探索'}
+                                            </button>
+                                        </div>
+                                    </div>
+
+                                    {/* 有識者新規登録フォーム */}
+                                    {showNewExpertForm && (
+                                        <form onSubmit={handleCreateExpertSubmit} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm space-y-3 animate-in slide-in-from-top-2 duration-150">
+                                            <h4 className="text-xs font-bold text-slate-800 border-b pb-1.5">👤 新しい有識者の登録</h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">有識者ID (英数字・一意)</label>
+                                                    <input type="text" placeholder="例: seattledataguy" value={newExpertId} onChange={e => setNewExpertId(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">表示名 (名前)</label>
+                                                    <input type="text" placeholder="例: Ben Rogojan" value={newExpertName} onChange={e => setNewExpertName(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn ユーザーID (任意)</label>
+                                                    <input type="text" placeholder="例: kazushi" value={newExpertZenn} onChange={e => setNewExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub リポジトリ (任意)</label>
+                                                    <input type="text" placeholder="例: dbt-labs/dbt-core" value={newExpertGithub} onChange={e => setNewExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Webサイト / RSS URL (任意)</label>
+                                                    <input type="url" placeholder="https://example.com/rss" value={newExpertWebsite} onChange={e => setNewExpertWebsite(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X アカウント名 (任意)</label>
+                                                    <input type="text" placeholder="例: benstancil" value={newExpertX} onChange={e => setNewExpertX(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-1 pt-1">
+                                                <label className="text-[9px] font-bold text-slate-450 uppercase">紐づけるホットトピック (複数選択可)</label>
+                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                    {topics.map(t => {
+                                                        const isSelected = newExpertTopics.includes(t.id);
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={t.id}
+                                                                onClick={() => {
+                                                                    setNewExpertTopics(prev => 
+                                                                        isSelected ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                                                                    );
+                                                                }}
+                                                                className={`px-2 py-0.8 rounded text-[9px] font-bold border transition-all ${
+                                                                    isSelected 
+                                                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-250 shadow-sm' 
+                                                                        : 'bg-white text-slate-550 border-slate-200 hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                {t.name}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                                <button type="button" onClick={() => setShowNewExpertForm(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-3.5 py-1.5 rounded-lg border">キャンセル</button>
+                                                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3.5 py-1.5 rounded-lg shadow">フォロー保存</button>
+                                            </div>
+                                        </form>
+                                    )}
+
+                                    {/* AI有識者探索結果 */}
+                                    {discoveredExperts.length > 0 && (
+                                        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 border border-indigo-950 p-4 rounded-xl shadow-lg space-y-3 animate-in slide-in-from-top-3 duration-200 text-white">
+                                            <div className="flex justify-between items-start">
+                                                <div>
+                                                    <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-1">🤖 AI Discovery Agent: あなたの関心に合う有識者を発見しました</h4>
+                                                    <p className="text-[9px] text-slate-350 mt-0.5">長期記憶や過去の評価傾向を解析し、Web上から厳選された推薦候補です。</p>
+                                                </div>
+                                                <button onClick={() => setDiscoveredExperts([])} className="text-[9px] text-slate-400 hover:text-slate-300 font-bold border border-slate-650 px-2 py-0.5 rounded">✕ 閉じる</button>
+                                            </div>
+                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+                                                {discoveredExperts.map(exp => (
+                                                    <div key={exp.id} className="bg-white/10 backdrop-blur border border-white/10 rounded-xl p-3.5 flex flex-col justify-between gap-3 hover:bg-white/15 transition-all">
+                                                        <div className="space-y-2">
+                                                            <div className="flex justify-between items-start gap-1">
+                                                                <h5 className="font-bold text-xs text-white">{exp.name}</h5>
+                                                                <div className="flex gap-1.5">
+                                                                    {exp.accounts?.zenn && <span className="text-[8px] px-1 bg-sky-500/25 border border-sky-400/30 rounded text-sky-200">Zenn</span>}
+                                                                    {exp.accounts?.github && <span className="text-[8px] px-1 bg-emerald-500/25 border border-emerald-400/30 rounded text-emerald-200">GitHub</span>}
+                                                                </div>
+                                                            </div>
+                                                            <p className="text-[9px] text-slate-300 leading-normal">{exp.reason}</p>
+                                                            <div className="flex flex-wrap gap-1">
+                                                                {exp.topic_suggestions?.map(ts => (
+                                                                    <span key={ts} className="text-[8px] px-1.5 py-0.2 bg-white/5 rounded text-indigo-200 font-bold border border-white/5">{ts}</span>
+                                                                ))}
+                                                            </div>
+                                                        </div>
+                                                        <button
+                                                            onClick={() => handleFollowFromDiscovery(exp)}
+                                                            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white text-[9px] font-extrabold py-1.2 rounded-lg transition-all shadow-sm"
+                                                        >
+                                                            ➕ この人をフォローする
+                                                        </button>
+                                                    </div>
+                                                ))}
+                                            </div>
+                                        </div>
+                                    )}
+
+                                    {/* 登録済み有識者一覧 */}
+                                    {experts.length === 0 ? (
+                                        <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
+                                            <p className="text-slate-400 text-xs font-semibold">現在、フォローしている有識者はいません。</p>
+                                            <p className="text-slate-500 text-[10px] mt-0.5">右上の「有識者を追加」または「AI有識者探索」からフォローを開始してください。</p>
+                                        </div>
+                                    ) : (
+                                        <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                            {experts.map(expert => {
+                                                const scoreData = expertsAnalytics[expert.id] || { reliability: 0, practicality: 0, novelty: 0, value: 0 };
+                                                return (
+                                                    <div key={expert.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col justify-between gap-3.5 hover:shadow-md transition-all">
+                                                        <div className="space-y-3">
+                                                            {/* ヘッダー情報 */}
+                                                            <div className="flex items-start justify-between">
+                                                                <div>
+                                                                    <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                                                                        👤 {expert.name}
+                                                                        <span className="text-[8px] font-mono bg-slate-100 text-slate-450 px-1 py-0.2 rounded border">
+                                                                            ID: {expert.id}
+                                                                        </span>
+                                                                    </h4>
+                                                                    <div className="flex flex-wrap gap-1 mt-1.5">
+                                                                        {expert.topic_ids && expert.topic_ids.map(tid => {
+                                                                            const topic = topics.find(t => t.id === tid);
+                                                                            return topic ? (
+                                                                                <span key={tid} className="text-[8px] font-bold text-indigo-650 bg-indigo-50 border border-indigo-100 px-1.5 py-0.2 rounded">
+                                                                                    {topic.name}
+                                                                                </span>
+                                                                            ) : null;
+                                                                        })}
+                                                                    </div>
+                                                                </div>
+                                                                <button
+                                                                    onClick={() => handleDeleteExpert(expert.id)}
+                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all"
+                                                                >
+                                                                    解除
+                                                                </button>
+                                                            </div>
+
+                                                            {/* アカウントリンク */}
+                                                            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100/60 text-[9px] font-medium text-slate-500">
+                                                                {expert.accounts?.zenn && (
+                                                                    <a href={`https://zenn.dev/${expert.accounts.zenn}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                        📘 Zenn: <span className="underline font-bold text-slate-700">{expert.accounts.zenn}</span>
+                                                                    </a>
+                                                                )}
+                                                                {expert.accounts?.github && (
+                                                                    <a href={`https://github.com/${expert.accounts.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                        💻 GitHub: <span className="underline font-bold text-slate-700">{expert.accounts.github}</span>
+                                                                    </a>
+                                                                )}
+                                                                {expert.accounts?.website && (
+                                                                    <a href={expert.accounts.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                        🌐 Blog: <span className="underline font-bold text-slate-700">Link</span>
+                                                                    </a>
+                                                                )}
+                                                                {expert.accounts?.x && (
+                                                                    <a href={`https://x.com/${expert.accounts.x}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                        🐦 X (旧Twitter): <span className="underline font-bold text-slate-700">@{expert.accounts.x}</span>
+                                                                    </a>
+                                                                )}
+                                                            </div>
+                                                        </div>
+
+                                                        {/* 詳細評価スコア可視化 */}
+                                                        <div className="bg-slate-50/50 border border-slate-200/50 p-2.5 rounded-lg space-y-2">
+                                                            <div className="text-[9px] font-black text-slate-450 tracking-wider uppercase">📊 インプット品質集計 (5.0満点)</div>
+                                                            <div className="space-y-1.5">
+                                                                <div className="flex items-center text-[9px]">
+                                                                    <span className="w-11 font-bold text-slate-600">🛡️ 信頼性:</span>
+                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+                                                                        <div className="h-full bg-emerald-500 rounded" style={{ width: `${(scoreData.reliability || 0) * 20}%` }} />
+                                                                    </div>
+                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.reliability || '0.0'}</span>
+                                                                </div>
+                                                                <div className="flex items-center text-[9px]">
+                                                                    <span className="w-11 font-bold text-slate-600">🛠️ 実用性:</span>
+                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+                                                                        <div className="h-full bg-indigo-500 rounded" style={{ width: `${(scoreData.practicality || 0) * 20}%` }} />
+                                                                    </div>
+                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.practicality || '0.0'}</span>
+                                                                </div>
+                                                                <div className="flex items-center text-[9px]">
+                                                                    <span className="w-11 font-bold text-slate-600">✨ 新規性:</span>
+                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+                                                                        <div className="h-full bg-purple-500 rounded" style={{ width: `${(scoreData.novelty || 0) * 20}%` }} />
+                                                                    </div>
+                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.novelty || '0.0'}</span>
+                                                                </div>
+                                                                <div className="flex items-center text-[9px]">
+                                                                    <span className="w-11 font-bold text-slate-600">💎 価値:</span>
+                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+                                                                        <div className="h-full bg-yellow-500 rounded animate-pulse" style={{ width: `${(scoreData.value || 0) * 20}%`, backgroundColor: '#eab308' }} />
+                                                                    </div>
+                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.value || '0.0'}</span>
+                                                                </div>
+                                                            </div>
+                                                        </div>
+                                                    </div>
+                                                );
+                                            })}
+                                        </div>
+                                    )}
                                 </div>
                             )}
 

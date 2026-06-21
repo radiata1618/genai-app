@@ -28,6 +28,7 @@ export const navItems = [
         category: "DAB",
         items: [
             { name: "Feed", icon: "📰", href: "/dab?tab=feed" },
+            { name: "Experts", icon: "✨", href: "/dab?tab=experts" },
             { name: "Topics", icon: "🔥", href: "/dab?tab=topics" },
             { name: "Core Memory", icon: "🧠", href: "/dab?tab=memory" },
             { name: "Settings", icon: "⚙️", href: "/dab?tab=settings" },
