@@ -81,6 +81,106 @@ def fetch_zenn_rss() -> List[Dict[str, Any]]:
         print(f"Zenn RSS取得エラー: {e}")
         return []
 
+def fetch_zenn_user_rss(user_id: str, expert_name: str, expert_id: str) -> List[Dict[str, Any]]:
+    """特定のZennユーザーのRSSフィードから最新記事を取得してパースする"""
+    url = f"https://zenn.dev/{user_id}/feed"
+    print(f"有識者 {expert_name} の Zenn RSSフィードを取得中: {url}")
+    
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        articles = []
+        
+        channel = root.find('channel')
+        if channel is not None:
+            for item in channel.findall('item'):
+                title_el = item.find('title')
+                link_el = item.find('link')
+                pub_el = item.find('pubDate')
+                
+                title = title_el.text if title_el is not None else "無題"
+                url = link_el.text if link_el is not None else ""
+                pub_date_str = pub_el.text if pub_el is not None else ""
+                
+                pub_date = None
+                if pub_date_str:
+                    try:
+                        pub_date = email.utils.parsedate_to_datetime(pub_date_str)
+                    except Exception:
+                        pub_date = datetime.now(timezone.utc)
+                else:
+                    pub_date = datetime.now(timezone.utc)
+                    
+                if url:
+                    articles.append({
+                        "title": title,
+                        "url": url,
+                        "published_at": pub_date,
+                        "source": f"Zenn ({expert_name})",
+                        "expert_id": expert_id
+                    })
+                
+        return articles
+    except Exception as e:
+        print(f"ZennユーザーRSS取得エラー ({user_id}): {e}")
+        return []
+
+def fetch_github_release_atom(repo: str, expert_name: str, expert_id: str) -> List[Dict[str, Any]]:
+    """特定のGitHubリポジトリのReleases（Atomフィード）から最新リリースを取得してパースする"""
+    url = f"https://github.com/{repo}/releases.atom"
+    print(f"有識者/リポジトリ {expert_name} の GitHub Releases を取得中: {url}")
+    
+    req = urllib.request.Request(
+        url, 
+        headers={'User-Agent': 'Mozilla/5.0 (Windows NT 10.0; Win64; x64)'}
+    )
+    
+    try:
+        with urllib.request.urlopen(req, timeout=10) as response:
+            xml_data = response.read()
+            
+        root = ET.fromstring(xml_data)
+        ns = {'atom': 'http://www.w3.org/2005/Atom'}
+        
+        articles = []
+        for entry in root.findall('atom:entry', ns):
+            title_el = entry.find('atom:title', ns)
+            link_el = entry.find('atom:link', ns)
+            updated_el = entry.find('atom:updated', ns)
+            
+            title = title_el.text if title_el is not None else "New Release"
+            url = link_el.attrib.get('href') if link_el is not None else ""
+            updated_str = updated_el.text if updated_el is not None else ""
+            
+            pub_date = None
+            if updated_str:
+                try:
+                    pub_date = datetime.fromisoformat(updated_str.replace('Z', '+00:00'))
+                except Exception:
+                    pub_date = datetime.now(timezone.utc)
+            else:
+                pub_date = datetime.now(timezone.utc)
+                
+            if url:
+                articles.append({
+                    "title": f"[{repo}] {title}",
+                    "url": url,
+                    "published_at": pub_date,
+                    "source": f"GitHub ({expert_name})",
+                    "expert_id": expert_id
+                })
+        return articles
+    except Exception as e:
+        print(f"GitHub Releases取得エラー ({repo}): {e}")
+        return []
+
 DEFAULT_FILTER_PROMPT = """あなたはデータアーキテクチャコンサルタントの自己学習支援システム用の分類AIです。
 入力された技術記事（タイトルとURL）が、「データアーキテクチャコンサルタントが学習すべきか」を判定してください。
 
@@ -405,8 +505,30 @@ async def run_ingestion_pipeline():
     for topic in active_topics:
         topic_articles = await fetch_web_trends_via_gemini(topic["name"])
         web_articles.extend(topic_articles)
+
+    # 3.5 有識者の発信情報を収集
+    expert_articles = []
+    try:
+        experts_docs = db.collection("dab_experts").get()
+        for doc in experts_docs:
+            expert = doc.to_dict()
+            expert_id = expert.get("id")
+            expert_name = expert.get("name")
+            accounts = expert.get("accounts", {})
+            
+            # Zennユーザーフィード
+            if accounts.get("zenn"):
+                z_arts = fetch_zenn_user_rss(accounts["zenn"], expert_name, expert_id)
+                expert_articles.extend(z_arts)
+                
+            # GitHubリリース
+            if accounts.get("github"):
+                g_arts = fetch_github_release_atom(accounts["github"], expert_name, expert_id)
+                expert_articles.extend(g_arts)
+    except Exception as exp_err:
+        print(f"有識者の情報収集エラー: {exp_err}")
         
-    all_raw_articles = zenn_articles + web_articles
+    all_raw_articles = zenn_articles + web_articles + expert_articles
     print(f"合計 {len(all_raw_articles)} 件のフィルタ適用済み記事候補が集まりました。")
     
     # 4. 重複排除とフィルタリング
@@ -438,8 +560,10 @@ async def run_ingestion_pipeline():
         # 記事をアクティブなホットトピックにマッピング
         mapped_topic_ids = await map_article_to_topics(article["title"], summary, active_topics)
         
-        # Zenn記事でどれにもマッピングされなかった場合は、ノイズとしてスキップ
-        if not mapped_topic_ids and article["source"] == "Zenn":
+        # Zenn記事でどれにもマッピングされなかった場合は、ノイズとしてスキップ（ただし有識者投稿は除く）
+        is_zenn_source = "Zenn" in article["source"]
+        is_expert = bool(article.get("expert_id"))
+        if not mapped_topic_ids and is_zenn_source and not is_expert:
             print("  -> 現在のホットトピックに関連しないため、ノイズとしてスキップします。")
             continue
             
@@ -470,7 +594,8 @@ async def run_ingestion_pipeline():
             "target_level": meta.get("target_level", "コンサル向け"),
             "benefit": meta.get("benefit", "最新トレンド理解"),
             "mermaid_code": meta.get("mermaid_code", ""),
-            "image_url": meta.get("image_url")
+            "image_url": meta.get("image_url"),
+            "expert_id": article.get("expert_id") # 有識者ID
         }
         
         doc_ref.set(feed_data)

@@ -99,16 +99,20 @@ export const dabApi = {
     },
 
     // 記事評価の記録
-    evaluateFeedItem: async (feedId, isKnown, isInterested, grainLevel, skipped = false) => {
+    evaluateFeedItem: async (feedId, isKnown, isInterested, grainLevel, skipped = false, detailEval = null) => {
+        const body = {
+            is_known: isKnown,
+            is_interested: isInterested,
+            grain_level: grainLevel,
+            skipped: skipped,
+        };
+        if (detailEval) {
+            body.detail_eval = detailEval;
+        }
         const res = await fetch(`${API_BASE}/feed/${feedId}/evaluate`, {
             method: 'POST',
             headers: { 'Content-Type': 'application/json' },
-            body: JSON.stringify({
-                is_known: isKnown,
-                is_interested: isInterested,
-                grain_level: grainLevel,
-                skipped: skipped,
-            }),
+            body: JSON.stringify(body),
         });
         if (!res.ok) throw new Error('評価の保存に失敗しました');
         return res.json();
@@ -147,6 +151,47 @@ export const dabApi = {
             const err = await res.json().catch(() => ({}));
             throw new Error(err.detail || 'Imagen画像生成に失敗しました');
         }
+        return res.json();
+    },
+
+    // 有識者一覧取得
+    getExperts: async () => {
+        const res = await fetch(`${API_BASE}/experts`);
+        if (!res.ok) throw new Error('有識者一覧の取得に失敗しました');
+        return res.json();
+    },
+
+    // 新しい有識者の登録
+    createExpert: async (expert) => {
+        const res = await fetch(`${API_BASE}/experts`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(expert),
+        });
+        if (!res.ok) throw new Error('有識者の登録に失敗しました');
+        return res.json();
+    },
+
+    // 有識者の削除
+    deleteExpert: async (expertId) => {
+        const res = await fetch(`${API_BASE}/experts/${expertId}`, {
+            method: 'DELETE',
+        });
+        if (!res.ok) throw new Error('有識者の削除に失敗しました');
+        return res.json();
+    },
+
+    // 有識者ごとの評価集計の取得
+    getExpertsAnalytics: async () => {
+        const res = await fetch(`${API_BASE}/experts/analytics`);
+        if (!res.ok) throw new Error('有識者分析データの取得に失敗しました');
+        return res.json();
+    },
+
+    // AIによる新規有識者の探索
+    discoverNewExperts: async () => {
+        const res = await fetch(`${API_BASE}/experts/discovery`);
+        if (!res.ok) throw new Error('有識者探索に失敗しました');
         return res.json();
     },
 };

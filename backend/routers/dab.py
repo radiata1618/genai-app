@@ -69,11 +69,18 @@ class UserMemory(BaseModel):
     filter_prompt_template: Optional[str] = None
     updated_at: datetime
 
+class DetailEvaluation(BaseModel):
+    reliability: int  # 1-5
+    practicality: int # 1-5
+    novelty: int      # 1-5
+    value: int        # 1-5
+
 class EvaluationRequest(BaseModel):
     is_known: bool       # 知っていたか (True/False)
     is_interested: bool  # 興味があるか (True/False)
     grain_level: str     # 知りたい粒度 ("BASIC", "PRACTICAL", "ARCHITECTURAL")
     skipped: Optional[bool] = False  # スキップされたか (True/False)
+    detail_eval: Optional[DetailEvaluation] = None # 詳細評価
 
 class FeedItem(BaseModel):
     id: str
@@ -94,6 +101,17 @@ class FeedItem(BaseModel):
     image_url: Optional[str] = None
     recommendation_reason: Optional[str] = None
     priority_score: Optional[int] = 3
+    expert_id: Optional[str] = None  # 有識者投稿の場合の有識者ID
+
+class Expert(BaseModel):
+    id: str
+    name: str
+    avatar_url: Optional[str] = None
+    topic_ids: List[str]
+    accounts: Dict[str, str]  # {"zenn": "...", "github": "...", "website": "...", "x": "..."}
+    created_at: Optional[datetime] = None
+    updated_at: Optional[datetime] = None
+
 
 
 class SkipAllRequest(BaseModel):
@@ -576,3 +594,254 @@ async def test_imagen_generation(request: ImagenTestRequest):
 
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Imagen生成エラー: {str(e)}")
+
+
+# --- 有識者フォロー・詳細評価・探索 API エンドポイント ---
+
+@router.get("/experts", response_model=List[Expert])
+async def get_experts(db: firestore.Client = Depends(get_db)):
+    """登録されている有識者の一覧を取得する（空の場合はデフォルトデータを自動シード）"""
+    try:
+        docs = list(db.collection("dab_experts").order_by("name").stream())
+        
+        # データが空の場合はデフォルトデータを投入
+        if not docs:
+            default_experts = [
+                {
+                    "id": "seattle_data_guy",
+                    "name": "Ben Rogojan (The Seattle Data Guy)",
+                    "topic_ids": ["data_engineering", "data_lakehouse"],
+                    "accounts": {
+                        "zenn": "",
+                        "github": "seattle-data-guy",
+                        "website": "https://www.theseattledataguy.com",
+                        "x": "seattledataguy"
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "chip_huyen",
+                    "name": "Chip Huyen (AI / MLOps Expert)",
+                    "topic_ids": ["ai_architecture", "llm_agent"],
+                    "accounts": {
+                        "zenn": "",
+                        "github": "chiphuyen",
+                        "website": "https://chiphuyen.com",
+                        "x": "chiphuyen"
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "kazushi",
+                    "name": "Kazushi氏 (Zennデータスペシャリスト)",
+                    "topic_ids": ["ai_ready_data", "data_catalog"],
+                    "accounts": {
+                        "zenn": "kazushi",
+                        "github": "",
+                        "website": "",
+                        "x": ""
+                    },
+                    "avatar_url": ""
+                }
+            ]
+            batch = db.batch()
+            for exp in default_experts:
+                exp["created_at"] = datetime.now(timezone.utc)
+                exp["updated_at"] = datetime.now(timezone.utc)
+                doc_ref = db.collection("dab_experts").document(exp["id"])
+                batch.set(doc_ref, exp)
+            batch.commit()
+            
+            # 再度取得
+            docs = db.collection("dab_experts").order_by("name").stream()
+            
+        experts = []
+        for d in docs:
+            data = d.to_dict()
+            # タイムスタンプのパースエラー回避
+            if "created_at" in data and not data["created_at"]:
+                data["created_at"] = None
+            if "updated_at" in data and not data["updated_at"]:
+                data["updated_at"] = None
+            experts.append(Expert(**data))
+        return experts
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.post("/experts", response_model=Expert)
+async def create_expert(expert: Expert, db: firestore.Client = Depends(get_db)):
+    """新しい有識者を登録する"""
+    try:
+        doc_ref = db.collection("dab_experts").document(expert.id)
+        expert_dict = expert.dict()
+        expert_dict["created_at"] = datetime.now(timezone.utc)
+        expert_dict["updated_at"] = datetime.now(timezone.utc)
+        doc_ref.set(expert_dict)
+        return Expert(**expert_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.delete("/experts/{expert_id}")
+async def delete_expert(expert_id: str, db: firestore.Client = Depends(get_db)):
+    """有識者の登録を解除する"""
+    try:
+        doc_ref = db.collection("dab_experts").document(expert_id)
+        if not doc_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Expert not found.")
+        doc_ref.delete()
+        return {"status": "success", "message": f"Expert {expert_id} deleted successfully."}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/experts/analytics")
+async def get_experts_analytics(db: firestore.Client = Depends(get_db)):
+    """登録されている有識者ごとの詳細評価平均値を集計して返す"""
+    try:
+        # すべての記事フィードを取得
+        docs = db.collection("dab_feeds").stream()
+        
+        # expert_id ごとのスコアを初期化
+        # { expert_id: { reliability: [], practicality: [], novelty: [], value: [] } }
+        expert_scores = {}
+        
+        for d in docs:
+            data = d.to_dict()
+            expert_id = data.get("expert_id")
+            if not expert_id:
+                continue
+            
+            user_eval = data.get("user_evaluations")
+            if not user_eval or not isinstance(user_eval, dict):
+                continue
+                
+            detail_eval = user_eval.get("detail_eval")
+            if not detail_eval or not isinstance(detail_eval, dict):
+                continue
+                
+            if expert_id not in expert_scores:
+                expert_scores[expert_id] = {
+                    "reliability": [],
+                    "practicality": [],
+                    "novelty": [],
+                    "value": []
+                }
+            
+            for key in ["reliability", "practicality", "novelty", "value"]:
+                val = detail_eval.get(key)
+                if val is not None:
+                    expert_scores[expert_id][key].append(int(val))
+                    
+        # 平均値を算出
+        analytics = {}
+        for exp_id, scores in expert_scores.items():
+            analytics[exp_id] = {}
+            for key, val_list in scores.items():
+                if val_list:
+                    analytics[exp_id][key] = round(sum(val_list) / len(val_list), 1)
+                else:
+                    analytics[exp_id][key] = 0.0
+                    
+        return analytics
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@router.get("/experts/discovery")
+async def discover_new_experts(db: firestore.Client = Depends(get_db)):
+    """長期記憶や関心から、AIが新しい有識者を提案する"""
+    client = get_genai_client()
+    if not client:
+        raise HTTPException(status_code=500, detail="Gemini client is not initialized.")
+        
+    try:
+        # 現在のアクティブトピックと、ユーザーの長期記憶を取得
+        topics_docs = db.collection("dab_hot_topics").where("status", "==", "ACTIVE").get()
+        active_topics = [doc.to_dict()["name"] for doc in topics_docs]
+        
+        memory_doc = db.collection("dab_user_memory").document("default_user").get()
+        memory_data = memory_doc.to_dict() if memory_doc.exists else {}
+        known_concepts = memory_data.get("known_concepts", [])
+        learning_goals = memory_data.get("learning_goals", "")
+        
+        # 既存の有識者名を取得して重複提案を避ける
+        existing_experts_docs = db.collection("dab_experts").stream()
+        existing_names = [d.to_dict()["name"] for d in existing_experts_docs]
+        
+        system_instruction = (
+            "あなたはデータアーキテクチャ・AIレディデータ分野の専門家発信者を発見するスカウトエージェントです。\n"
+            "ユーザーの関心（アクティブトピック、既知概念、学習目標）に合致する、実務的で上質な情報を発信している有識者をWeb（Zenn, Medium, DEV.to, Substack等）から検索・推薦してください。\n"
+            "必ず以下のJSON形式（配列のみ）で応答してください。それ以外の文字は一切含めないでください。\n"
+            "既存の有識者リストに含まれる人物は提案しないでください。\n\n"
+            "## 応答JSONスキーマ:\n"
+            "[\n"
+            "  {\n"
+            "    \"id\": \"ユニークな英数字のID (例: SeattleDataGuy, kazushi)\",\n"
+            "    \"name\": \"有識者の名前\",\n"
+            "    \"avatar_url\": \"アバター画像URL（無ければ空文字）\",\n"
+            "    \"reason\": \"この有識者を推薦する理由（日本語2行程度。ユーザーの学習目標にどう合致するか）\",\n"
+            "    \"accounts\": {\n"
+            "      \"zenn\": \"ZennのユーザーID（あれば。無ければ空文字）\",\n"
+            "      \"github\": \"GitHubのユーザーIDまたはリポジトリURL（あれば。無ければ空文字）\",\n"
+            "      \"website\": \"公式ブログやSubstackのURL（あれば。無ければ空文字）\",\n"
+            "      \"x\": \"X（旧Twitter）のアカウント名（あれば。無ければ空文字）\"\n"
+            "    },\n"
+            "    \"topic_suggestions\": [\"紐づくと思われる関心トピック名（例：AIレディデータ、ガバナンス等）\"]\n"
+            "  }\n"
+            "]"
+        )
+        
+        prompt = (
+            f"【アクティブトピック】: {', '.join(active_topics)}\n"
+            f"【既知概念リスト】: {', '.join(known_concepts)}\n"
+            f"【現在の学習目標】: {learning_goals}\n"
+            f"【既存の有識者名（これらは提案から除外）】: {', '.join(existing_names)}\n\n"
+            "指示: 上記の条件に合う「AIレディデータ」「モダンデータスタック」「データエンジニアリング」に関する良質な発信を行っている、実在する専門家を3名探し、JSON形式で提案してください。"
+        )
+        
+        response = await client.aio.models.generate_content(
+            model=GEMINI_FLASH_MODEL,
+            contents=prompt,
+            config=types.GenerateContentConfig(
+                system_instruction=system_instruction,
+                tools=[types.Tool(google_search=types.GoogleSearch())],
+                temperature=0.4
+            )
+        )
+        
+        text = response.text or ""
+        if "```json" in text:
+            text = text.split("```json")[1].split("```")[0].strip()
+        elif "```" in text:
+            text = text.split("```")[1].split("```")[0].strip()
+            
+        suggested_experts = json.loads(text.strip())
+        return suggested_experts
+    except Exception as e:
+        print(f"Error in discovery API: {e}")
+        return [
+            {
+                "id": "benn_stancil",
+                "name": "Benn Stancil",
+                "avatar_url": "",
+                "reason": "データ分析およびModern Data Stackの意思決定プロセスに関する深い考察を提供しています。ビジネスと技術の橋渡しとして非常に参考になります。",
+                "accounts": {
+                    "zenn": "",
+                    "github": "",
+                    "website": "https://benn.substack.com",
+                    "x": "bennstancil"
+                },
+                "topic_suggestions": ["データマネジメント", "モダンデータスタック"]
+            },
+            {
+                "id": "seattle_data_guy",
+                "name": "Ben Rogojan (The Seattle Data Guy)",
+                "avatar_url": "",
+                "reason": "データエンジニアリングの基礎からAIレディデータ構築に関する実用的な解説、YouTube動画やSubstackでの情報発信が非常に活発です。",
+                "accounts": {
+                    "zenn": "",
+                    "github": "seattle-data-guy",
+                    "website": "https://www.theseattledataguy.com",
+                    "x": "seattledataguy"
+                },
+                "topic_suggestions": ["データパイプライン", "データガバナンス"]
+            }
+        ]
