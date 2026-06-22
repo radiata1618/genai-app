@@ -346,6 +346,14 @@ function DabDashboard() {
     const [newExpertWebsite, setNewExpertWebsite] = useState('');
     const [newExpertX, setNewExpertX] = useState('');
     const [newExpertTopics, setNewExpertTopics] = useState([]);
+    // 有識者編集フォーム一時ステート
+    const [editingExpert, setEditingExpert] = useState(null); // 現在編集中の Expert オブジェクト
+    const [editExpertName, setEditExpertName] = useState('');
+    const [editExpertZenn, setEditExpertZenn] = useState('');
+    const [editExpertGithub, setEditExpertGithub] = useState('');
+    const [editExpertWebsite, setEditExpertWebsite] = useState('');
+    const [editExpertX, setEditExpertX] = useState('');
+    const [editExpertTopics, setEditExpertTopics] = useState([]);
 
     // ロード状態
     const [loading, setLoading] = useState(true);
@@ -496,6 +504,73 @@ function DabDashboard() {
             alert('有識者フォローを解除しました。');
         } catch (error) {
             alert(`フォロー解除に失敗しました: ${error.message}`);
+        } finally {
+            setLoading(false);
+        }
+    };
+
+    // 有識者の編集開始
+    const handleStartEditExpert = (expert) => {
+        // 新規登録フォームは閉じる
+        setShowNewExpertForm(false);
+        
+        setEditingExpert(expert);
+        setEditExpertName(expert.name || '');
+        setEditExpertZenn(expert.accounts?.zenn || '');
+        setEditExpertGithub(expert.accounts?.github || '');
+        setEditExpertWebsite(expert.accounts?.website || '');
+        setEditExpertX(expert.accounts?.x || '');
+        setEditExpertTopics(expert.topic_ids || []);
+    };
+
+    // 有識者情報の更新保存
+    const handleUpdateExpertSubmit = async (e) => {
+        e.preventDefault();
+        if (!editingExpert) return;
+        if (!editExpertName.trim()) {
+            alert('名前は必須です');
+            return;
+        }
+
+        // ZennとGitHubの入力値クレンジング（URLが入力された場合はIDを抽出する）
+        let cleanedZenn = editExpertZenn.trim();
+        if (cleanedZenn.includes('zenn.dev/')) {
+            const parts = cleanedZenn.split('zenn.dev/');
+            cleanedZenn = parts[parts.length - 1].split('/')[0].split('?')[0];
+        }
+
+        let cleanedGithub = editExpertGithub.trim();
+        if (cleanedGithub.includes('github.com/')) {
+            const parts = cleanedGithub.split('github.com/');
+            const path = parts[parts.length - 1].split('?')[0];
+            const pathParts = path.split('/');
+            if (pathParts.length >= 2) {
+                cleanedGithub = `${pathParts[0]}/${pathParts[1]}`;
+            } else {
+                cleanedGithub = pathParts[0];
+            }
+        }
+
+        const updatedExpert = {
+            id: editingExpert.id,
+            name: editExpertName.trim(),
+            topic_ids: editExpertTopics,
+            accounts: {
+                zenn: cleanedZenn,
+                github: cleanedGithub,
+                website: editExpertWebsite.trim(),
+                x: editExpertX.trim()
+            }
+        };
+
+        setLoading(true);
+        try {
+            const saved = await dabApi.updateExpert(editingExpert.id, updatedExpert);
+            setExperts(prev => prev.map(exp => exp.id === editingExpert.id ? saved : exp));
+            setEditingExpert(null);
+            alert('有識者情報を更新しました！');
+        } catch (error) {
+            alert(`更新に失敗しました: ${error.message}`);
         } finally {
             setLoading(false);
         }
@@ -1602,6 +1677,68 @@ function DabDashboard() {
                                         </form>
                                     )}
 
+                                    {/* 有識者情報の編集フォーム */}
+                                    {editingExpert && (
+                                        <form onSubmit={handleUpdateExpertSubmit} className="bg-white border border-slate-200 p-4 rounded-xl shadow-sm space-y-3 animate-in slide-in-from-top-2 duration-150">
+                                            <h4 className="text-xs font-bold text-slate-800 border-b pb-1.5 flex justify-between items-center">
+                                                <span>👤 有識者情報の編集</span>
+                                                <span className="text-[10px] text-slate-400 font-normal">ID: {editingExpert.id} (変更不可)</span>
+                                            </h4>
+                                            <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">表示名 (名前) *</label>
+                                                    <input type="text" placeholder="例: Ben Rogojan" value={editExpertName} onChange={e => setEditExpertName(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn ユーザーID またはプロフィールURL (任意)</label>
+                                                    <input type="text" placeholder="例: kazushi または https://zenn.dev/kazushi" value={editExpertZenn} onChange={e => setEditExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub owner/repo またはリポジトリURL (任意)</label>
+                                                    <input type="text" placeholder="例: dbt-labs/dbt-core または https://github.com/dbt-labs/dbt-core" value={editExpertGithub} onChange={e => setEditExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Webサイト / RSS URL (任意)</label>
+                                                    <input type="url" placeholder="https://example.com/rss" value={editExpertWebsite} onChange={e => setEditExpertWebsite(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                                <div className="flex flex-col gap-1">
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X アカウント名 またはURL (任意)</label>
+                                                    <input type="text" placeholder="例: benstancil" value={editExpertX} onChange={e => setEditExpertX(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                </div>
+                                            </div>
+                                            <div className="flex flex-col gap-1 pt-1">
+                                                <label className="text-[9px] font-bold text-slate-450 uppercase">紐づけるホットトピック (複数選択可)</label>
+                                                <div className="flex flex-wrap gap-1.5 pt-1">
+                                                    {topics.map(t => {
+                                                        const isSelected = editExpertTopics.includes(t.id);
+                                                        return (
+                                                            <button
+                                                                type="button"
+                                                                key={t.id}
+                                                                onClick={() => {
+                                                                    setEditExpertTopics(prev => 
+                                                                        isSelected ? prev.filter(id => id !== t.id) : [...prev, t.id]
+                                                                    );
+                                                                }}
+                                                                className={`px-2 py-0.8 rounded text-[9px] font-bold border transition-all ${
+                                                                    isSelected 
+                                                                        ? 'bg-indigo-50 text-indigo-700 border-indigo-250 shadow-sm' 
+                                                                        : 'bg-white text-slate-550 border-slate-200 hover:bg-slate-50'
+                                                                }`}
+                                                            >
+                                                                {t.name}
+                                                            </button>
+                                                        );
+                                                    })}
+                                                </div>
+                                            </div>
+                                            <div className="flex justify-end gap-2 pt-2">
+                                                <button type="button" onClick={() => setEditingExpert(null)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-3.5 py-1.5 rounded-lg border">キャンセル</button>
+                                                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3.5 py-1.5 rounded-lg shadow">変更を保存</button>
+                                            </div>
+                                        </form>
+                                    )}
+
                                     {/* 登録済み有識者一覧 */}
                                     {experts.length === 0 ? (
                                         <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
@@ -1631,12 +1768,20 @@ function DabDashboard() {
                                                                         })}
                                                                     </div>
                                                                 </div>
-                                                                <button
-                                                                    onClick={() => handleDeleteExpert(expert.id)}
-                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all cursor-pointer"
-                                                                >
-                                                                    解除
-                                                                </button>
+                                                                <div className="flex gap-1.5">
+                                                                    <button
+                                                                        onClick={() => handleStartEditExpert(expert)}
+                                                                        className="text-[9px] font-bold text-indigo-650 hover:text-indigo-700 bg-indigo-50 hover:bg-indigo-100/50 border border-indigo-200 px-2 py-0.8 rounded-md transition-all cursor-pointer"
+                                                                    >
+                                                                        編集
+                                                                    </button>
+                                                                    <button
+                                                                        onClick={() => handleDeleteExpert(expert.id)}
+                                                                        className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all cursor-pointer"
+                                                                    >
+                                                                        解除
+                                                                    </button>
+                                                                </div>
                                                             </div>
 
                                                             {/* アカウントリンク */}

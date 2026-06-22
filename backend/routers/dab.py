@@ -669,6 +669,26 @@ async def create_expert(expert: Expert, db: firestore.Client = Depends(get_db)):
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@router.put("/experts/{expert_id}", response_model=Expert)
+async def update_expert(expert_id: str, expert: Expert, db: firestore.Client = Depends(get_db)):
+    """有識者の登録情報を更新する"""
+    try:
+        doc_ref = db.collection("dab_experts").document(expert_id)
+        if not doc_ref.get().exists:
+            raise HTTPException(status_code=404, detail="Expert not found.")
+        expert_dict = expert.dict()
+        expert_dict["id"] = expert_id
+        expert_dict["updated_at"] = datetime.now(timezone.utc)
+        
+        # created_atを保持する
+        existing_data = doc_ref.get().to_dict()
+        expert_dict["created_at"] = existing_data.get("created_at") if existing_data else datetime.now(timezone.utc)
+        
+        doc_ref.set(expert_dict)
+        return Expert(**expert_dict)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 @router.delete("/experts/{expert_id}")
 async def delete_expert(expert_id: str, db: firestore.Client = Depends(get_db)):
     """有識者の登録を解除する"""
