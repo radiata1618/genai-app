@@ -401,8 +401,8 @@ function DabDashboard() {
         setLoading(true);
         try {
             const [topicsData, memoryData, feedData, expertsData, analyticsData] = await Promise.all([
-                dabApi.getTopics(),
-                dabApi.getMemory(),
+                dabApi.getTopics().catch(() => []),
+                dabApi.getMemory().catch(() => ({ known_concepts: [], learning_goals: '', summary_prompt_template: '', filter_prompt_template: '' })),
                 dabApi.getFeed().catch(() => []),
                 dabApi.getExperts().catch(() => []),
                 dabApi.getExpertsAnalytics().catch(() => ({}))
@@ -422,18 +422,42 @@ function DabDashboard() {
     // 有識者の手動登録
     const handleCreateExpertSubmit = async (e) => {
         e.preventDefault();
-        if (!newExpertId.trim() || !newExpertName.trim()) {
-            alert('有識者IDと名前は必須です');
+        if (!newExpertName.trim()) {
+            alert('名前は必須です');
             return;
         }
 
+        // ZennとGitHubの入力値クレンジング（URLが入力された場合はIDを抽出する）
+        let cleanedZenn = newExpertZenn.trim();
+        if (cleanedZenn.includes('zenn.dev/')) {
+            const parts = cleanedZenn.split('zenn.dev/');
+            cleanedZenn = parts[parts.length - 1].split('/')[0].split('?')[0];
+        }
+
+        let cleanedGithub = newExpertGithub.trim();
+        if (cleanedGithub.includes('github.com/')) {
+            const parts = cleanedGithub.split('github.com/');
+            const path = parts[parts.length - 1].split('?')[0];
+            const pathParts = path.split('/');
+            if (pathParts.length >= 2) {
+                cleanedGithub = `${pathParts[0]}/${pathParts[1]}`;
+            } else {
+                cleanedGithub = pathParts[0];
+            }
+        }
+
+        // 有識者IDを自動生成（Zenn ID -> GitHub ID -> タイムスタンプベース）
+        const expertId = cleanedZenn 
+            ? cleanedZenn 
+            : (cleanedGithub ? cleanedGithub.replace('/', '_') : `expert_${Date.now()}`);
+
         const newExpert = {
-            id: newExpertId.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
+            id: expertId.toLowerCase().replace(/[^a-z0-9_]/g, ''),
             name: newExpertName.trim(),
             topic_ids: newExpertTopics,
             accounts: {
-                zenn: newExpertZenn.trim(),
-                github: newExpertGithub.trim(),
+                zenn: cleanedZenn,
+                github: cleanedGithub,
                 website: newExpertWebsite.trim(),
                 x: newExpertX.trim()
             }
@@ -1349,74 +1373,27 @@ function DabDashboard() {
                                                                                 <div className="flex flex-col gap-2">
                                                                                     <span className={`font-bold text-[9px] px-2 py-0.5 rounded border inline-block w-fit ${
                                                                                         item.user_evaluations.skipped ? 'bg-amber-50 text-amber-700 border-amber-200' :
-                                                                                        item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
-                                                                                        !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
-                                                                                        'bg-slate-100 text-slate-600 border-slate-250'
+                                                                                        'bg-emerald-50 text-emerald-700 border-emerald-200'
                                                                                     }`}>
-                                                                                        仕分け済: {item.user_evaluations.skipped ? '⏭️ スキップ（評価なし）' :
-                                                                                                 item.user_evaluations.is_known && item.user_evaluations.is_interested ? '👍 既知・関心あり' :
-                                                                                                 !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '🔥 未知・関心あり' :
-                                                                                                 '❄️ 既知・関心なし'}
+                                                                                        仕分け済: {item.user_evaluations.skipped ? '⏭️ 興味なし（スキップ）' : '👍 役に立った'}
                                                                                     </span>
-                                                                                    {item.user_evaluations.detail_eval && (
-                                                                                        <div className="flex gap-4 text-[9px] text-slate-500 bg-slate-100 p-2 rounded-lg border border-slate-200/70 w-fit">
-                                                                                            <span className="flex items-center gap-0.5">🛡️ 信頼性: <strong>{item.user_evaluations.detail_eval.reliability}</strong></span>
-                                                                                            <span className="flex items-center gap-0.5">🛠️ 実用性: <strong>{item.user_evaluations.detail_eval.practicality}</strong></span>
-                                                                                            <span className="flex items-center gap-0.5">✨ 新規性: <strong>{item.user_evaluations.detail_eval.novelty}</strong></span>
-                                                                                            <span className="flex items-center gap-0.5">💎 価値: <strong>{item.user_evaluations.detail_eval.value}</strong></span>
-                                                                                        </div>
-                                                                                    )}
                                                                                 </div>
                                                                             ) : (
-                                                                                <div className="flex flex-col gap-3 w-full bg-slate-100/50 border border-slate-200/70 rounded-xl p-3.5 shadow-inner">
-                                                                                    {/* 詳細評価観点スライダー */}
-                                                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-2 border-b border-slate-200/50">
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">🛡️ 信頼性: <span className="text-indigo-600 font-black">{reliabilityScore}</span></span>
-                                                                                            <input type="range" min="1" max="5" value={reliabilityScore} onChange={e => setReliabilityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
-                                                                                        </div>
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">🛠️ 実用性: <span className="text-indigo-600 font-black">{practicalityScore}</span></span>
-                                                                                            <input type="range" min="1" max="5" value={practicalityScore} onChange={e => setPracticalityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
-                                                                                        </div>
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">✨ 新規性: <span className="text-indigo-600 font-black">{noveltyScore}</span></span>
-                                                                                            <input type="range" min="1" max="5" value={noveltyScore} onChange={e => setNoveltyScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
-                                                                                        </div>
-                                                                                        <div className="flex flex-col gap-1">
-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">💎 価値: <span className="text-indigo-600 font-black">{valueScore}</span></span>
-                                                                                            <input type="range" min="1" max="5" value={valueScore} onChange={e => setValueScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-255 rounded-lg appearance-none cursor-pointer" />
-                                                                                        </div>
-                                                                                    </div>
-                                                                                    
-                                                                                    <div className="flex flex-wrap gap-2 items-center">
-                                                                                        <span className="text-[10px] text-slate-450 font-bold">仕分ける:</span>
-                                                                                        <button
-                                                                                            onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL', false, true)}
-                                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
-                                                                                        >
-                                                                                            👍 既知・関心あり
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL', false, true)}
-                                                                                            className="bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
-                                                                                        >
-                                                                                            🔥 未知・関心あり
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleEvaluate(item.id, true, false, 'BASIC', false, true)}
-                                                                                            className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
-                                                                                        >
-                                                                                            ❄️ 既知・興味なし
-                                                                                        </button>
-                                                                                        <button
-                                                                                            onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true)}
-                                                                                            className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm ml-auto"
-                                                                                            title="この情報を評価せずにスキップ（既読化）します"
-                                                                                        >
-                                                                                            ⏭️ スキップ
-                                                                                        </button>
-                                                                                    </div>
+                                                                                <div className="flex items-center gap-3 w-full bg-slate-100/50 border border-slate-200/70 rounded-xl p-3.5 shadow-inner">
+                                                                                    <span className="text-[10px] text-slate-450 font-bold">この情報を仕分ける:</span>
+                                                                                    <button
+                                                                                        onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL', false, false)}
+                                                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer"
+                                                                                    >
+                                                                                        👍 役に立った
+                                                                                    </button>
+                                                                                    <button
+                                                                                        onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true, false)}
+                                                                                        className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-sm cursor-pointer"
+                                                                                        title="この情報を評価せずにスキップ（既読化）します"
+                                                                                    >
+                                                                                        ⏭️ 興味なし (非表示)
+                                                                                    </button>
                                                                                 </div>
                                                                             )}
                                                                         </div>
@@ -1559,16 +1536,9 @@ function DabDashboard() {
                                         <div className="flex gap-2">
                                             <button
                                                 onClick={() => setShowNewExpertForm(!showNewExpertForm)}
-                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow transition-all"
+                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow transition-all cursor-pointer"
                                             >
                                                 {showNewExpertForm ? '✕ 閉じる' : '➕ 有識者を追加'}
-                                            </button>
-                                            <button
-                                                onClick={handleDiscoverExperts}
-                                                disabled={isDiscovering}
-                                                className="bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-indigo-200 font-bold text-[10px] px-3 py-1.5 rounded-lg shadow-sm transition-all animate-fadeIn"
-                                            >
-                                                {isDiscovering ? '🔍 探索中...' : '🤖 AI有識者探索'}
                                             </button>
                                         </div>
                                     </div>
@@ -1579,27 +1549,23 @@ function DabDashboard() {
                                             <h4 className="text-xs font-bold text-slate-800 border-b pb-1.5">👤 新しい有識者の登録</h4>
                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
                                                 <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">有識者ID (英数字・一意)</label>
-                                                    <input type="text" placeholder="例: seattledataguy" value={newExpertId} onChange={e => setNewExpertId(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
-                                                </div>
-                                                <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">表示名 (名前)</label>
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">表示名 (名前) *</label>
                                                     <input type="text" placeholder="例: Ben Rogojan" value={newExpertName} onChange={e => setNewExpertName(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn ユーザーID (任意)</label>
-                                                    <input type="text" placeholder="例: kazushi" value={newExpertZenn} onChange={e => setNewExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn ユーザーID またはプロフィールURL (任意)</label>
+                                                    <input type="text" placeholder="例: kazushi または https://zenn.dev/kazushi" value={newExpertZenn} onChange={e => setNewExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub リポジトリ (任意)</label>
-                                                    <input type="text" placeholder="例: dbt-labs/dbt-core" value={newExpertGithub} onChange={e => setNewExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub owner/repo またはリポジトリURL (任意)</label>
+                                                    <input type="text" placeholder="例: dbt-labs/dbt-core または https://github.com/dbt-labs/dbt-core" value={newExpertGithub} onChange={e => setNewExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
                                                 </div>
                                                 <div className="flex flex-col gap-1">
                                                     <label className="text-[9px] font-bold text-slate-450 uppercase">Webサイト / RSS URL (任意)</label>
                                                     <input type="url" placeholder="https://example.com/rss" value={newExpertWebsite} onChange={e => setNewExpertWebsite(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
                                                 </div>
                                                 <div className="flex flex-col gap-1">
-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X アカウント名 (任意)</label>
+                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X アカウント名 またはURL (任意)</label>
                                                     <input type="text" placeholder="例: benstancil" value={newExpertX} onChange={e => setNewExpertX(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
                                                 </div>
                                             </div>
@@ -1636,56 +1602,15 @@ function DabDashboard() {
                                         </form>
                                     )}
 
-                                    {/* AI有識者探索結果 */}
-                                    {discoveredExperts.length > 0 && (
-                                        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 border border-indigo-950 p-4 rounded-xl shadow-lg space-y-3 animate-in slide-in-from-top-3 duration-200 text-white">
-                                            <div className="flex justify-between items-start">
-                                                <div>
-                                                    <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-1">🤖 AI Discovery Agent: あなたの関心に合う有識者を発見しました</h4>
-                                                    <p className="text-[9px] text-slate-350 mt-0.5">長期記憶や過去の評価傾向を解析し、Web上から厳選された推薦候補です。</p>
-                                                </div>
-                                                <button onClick={() => setDiscoveredExperts([])} className="text-[9px] text-slate-400 hover:text-slate-300 font-bold border border-slate-650 px-2 py-0.5 rounded">✕ 閉じる</button>
-                                            </div>
-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
-                                                {discoveredExperts.map(exp => (
-                                                    <div key={exp.id} className="bg-white/10 backdrop-blur border border-white/10 rounded-xl p-3.5 flex flex-col justify-between gap-3 hover:bg-white/15 transition-all">
-                                                        <div className="space-y-2">
-                                                            <div className="flex justify-between items-start gap-1">
-                                                                <h5 className="font-bold text-xs text-white">{exp.name}</h5>
-                                                                <div className="flex gap-1.5">
-                                                                    {exp.accounts?.zenn && <span className="text-[8px] px-1 bg-sky-500/25 border border-sky-400/30 rounded text-sky-200">Zenn</span>}
-                                                                    {exp.accounts?.github && <span className="text-[8px] px-1 bg-emerald-500/25 border border-emerald-400/30 rounded text-emerald-200">GitHub</span>}
-                                                                </div>
-                                                            </div>
-                                                            <p className="text-[9px] text-slate-300 leading-normal">{exp.reason}</p>
-                                                            <div className="flex flex-wrap gap-1">
-                                                                {exp.topic_suggestions?.map(ts => (
-                                                                    <span key={ts} className="text-[8px] px-1.5 py-0.2 bg-white/5 rounded text-indigo-200 font-bold border border-white/5">{ts}</span>
-                                                                ))}
-                                                            </div>
-                                                        </div>
-                                                        <button
-                                                            onClick={() => handleFollowFromDiscovery(exp)}
-                                                            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white text-[9px] font-extrabold py-1.2 rounded-lg transition-all shadow-sm"
-                                                        >
-                                                            ➕ この人をフォローする
-                                                        </button>
-                                                    </div>
-                                                ))}
-                                            </div>
-                                        </div>
-                                    )}
-
                                     {/* 登録済み有識者一覧 */}
                                     {experts.length === 0 ? (
                                         <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
                                             <p className="text-slate-400 text-xs font-semibold">現在、フォローしている有識者はいません。</p>
-                                            <p className="text-slate-500 text-[10px] mt-0.5">右上の「有識者を追加」または「AI有識者探索」からフォローを開始してください。</p>
+                                            <p className="text-slate-500 text-[10px] mt-0.5">右上の「有識者を追加」からフォローを開始してください。</p>
                                         </div>
                                     ) : (
                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
                                             {experts.map(expert => {
-                                                const scoreData = expertsAnalytics[expert.id] || { reliability: 0, practicality: 0, novelty: 0, value: 0 };
                                                 return (
                                                     <div key={expert.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col justify-between gap-3.5 hover:shadow-md transition-all">
                                                         <div className="space-y-3">
@@ -1694,9 +1619,6 @@ function DabDashboard() {
                                                                 <div>
                                                                     <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
                                                                         👤 {expert.name}
-                                                                        <span className="text-[8px] font-mono bg-slate-100 text-slate-450 px-1 py-0.2 rounded border">
-                                                                            ID: {expert.id}
-                                                                        </span>
                                                                     </h4>
                                                                     <div className="flex flex-wrap gap-1 mt-1.5">
                                                                         {expert.topic_ids && expert.topic_ids.map(tid => {
@@ -1711,69 +1633,34 @@ function DabDashboard() {
                                                                 </div>
                                                                 <button
                                                                     onClick={() => handleDeleteExpert(expert.id)}
-                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all"
+                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all cursor-pointer"
                                                                 >
                                                                     解除
                                                                 </button>
                                                             </div>
 
                                                             {/* アカウントリンク */}
-                                                            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100/60 text-[9px] font-medium text-slate-500">
+                                                            <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-100/60 text-[9px] font-medium text-slate-500">
                                                                 {expert.accounts?.zenn && (
-                                                                    <a href={`https://zenn.dev/${expert.accounts.zenn}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                    <a href={`https://zenn.dev/${expert.accounts.zenn}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
                                                                         📘 Zenn: <span className="underline font-bold text-slate-700">{expert.accounts.zenn}</span>
                                                                     </a>
                                                                 )}
                                                                 {expert.accounts?.github && (
-                                                                    <a href={`https://github.com/${expert.accounts.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                    <a href={`https://github.com/${expert.accounts.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
                                                                         💻 GitHub: <span className="underline font-bold text-slate-700">{expert.accounts.github}</span>
                                                                     </a>
                                                                 )}
                                                                 {expert.accounts?.website && (
-                                                                    <a href={expert.accounts.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+                                                                    <a href={expert.accounts.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
                                                                         🌐 Blog: <span className="underline font-bold text-slate-700">Link</span>
                                                                     </a>
                                                                 )}
                                                                 {expert.accounts?.x && (
-                                                                    <a href={`https://x.com/${expert.accounts.x}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
-                                                                        🐦 X (旧Twitter): <span className="underline font-bold text-slate-700">@{expert.accounts.x}</span>
+                                                                    <a href={`https://x.com/${expert.accounts.x}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
+                                                                        🐦 X: <span className="underline font-bold text-slate-700">@{expert.accounts.x}</span>
                                                                     </a>
                                                                 )}
-                                                            </div>
-                                                        </div>
-
-                                                        {/* 詳細評価スコア可視化 */}
-                                                        <div className="bg-slate-50/50 border border-slate-200/50 p-2.5 rounded-lg space-y-2">
-                                                            <div className="text-[9px] font-black text-slate-450 tracking-wider uppercase">📊 インプット品質集計 (5.0満点)</div>
-                                                            <div className="space-y-1.5">
-                                                                <div className="flex items-center text-[9px]">
-                                                                    <span className="w-11 font-bold text-slate-600">🛡️ 信頼性:</span>
-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
-                                                                        <div className="h-full bg-emerald-500 rounded" style={{ width: `${(scoreData.reliability || 0) * 20}%` }} />
-                                                                    </div>
-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.reliability || '0.0'}</span>
-                                                                </div>
-                                                                <div className="flex items-center text-[9px]">
-                                                                    <span className="w-11 font-bold text-slate-600">🛠️ 実用性:</span>
-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
-                                                                        <div className="h-full bg-indigo-500 rounded" style={{ width: `${(scoreData.practicality || 0) * 20}%` }} />
-                                                                    </div>
-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.practicality || '0.0'}</span>
-                                                                </div>
-                                                                <div className="flex items-center text-[9px]">
-                                                                    <span className="w-11 font-bold text-slate-600">✨ 新規性:</span>
-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
-                                                                        <div className="h-full bg-purple-500 rounded" style={{ width: `${(scoreData.novelty || 0) * 20}%` }} />
-                                                                    </div>
-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.novelty || '0.0'}</span>
-                                                                </div>
-                                                                <div className="flex items-center text-[9px]">
-                                                                    <span className="w-11 font-bold text-slate-600">💎 価値:</span>
-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
-                                                                        <div className="h-full bg-yellow-500 rounded animate-pulse" style={{ width: `${(scoreData.value || 0) * 20}%`, backgroundColor: '#eab308' }} />
-                                                                    </div>
-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.value || '0.0'}</span>
-                                                                </div>
                                                             </div>
                                                         </div>
                                                     </div>
