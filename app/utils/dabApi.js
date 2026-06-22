@@ -181,6 +181,17 @@ export const dabApi = {
         return res.json();
     },
 
+    // 有識者の更新
+    updateExpert: async (expertId, expert) => {
+        const res = await fetch(`${API_BASE}/experts/${expertId}`, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(expert),
+        });
+        if (!res.ok) throw new Error('有識者の更新に失敗しました');
+        return res.json();
+    },
+
     // 有識者ごとの評価集計の取得
     getExpertsAnalytics: async () => {
         const res = await fetch(`${API_BASE}/experts/analytics`);
