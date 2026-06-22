@@ -1,0 +1,458 @@
+﻿diff --git a/app/dab/page.js b/app/dab/page.js
+index 73fcdd9..c957cc6 100644
+--- a/app/dab/page.js
++++ b/app/dab/page.js
+@@ -401,8 +401,8 @@ function DabDashboard() {
+         setLoading(true);
+         try {
+             const [topicsData, memoryData, feedData, expertsData, analyticsData] = await Promise.all([
+-                dabApi.getTopics(),
+-                dabApi.getMemory(),
++                dabApi.getTopics().catch(() => []),
++                dabApi.getMemory().catch(() => ({ known_concepts: [], learning_goals: '', summary_prompt_template: '', filter_prompt_template: '' })),
+                 dabApi.getFeed().catch(() => []),
+                 dabApi.getExperts().catch(() => []),
+                 dabApi.getExpertsAnalytics().catch(() => ({}))
+@@ -422,18 +422,42 @@ function DabDashboard() {
+     // 譛芽ｭ倩・・謇句虚逋ｻ骭ｲ
+     const handleCreateExpertSubmit = async (e) => {
+         e.preventDefault();
+-        if (!newExpertId.trim() || !newExpertName.trim()) {
+-            alert('譛芽ｭ倩・D縺ｨ蜷榊燕縺ｯ蠢・医〒縺・);
++        if (!newExpertName.trim()) {
++            alert('蜷榊燕縺ｯ蠢・医〒縺・);
+             return;
+         }
+ 
++        // Zenn縺ｨGitHub縺ｮ蜈･蜉帛､繧ｯ繝ｬ繝ｳ繧ｸ繝ｳ繧ｰ・・RL縺悟・蜉帙＆繧後◆蝣ｴ蜷医・ID繧呈歓蜃ｺ縺吶ｋ・・+        let cleanedZenn = newExpertZenn.trim();
++        if (cleanedZenn.includes('zenn.dev/')) {
++            const parts = cleanedZenn.split('zenn.dev/');
++            cleanedZenn = parts[parts.length - 1].split('/')[0].split('?')[0];
++        }
++
++        let cleanedGithub = newExpertGithub.trim();
++        if (cleanedGithub.includes('github.com/')) {
++            const parts = cleanedGithub.split('github.com/');
++            const path = parts[parts.length - 1].split('?')[0];
++            const pathParts = path.split('/');
++            if (pathParts.length >= 2) {
++                cleanedGithub = `${pathParts[0]}/${pathParts[1]}`;
++            } else {
++                cleanedGithub = pathParts[0];
++            }
++        }
++
++        // 譛芽ｭ倩・D繧定・蜍慕函謌撰ｼ・enn ID -> GitHub ID -> 繧ｿ繧､繝繧ｹ繧ｿ繝ｳ繝励・繝ｼ繧ｹ・・+        const expertId = cleanedZenn 
++            ? cleanedZenn 
++            : (cleanedGithub ? cleanedGithub.replace('/', '_') : `expert_${Date.now()}`);
++
+         const newExpert = {
+-            id: newExpertId.trim().toLowerCase().replace(/[^a-z0-9_]/g, ''),
++            id: expertId.toLowerCase().replace(/[^a-z0-9_]/g, ''),
+             name: newExpertName.trim(),
+             topic_ids: newExpertTopics,
+             accounts: {
+-                zenn: newExpertZenn.trim(),
+-                github: newExpertGithub.trim(),
++                zenn: cleanedZenn,
++                github: cleanedGithub,
+                 website: newExpertWebsite.trim(),
+                 x: newExpertX.trim()
+             }
+@@ -1349,74 +1373,27 @@ function DabDashboard() {
+                                                                                 <div className="flex flex-col gap-2">
+                                                                                     <span className={`font-bold text-[9px] px-2 py-0.5 rounded border inline-block w-fit ${
+                                                                                         item.user_evaluations.skipped ? 'bg-amber-50 text-amber-700 border-amber-200' :
+-                                                                                        item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-emerald-50 text-emerald-700 border-emerald-200' :
+-                                                                                        !item.user_evaluations.is_known && item.user_evaluations.is_interested ? 'bg-purple-50 text-purple-700 border-purple-200' :
+-                                                                                        'bg-slate-100 text-slate-600 border-slate-250'
++                                                                                        'bg-emerald-50 text-emerald-700 border-emerald-200'
+                                                                                     }`}>
+-                                                                                        莉募・縺第ｸ・ {item.user_evaluations.skipped ? '竢ｭ・・繧ｹ繧ｭ繝・・・郁ｩ穂ｾ｡縺ｪ縺暦ｼ・ :
+-                                                                                                 item.user_evaluations.is_known && item.user_evaluations.is_interested ? '総 譌｢遏･繝ｻ髢｢蠢・≠繧・ :
+-                                                                                                 !item.user_evaluations.is_known && item.user_evaluations.is_interested ? '櫨 譛ｪ遏･繝ｻ髢｢蠢・≠繧・ :
+-                                                                                                 '笶・ｸ・譌｢遏･繝ｻ髢｢蠢・↑縺・}
++                                                                                        莉募・縺第ｸ・ {item.user_evaluations.skipped ? '竢ｭ・・闊亥袖縺ｪ縺暦ｼ医せ繧ｭ繝・・・・ : '総 蠖ｹ縺ｫ遶九▲縺・}
+                                                                                     </span>
+-                                                                                    {item.user_evaluations.detail_eval && (
+-                                                                                        <div className="flex gap-4 text-[9px] text-slate-500 bg-slate-100 p-2 rounded-lg border border-slate-200/70 w-fit">
+-                                                                                            <span className="flex items-center gap-0.5">孱・・菫｡鬆ｼ諤ｧ: <strong>{item.user_evaluations.detail_eval.reliability}</strong></span>
+-                                                                                            <span className="flex items-center gap-0.5">屏・・螳溽畑諤ｧ: <strong>{item.user_evaluations.detail_eval.practicality}</strong></span>
+-                                                                                            <span className="flex items-center gap-0.5">笨ｨ 譁ｰ隕乗ｧ: <strong>{item.user_evaluations.detail_eval.novelty}</strong></span>
+-                                                                                            <span className="flex items-center gap-0.5">虫 萓｡蛟､: <strong>{item.user_evaluations.detail_eval.value}</strong></span>
+-                                                                                        </div>
+-                                                                                    )}
+                                                                                 </div>
+                                                                             ) : (
+-                                                                                <div className="flex flex-col gap-3 w-full bg-slate-100/50 border border-slate-200/70 rounded-xl p-3.5 shadow-inner">
+-                                                                                    {/* 隧ｳ邏ｰ隧穂ｾ｡隕ｳ轤ｹ繧ｹ繝ｩ繧､繝繝ｼ */}
+-                                                                                    <div className="grid grid-cols-2 sm:grid-cols-4 gap-4 pb-2 border-b border-slate-200/50">
+-                                                                                        <div className="flex flex-col gap-1">
+-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">孱・・菫｡鬆ｼ諤ｧ: <span className="text-indigo-600 font-black">{reliabilityScore}</span></span>
+-                                                                                            <input type="range" min="1" max="5" value={reliabilityScore} onChange={e => setReliabilityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+-                                                                                        </div>
+-                                                                                        <div className="flex flex-col gap-1">
+-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">屏・・螳溽畑諤ｧ: <span className="text-indigo-600 font-black">{practicalityScore}</span></span>
+-                                                                                            <input type="range" min="1" max="5" value={practicalityScore} onChange={e => setPracticalityScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+-                                                                                        </div>
+-                                                                                        <div className="flex flex-col gap-1">
+-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">笨ｨ 譁ｰ隕乗ｧ: <span className="text-indigo-600 font-black">{noveltyScore}</span></span>
+-                                                                                            <input type="range" min="1" max="5" value={noveltyScore} onChange={e => setNoveltyScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-250 rounded-lg appearance-none cursor-pointer" />
+-                                                                                        </div>
+-                                                                                        <div className="flex flex-col gap-1">
+-                                                                                            <span className="text-[10px] font-bold text-slate-600 flex items-center gap-1">虫 萓｡蛟､: <span className="text-indigo-600 font-black">{valueScore}</span></span>
+-                                                                                            <input type="range" min="1" max="5" value={valueScore} onChange={e => setValueScore(parseInt(e.target.value))} className="w-full h-1 bg-slate-255 rounded-lg appearance-none cursor-pointer" />
+-                                                                                        </div>
+-                                                                                    </div>
+-                                                                                    
+-                                                                                    <div className="flex flex-wrap gap-2 items-center">
+-                                                                                        <span className="text-[10px] text-slate-450 font-bold">莉募・縺代ｋ:</span>
+-                                                                                        <button
+-                                                                                            onClick={() => handleEvaluate(item.id, true, true, 'PRACTICAL', false, true)}
+-                                                                                            className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
+-                                                                                        >
+-                                                                                            総 譌｢遏･繝ｻ髢｢蠢・≠繧・-                                                                                        </button>
+-                                                                                        <button
+-                                                                                            onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL', false, true)}
+-                                                                                            className="bg-indigo-600 hover:bg-indigo-700 text-white border border-indigo-700 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm flex items-center gap-0.5"
+-                                                                                        >
+-                                                                                            櫨 譛ｪ遏･繝ｻ髢｢蠢・≠繧・-                                                                                        </button>
+-                                                                                        <button
+-                                                                                            onClick={() => handleEvaluate(item.id, true, false, 'BASIC', false, true)}
+-                                                                                            className="bg-slate-100 hover:bg-slate-200 border border-slate-250 text-slate-600 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm"
+-                                                                                        >
+-                                                                                            笶・ｸ・譌｢遏･繝ｻ闊亥袖縺ｪ縺・-                                                                                        </button>
+-                                                                                        <button
+-                                                                                            onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true)}
+-                                                                                            className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-md text-[10px] font-bold transition-all shadow-sm ml-auto"
+-                                                                                            title="縺薙・諠・ｱ繧定ｩ穂ｾ｡縺帙★縺ｫ繧ｹ繧ｭ繝・・・域里隱ｭ蛹厄ｼ峨＠縺ｾ縺・
+-                                                                                        >
+-                                                                                            竢ｭ・・繧ｹ繧ｭ繝・・
+-                                                                                        </button>
+-                                                                                    </div>
++                                                                                <div className="flex items-center gap-3 w-full bg-slate-100/50 border border-slate-200/70 rounded-xl p-3.5 shadow-inner">
++                                                                                    <span className="text-[10px] text-slate-450 font-bold">縺薙・諠・ｱ繧剃ｻ募・縺代ｋ:</span>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, false, true, 'PRACTICAL', false, false)}
++                                                                                        className="bg-emerald-600 hover:bg-emerald-700 text-white border border-emerald-700 px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-sm flex items-center gap-1 cursor-pointer"
++                                                                                    >
++                                                                                        総 蠖ｹ縺ｫ遶九▲縺・+                                                                                    </button>
++                                                                                    <button
++                                                                                        onClick={() => handleEvaluate(item.id, false, false, 'BASIC', true, false)}
++                                                                                        className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3.5 py-1.5 rounded-lg text-[10px] font-bold transition-all shadow-sm cursor-pointer"
++                                                                                        title="縺薙・諠・ｱ繧定ｩ穂ｾ｡縺帙★縺ｫ繧ｹ繧ｭ繝・・・域里隱ｭ蛹厄ｼ峨＠縺ｾ縺・
++                                                                                    >
++                                                                                        竢ｭ・・闊亥袖縺ｪ縺・(髱櫁｡ｨ遉ｺ)
++                                                                                    </button>
+                                                                                 </div>
+                                                                             )}
+                                                                         </div>
+@@ -1460,93 +1437,7 @@ function DabDashboard() {
+                                                                             </div>
+ 
+                                                                             {/* 逕滓・縺輔ｌ縺滓ｦょｿｵ逕ｻ蜒上・繝ｬ繝薙Η繝ｼ */}
+-                                                                            {imagenResults[item.id] && (
+-                                                                                <div className="mt-2 space-y-1">
+-                                                                                    <p className="text-[8px] text-violet-600 font-bold uppercase tracking-widest">耳 Imagen繝励Ξ繝薙Η繝ｼ・郁ｩ穂ｾ｡逕ｨ・・/p>
+-                                                                                    <div className="overflow-hidden rounded-xl border-2 border-violet-200 shadow-md">
+-                                                                                        <img
+-                                                                                            src={imagenResults[item.id]}
+-                                                                                            alt="Imagen 3 generated concept"
+-                                                                                            className="w-full h-auto object-cover max-h-48"
+-                                                                                        />
+-                                                                                    </div>
+-                                                                                </div>
+-                                                                            )}
+-                                                                        </div>
+-                                                                    </div>
+-
+-                                                                    {/* 蜿ｳ繧ｫ繝ｩ繝: 繝薙ず繝･繧｢繝ｫ繝代・繝・ｼ・ermaid ・・繧ｹ繝ｩ繧､繝峨き繝ｼ繝会ｼ・*/}
+-                                                                    {((showMermaid && item.mermaid_code) || showAiImage) && (
+-                                                                        <div className="lg:col-span-5 space-y-4">
+-                                                                            {/* Mermaid蝗ｳ隗｣ */}
+-                                                                            {showMermaid && item.mermaid_code && (
+-                                                                                <div className="space-y-1.5">
+-                                                                                    <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-widest pl-1">
+-                                                                                        投 讒矩繝ｻ髢｢菫ょ峙隗｣ (Mermaid)
+-                                                                                    </h4>
+-                                                                                    <MermaidRenderer chart={item.mermaid_code} />
+-                                                                                </div>
+-                                                                            )}
+-
+-                                                                            {/* 險倅ｺ九し繝槭Μ縺ｮ繧ｹ繝ｩ繧､繝峨き繝ｼ繝会ｼ亥・螳ｹ逶ｴ邨舌・繧ｳ繧ｹ繝医ぞ繝ｭ・・*/}
+-                                                                            {showAiImage && (
+-                                                                                <div className="space-y-1.5">
+-                                                                                    <h4 className="text-[10px] font-bold text-slate-450 uppercase tracking-widest pl-1">
+-                                                                                        淘 繧ｹ繝ｩ繧､繝峨き繝ｼ繝・-                                                                                    </h4>
+-                                                                                    <SlideCard item={item} />
+-                                                                                </div>
+-                                                                            )}
+-                                                                        </div>
+-                                                                    )}
+-                                                                </div>
+-                                                            </div>
+-                                                        )}
+-                                                    </div>
+-                                                );
+-                                            })}
+-                                        </div>
+-                                    )}
+-                                </div>
+-                            )}
+-
+-                            {/* 3. 髟ｷ譛溯ｨ俶・ */}
+-                            {activeTab === 'memory' && (
+-                                <div className="space-y-4 animate-in fade-in duration-200 bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+-                                    <div>
+-                                        <h3 className="text-sm font-bold text-slate-800">ｧ 縺ゅ↑縺溘・髟ｷ譛溯ｨ俶・ (Agent Core Memory)</h3>
+-                                        <p className="text-[10px] text-slate-500 mt-0.5">
+-                                            縺ゅ↑縺溘・險倅ｺ九・隧穂ｾ｡陦悟虚縺九ｉAI縺梧耳隲悶＠縺溘∫樟蝨ｨ縺ゅ↑縺溘′逅・ｧ｣縺励※縺・ｋ縺ｨ諤昴ｏ繧後ｋ譌｢遏･讎ょｿｵ縺ｮ繝・・繧ｿ繝吶・繧ｹ縺ｧ縺吶・-                                        </p>
+-                                    </div>
+-
+-                                    {/* 鄙貞ｾ玲ｸ医∩讎ょｿｵ縺ｮ繧ｿ繧ｰ繧ｯ繝ｩ繧ｦ繝・*/}
+-                                    <div className="space-y-1.5">
+-                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">迴ｾ蝨ｨ隱崎ｭ倥＆繧後※縺・ｋ譌｢遏･縺ｮ讎ょｿｵ:</h4>
+-                                        <div className="flex flex-wrap gap-1.5 pt-1">
+-                                            {memory?.known_concepts && memory.known_concepts.length > 0 ? (
+-                                                memory.known_concepts.map(concept => (
+-                                                    <span key={concept} className="bg-emerald-50 border border-emerald-200 text-emerald-700 font-bold px-2.5 py-0.5 rounded-full text-[10px] shadow-sm">
+-                                                        笨・{concept}
+-                                                    </span>
+-                                                ))
+-                                            ) : (
+-                                                <span className="text-[10px] text-slate-400 italic">隧穂ｾ｡螻･豁ｴ縺後≠繧翫∪縺帙ｓ縲ゅヵ繧｣繝ｼ繝峨・縲檎衍縺｣縺ｦ縺・◆縲阪ｒ繧ｯ繝ｪ繝・け縺吶ｋ縺ｨ縲∵里遏･縺ｮ讎ょｿｵ縺瑚ｿｽ蜉縺輔ｌ縺ｾ縺吶・/span>
+-                                            )}
+-                                        </div>
+-                                    </div>
+-
+-                                    {/* 蟄ｦ鄙堤岼讓・*/}
+-                                    <div className="border-t border-slate-100 pt-3 space-y-1.5">
+-                                        <h4 className="text-[10px] font-bold text-slate-500 uppercase tracking-wider">AI縺瑚ｪ崎ｭ倥＠縺ｦ縺・ｋ縺ゅ↑縺溘・蟄ｦ鄙堤岼讓・</h4>
+-                                        <div className="bg-slate-50 border border-slate-200 p-3 rounded-lg text-xs leading-relaxed text-slate-700 whitespace-pre-wrap">
+-                                            {memory?.learning_goals || '繝・・繧ｿ繧｢繝ｼ繧ｭ繝・け繝√Ε繧ｳ繝ｳ繧ｵ繝ｫ繧ｿ繝ｳ繝医→縺励※縺ｮ閾ｪ蟾ｱ蟄ｦ鄙堤岼讓吶・}
+-                                        </div>
+-                                    </div>
+-                                </div>
+-                            )}
+-
+-                            {/* 譛芽ｭ倩・ヵ繧ｩ繝ｭ繝ｼ繝懊・繝・*/}
++                                                                                    {/* 譛芽ｭ倩・ヵ繧ｩ繝ｭ繝ｼ繝懊・繝・*/}
+                             {activeTab === 'experts' && (
+                                 <div className="space-y-4 animate-in fade-in duration-200">
+                                     <div className="flex justify-between items-center bg-white border border-slate-200 p-4 rounded-xl shadow-sm">
+@@ -1559,17 +1450,10 @@ function DabDashboard() {
+                                         <div className="flex gap-2">
+                                             <button
+                                                 onClick={() => setShowNewExpertForm(!showNewExpertForm)}
+-                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow transition-all"
++                                                className="bg-indigo-600 hover:bg-indigo-700 text-white font-bold text-[10px] px-3 py-1.5 rounded-lg shadow transition-all cursor-pointer"
+                                             >
+                                                 {showNewExpertForm ? '笨・髢峨§繧・ : '筐・譛芽ｭ倩・ｒ霑ｽ蜉'}
+                                             </button>
+-                                            <button
+-                                                onClick={handleDiscoverExperts}
+-                                                disabled={isDiscovering}
+-                                                className="bg-slate-100 hover:bg-slate-200 text-indigo-700 border border-indigo-200 font-bold text-[10px] px-3 py-1.5 rounded-lg shadow-sm transition-all animate-fadeIn"
+-                                            >
+-                                                {isDiscovering ? '剥 謗｢邏｢荳ｭ...' : '､・AI譛芽ｭ倩・爾邏｢'}
+-                                            </button>
+                                         </div>
+                                     </div>
+ 
+@@ -1579,27 +1463,23 @@ function DabDashboard() {
+                                             <h4 className="text-xs font-bold text-slate-800 border-b pb-1.5">側 譁ｰ縺励＞譛芽ｭ倩・・逋ｻ骭ｲ</h4>
+                                             <div className="grid grid-cols-1 sm:grid-cols-2 gap-3.5">
+                                                 <div className="flex flex-col gap-1">
+-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">譛芽ｭ倩・D (闍ｱ謨ｰ蟄励・荳諢・</label>
+-                                                    <input type="text" placeholder="萓・ seattledataguy" value={newExpertId} onChange={e => setNewExpertId(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
+-                                                </div>
+-                                                <div className="flex flex-col gap-1">
+-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">陦ｨ遉ｺ蜷・(蜷榊燕)</label>
++                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">陦ｨ遉ｺ蜷・(蜷榊燕) *</label>
+                                                     <input type="text" placeholder="萓・ Ben Rogojan" value={newExpertName} onChange={e => setNewExpertName(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" required />
+                                                 </div>
+                                                 <div className="flex flex-col gap-1">
+-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn 繝ｦ繝ｼ繧ｶ繝ｼID (莉ｻ諢・</label>
+-                                                    <input type="text" placeholder="萓・ kazushi" value={newExpertZenn} onChange={e => setNewExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
++                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">Zenn 繝ｦ繝ｼ繧ｶ繝ｼID 縺ｾ縺溘・繝励Ο繝輔ぅ繝ｼ繝ｫURL (莉ｻ諢・</label>
++                                                    <input type="text" placeholder="萓・ kazushi 縺ｾ縺溘・ https://zenn.dev/kazushi" value={newExpertZenn} onChange={e => setNewExpertZenn(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                 </div>
+                                                 <div className="flex flex-col gap-1">
+-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub 繝ｪ繝昴ず繝医Μ (莉ｻ諢・</label>
+-                                                    <input type="text" placeholder="萓・ dbt-labs/dbt-core" value={newExpertGithub} onChange={e => setNewExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
++                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">GitHub owner/repo 縺ｾ縺溘・繝ｪ繝昴ず繝医ΜURL (莉ｻ諢・</label>
++                                                    <input type="text" placeholder="萓・ dbt-labs/dbt-core 縺ｾ縺溘・ https://github.com/dbt-labs/dbt-core" value={newExpertGithub} onChange={e => setNewExpertGithub(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                 </div>
+                                                 <div className="flex flex-col gap-1">
+                                                     <label className="text-[9px] font-bold text-slate-450 uppercase">Web繧ｵ繧､繝・/ RSS URL (莉ｻ諢・</label>
+                                                     <input type="url" placeholder="https://example.com/rss" value={newExpertWebsite} onChange={e => setNewExpertWebsite(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                 </div>
+                                                 <div className="flex flex-col gap-1">
+-                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X 繧｢繧ｫ繧ｦ繝ｳ繝亥錐 (莉ｻ諢・</label>
++                                                    <label className="text-[9px] font-bold text-slate-450 uppercase">X 繧｢繧ｫ繧ｦ繝ｳ繝亥錐 縺ｾ縺溘・URL (莉ｻ諢・</label>
+                                                     <input type="text" placeholder="萓・ benstancil" value={newExpertX} onChange={e => setNewExpertX(e.target.value)} className="border border-slate-200 rounded-lg p-2 text-xs focus:outline-none focus:ring-1 focus:ring-indigo-500 bg-slate-50" />
+                                                 </div>
+                                             </div>
+@@ -1630,62 +1510,21 @@ function DabDashboard() {
+                                                 </div>
+                                             </div>
+                                             <div className="flex justify-end gap-2 pt-2">
+-                                                <button type="button" onClick={() => setShowNewExpertForm(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-3.5 py-1.5 rounded-lg border">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
+-                                                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3.5 py-1.5 rounded-lg shadow">繝輔か繝ｭ繝ｼ菫晏ｭ・/button>
++                                                <button type="button" onClick={() => setShowNewExpertForm(false)} className="bg-slate-100 hover:bg-slate-200 text-slate-700 text-[10px] font-bold px-3.5 py-1.5 rounded-lg border cursor-pointer">繧ｭ繝｣繝ｳ繧ｻ繝ｫ</button>
++                                                <button type="submit" className="bg-indigo-600 hover:bg-indigo-700 text-white text-[10px] font-bold px-3.5 py-1.5 rounded-lg shadow cursor-pointer">繝輔か繝ｭ繝ｼ菫晏ｭ・/button>
+                                             </div>
+                                         </form>
+                                     )}
+ 
+-                                    {/* AI譛芽ｭ倩・爾邏｢邨先棡 */}
+-                                    {discoveredExperts.length > 0 && (
+-                                        <div className="bg-gradient-to-r from-indigo-900 to-slate-900 border border-indigo-950 p-4 rounded-xl shadow-lg space-y-3 animate-in slide-in-from-top-3 duration-200 text-white">
+-                                            <div className="flex justify-between items-start">
+-                                                <div>
+-                                                    <h4 className="text-xs font-bold text-indigo-300 flex items-center gap-1">､・AI Discovery Agent: 縺ゅ↑縺溘・髢｢蠢・↓蜷医≧譛芽ｭ倩・ｒ逋ｺ隕九＠縺ｾ縺励◆</h4>
+-                                                    <p className="text-[9px] text-slate-350 mt-0.5">髟ｷ譛溯ｨ俶・繧・℃蜴ｻ縺ｮ隧穂ｾ｡蛯ｾ蜷代ｒ隗｣譫舌＠縲仝eb荳翫°繧牙宍驕ｸ縺輔ｌ縺滓耳阮ｦ蛟呵｣懊〒縺吶・/p>
+-                                                </div>
+-                                                <button onClick={() => setDiscoveredExperts([])} className="text-[9px] text-slate-400 hover:text-slate-300 font-bold border border-slate-650 px-2 py-0.5 rounded">笨・髢峨§繧・/button>
+-                                            </div>
+-                                            <div className="grid grid-cols-1 md:grid-cols-3 gap-3.5 pt-1">
+-                                                {discoveredExperts.map(exp => (
+-                                                    <div key={exp.id} className="bg-white/10 backdrop-blur border border-white/10 rounded-xl p-3.5 flex flex-col justify-between gap-3 hover:bg-white/15 transition-all">
+-                                                        <div className="space-y-2">
+-                                                            <div className="flex justify-between items-start gap-1">
+-                                                                <h5 className="font-bold text-xs text-white">{exp.name}</h5>
+-                                                                <div className="flex gap-1.5">
+-                                                                    {exp.accounts?.zenn && <span className="text-[8px] px-1 bg-sky-500/25 border border-sky-400/30 rounded text-sky-200">Zenn</span>}
+-                                                                    {exp.accounts?.github && <span className="text-[8px] px-1 bg-emerald-500/25 border border-emerald-400/30 rounded text-emerald-200">GitHub</span>}
+-                                                                </div>
+-                                                            </div>
+-                                                            <p className="text-[9px] text-slate-300 leading-normal">{exp.reason}</p>
+-                                                            <div className="flex flex-wrap gap-1">
+-                                                                {exp.topic_suggestions?.map(ts => (
+-                                                                    <span key={ts} className="text-[8px] px-1.5 py-0.2 bg-white/5 rounded text-indigo-200 font-bold border border-white/5">{ts}</span>
+-                                                                ))}
+-                                                            </div>
+-                                                        </div>
+-                                                        <button
+-                                                            onClick={() => handleFollowFromDiscovery(exp)}
+-                                                            className="w-full bg-indigo-500 hover:bg-indigo-600 text-white text-[9px] font-extrabold py-1.2 rounded-lg transition-all shadow-sm"
+-                                                        >
+-                                                            筐・縺薙・莠ｺ繧偵ヵ繧ｩ繝ｭ繝ｼ縺吶ｋ
+-                                                        </button>
+-                                                    </div>
+-                                                ))}
+-                                            </div>
+-                                        </div>
+-                                    )}
+-
+                                     {/* 逋ｻ骭ｲ貂医∩譛芽ｭ倩・ｸ隕ｧ */}
+                                     {experts.length === 0 ? (
+                                         <div className="text-center py-16 bg-white border border-slate-200 rounded-xl">
+                                             <p className="text-slate-400 text-xs font-semibold">迴ｾ蝨ｨ縲√ヵ繧ｩ繝ｭ繝ｼ縺励※縺・ｋ譛芽ｭ倩・・縺・∪縺帙ｓ縲・/p>
+-                                            <p className="text-slate-500 text-[10px] mt-0.5">蜿ｳ荳翫・縲梧怏隴倩・ｒ霑ｽ蜉縲阪∪縺溘・縲窟I譛芽ｭ倩・爾邏｢縲阪°繧峨ヵ繧ｩ繝ｭ繝ｼ繧帝幕蟋九＠縺ｦ縺上□縺輔＞縲・/p>
++                                            <p className="text-slate-500 text-[10px] mt-0.5">蜿ｳ荳翫・縲梧怏隴倩・ｒ霑ｽ蜉縲阪°繧峨ヵ繧ｩ繝ｭ繝ｼ繧帝幕蟋九＠縺ｦ縺上□縺輔＞縲・/p>
+                                         </div>
+                                     ) : (
+                                         <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+                                             {experts.map(expert => {
+-                                                const scoreData = expertsAnalytics[expert.id] || { reliability: 0, practicality: 0, novelty: 0, value: 0 };
+                                                 return (
+                                                     <div key={expert.id} className="bg-white border border-slate-200 rounded-xl p-4 shadow-sm flex flex-col justify-between gap-3.5 hover:shadow-md transition-all">
+                                                         <div className="space-y-3">
+@@ -1694,9 +1533,6 @@ function DabDashboard() {
+                                                                 <div>
+                                                                     <h4 className="font-extrabold text-slate-800 text-sm flex items-center gap-1.5">
+                                                                         側 {expert.name}
+-                                                                        <span className="text-[8px] font-mono bg-slate-100 text-slate-450 px-1 py-0.2 rounded border">
+-                                                                            ID: {expert.id}
+-                                                                        </span>
+                                                                     </h4>
+                                                                     <div className="flex flex-wrap gap-1 mt-1.5">
+                                                                         {expert.topic_ids && expert.topic_ids.map(tid => {
+@@ -1711,78 +1547,43 @@ function DabDashboard() {
+                                                                 </div>
+                                                                 <button
+                                                                     onClick={() => handleDeleteExpert(expert.id)}
+-                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all"
++                                                                    className="text-[9px] font-bold text-rose-500 hover:text-rose-600 bg-rose-50 hover:bg-rose-100/50 border border-rose-200 px-2 py-0.8 rounded-md transition-all cursor-pointer"
+                                                                 >
+                                                                     隗｣髯､
+                                                                 </button>
+                                                             </div>
+ 
+                                                             {/* 繧｢繧ｫ繧ｦ繝ｳ繝医Μ繝ｳ繧ｯ */}
+-                                                            <div className="flex flex-wrap gap-2 pt-2 border-t border-slate-100/60 text-[9px] font-medium text-slate-500">
++                                                            <div className="flex flex-wrap gap-3 pt-2 border-t border-slate-100/60 text-[9px] font-medium text-slate-500">
+                                                                 {expert.accounts?.zenn && (
+-                                                                    <a href={`https://zenn.dev/${expert.accounts.zenn}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
++                                                                    <a href={`https://zenn.dev/${expert.accounts.zenn}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
+                                                                         祷 Zenn: <span className="underline font-bold text-slate-700">{expert.accounts.zenn}</span>
+                                                                     </a>
+                                                                 )}
+                                                                 {expert.accounts?.github && (
+-                                                                    <a href={`https://github.com/${expert.accounts.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
++                                                                    <a href={`https://github.com/${expert.accounts.github}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
+                                                                         捗 GitHub: <span className="underline font-bold text-slate-700">{expert.accounts.github}</span>
+                                                                     </a>
+                                                                 )}
+                                                                 {expert.accounts?.website && (
+-                                                                    <a href={expert.accounts.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
++                                                                    <a href={expert.accounts.website} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
+                                                                         倹 Blog: <span className="underline font-bold text-slate-700">Link</span>
+                                                                     </a>
+                                                                 )}
+                                                                 {expert.accounts?.x && (
+-                                                                    <a href={`https://x.com/${expert.accounts.x}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-0.5 hover:text-indigo-600 transition-colors">
+-                                                                        凄 X (譌ｧTwitter): <span className="underline font-bold text-slate-700">@{expert.accounts.x}</span>
++                                                                    <a href={`https://x.com/${expert.accounts.x}`} target="_blank" rel="noopener noreferrer" className="flex items-center gap-1 hover:text-indigo-600 transition-colors">
++                                                                        凄 X: <span className="underline font-bold text-slate-700">@{expert.accounts.x}</span>
+                                                                     </a>
+                                                                 )}
+                                                             </div>
+                                                         </div>
+-
+-                                                        {/* 隧ｳ邏ｰ隧穂ｾ｡繧ｹ繧ｳ繧｢蜿ｯ隕門喧 */}
+-                                                        <div className="bg-slate-50/50 border border-slate-200/50 p-2.5 rounded-lg space-y-2">
+-                                                            <div className="text-[9px] font-black text-slate-450 tracking-wider uppercase">投 繧､繝ｳ繝励ャ繝亥刀雉ｪ髮・ｨ・(5.0貅轤ｹ)</div>
+-                                                            <div className="space-y-1.5">
+-                                                                <div className="flex items-center text-[9px]">
+-                                                                    <span className="w-11 font-bold text-slate-600">孱・・菫｡鬆ｼ諤ｧ:</span>
+-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+-                                                                        <div className="h-full bg-emerald-500 rounded" style={{ width: `${(scoreData.reliability || 0) * 20}%` }} />
+-                                                                    </div>
+-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.reliability || '0.0'}</span>
+-                                                                </div>
+-                                                                <div className="flex items-center text-[9px]">
+-                                                                    <span className="w-11 font-bold text-slate-600">屏・・螳溽畑諤ｧ:</span>
+-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+-                                                                        <div className="h-full bg-indigo-500 rounded" style={{ width: `${(scoreData.practicality || 0) * 20}%` }} />
+-                                                                    </div>
+-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.practicality || '0.0'}</span>
+-                                                                </div>
+-                                                                <div className="flex items-center text-[9px]">
+-                                                                    <span className="w-11 font-bold text-slate-600">笨ｨ 譁ｰ隕乗ｧ:</span>
+-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+-                                                                        <div className="h-full bg-purple-500 rounded" style={{ width: `${(scoreData.novelty || 0) * 20}%` }} />
+-                                                                    </div>
+-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.novelty || '0.0'}</span>
+-                                                                </div>
+-                                                                <div className="flex items-center text-[9px]">
+-                                                                    <span className="w-11 font-bold text-slate-600">虫 萓｡蛟､:</span>
+-                                                                    <div className="flex-1 h-1.5 bg-slate-250 rounded overflow-hidden mx-1.5">
+-                                                                        <div className="h-full bg-yellow-500 rounded animate-pulse" style={{ width: `${(scoreData.value || 0) * 20}%`, backgroundColor: '#eab308' }} />
+-                                                                    </div>
+-                                                                    <span className="font-bold text-slate-700 w-5 text-right">{scoreData.value || '0.0'}</span>
+-                                                                </div>
+-                                                            </div>
+-                                                        </div>
+                                                     </div>
+                                                 );
+                                             })}
+                                         </div>
+                                     )}
+                                 </div>
+-                            )}
++                            )}}
+ 
+                             {/* 4. 繝励Ο繝ｳ繝励ヨ險ｭ螳・*/}
+                             {activeTab === 'settings' && (

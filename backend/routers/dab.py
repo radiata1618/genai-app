@@ -630,18 +630,6 @@ async def get_experts(db: firestore.Client = Depends(get_db)):
                         "x": "chiphuyen"
                     },
                     "avatar_url": ""
-                },
-                {
-                    "id": "kazushi",
-                    "name": "Kazushi氏 (Zennデータスペシャリスト)",
-                    "topic_ids": ["ai_ready_data", "data_catalog"],
-                    "accounts": {
-                        "zenn": "kazushi",
-                        "github": "",
-                        "website": "",
-                        "x": ""
-                    },
-                    "avatar_url": ""
                 }
             ]
             batch = db.batch()
