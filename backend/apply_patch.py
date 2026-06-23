@@ -10,17 +10,17 @@ i = 0
 while i < len(lines):
     line = lines[i]
     
-    # 置換 1: fetch_github_release_atom
+    # 1. fetch_github_release_atom
     if line.startswith("def fetch_github_release_atom("):
         new_func = """def fetch_github_release_atom(repo: str, expert_name: str, expert_id: str) -> List[Dict[str, Any]]:
-    \"\"\"特定のGitHubリポジトリのReleases（Atomフィード）またはユーザー公開フィードから最新情報を取得してパースする\"\"\"
+    \"\"\"Fetch GitHub releases or user public atom feed depending on repo value\"\"\"
     is_user_feed = '/' not in repo
     if is_user_feed:
         url = f"https://github.com/{repo}.atom"
-        print(f"有識者 {expert_name} の GitHub 公開アクティビティフィードを取得中: {url}")
+        print(f"Fetching GitHub public feed for expert {expert_name}: {url}")
     else:
         url = f"https://github.com/{repo}/releases.atom"
-        print(f"有識者/リポジトリ {expert_name} の GitHub Releases を取得中: {url}")
+        print(f"Fetching GitHub Releases for {expert_name}: {url}")
     
     req = urllib.request.Request(
         url, 
@@ -63,34 +63,34 @@ while i < len(lines):
                 })
         return articles
     except Exception as e:
-        feed_type = "公開フィード" if is_user_feed else "Releases"
-        print(f"GitHub {feed_type}取得エラー ({repo}): {e}")
+        feed_type = "public_feed" if is_user_feed else "releases"
+        print(f"GitHub {feed_type} fetch error ({repo}): {e}")
         return []
 
 """
         new_lines.append(new_func)
-        # 次の DEFAULT_FILTER_PROMPT までスキップ
+        # Skip to DEFAULT_FILTER_PROMPT
         while i < len(lines) and not lines[i].startswith("DEFAULT_FILTER_PROMPT ="):
             i += 1
         continue
         
-    # 置換 2: run_ingestion_pipeline
+    # 2. run_ingestion_pipeline
     if line.startswith("async def run_ingestion_pipeline("):
         new_pipeline = """async def run_ingestion_pipeline():
-    \"\"\"情報収集インジェクションのメインバッチ処理\"\"\"
-    print("=== DAB 情報収集パイプライン開始 ===")
+    \"\"\"Main batch process for DAB ingestion\"\"\"
+    print("=== DAB Ingestion Pipeline Start ===")
     db = get_db()
     
-    # 1. 現在のアクティブトピック（10選）を取得
+    # 1. Get active topics (10 selected)
     topics_docs = db.collection("dab_hot_topics").where("status", "==", "ACTIVE").get()
     active_topics = [doc.to_dict() for doc in topics_docs]
     
     if not active_topics:
-        print("アクティブなホットトピックが見つかりません。バッチを終了します。")
+        print("Active hot topics not found. Exiting batch.")
         return
         
-    # 1.5 有識者の発信情報を収集 (最優先で収集し、高速化)
-    print("\\n有識者の発信情報を収集開始...")
+    # 1.5 Collect expert articles (Priority & Speedup)
+    print("\\nStarting expert articles collection...")
     expert_articles = []
     try:
         experts_docs = db.collection("dab_experts").get()
@@ -100,19 +100,19 @@ while i < len(lines):
             expert_name = expert.get("name")
             accounts = expert.get("accounts", {})
             
-            # Zennユーザーフィード
+            # Zenn User Feed
             if accounts.get("zenn"):
                 z_arts = fetch_zenn_user_rss(accounts["zenn"], expert_name, expert_id)
                 expert_articles.extend(z_arts)
                 
-            # GitHubリリース / アクティビティ
+            # GitHub Releases / Activity
             if accounts.get("github"):
                 g_arts = fetch_github_release_atom(accounts["github"], expert_name, expert_id)
                 expert_articles.extend(g_arts)
     except Exception as exp_err:
-        print(f"有識者の情報収集エラー: {exp_err}")
+        print(f"Expert articles collection error: {exp_err}")
         
-    # 2. Zenn RSSから新着記事を取得してノイズ除去 (重複なし記事のみ並行でAI判定)
+    # 2. Fetch fresh Zenn RSS articles and filter out noise (Parallel AI filtering)
     raw_zenn_articles = fetch_zenn_rss()
     zenn_articles = []
     
@@ -123,69 +123,65 @@ while i < len(lines):
             candidate_zenn_articles.append(art)
             
     if candidate_zenn_articles:
-        print(f"\\nZenn新規候補 {len(candidate_zenn_articles)} 件をAIフィルタリング判定中(並行処理)...")
+        print(f"\\nFiltering {len(candidate_zenn_articles)} candidate Zenn articles via AI (Parallel)...")
         tasks = [filter_article_by_ai(art["title"], art["url"]) for art in candidate_zenn_articles]
         results = await asyncio.gather(*tasks, return_exceptions=True)
         
         for art, is_relevant in zip(candidate_zenn_articles, results):
             if isinstance(is_relevant, Exception):
-                print(f"  AI判定エラー ({art['title']}): {is_relevant}")
+                print(f"  AI filtering error ({art['title']}): {is_relevant}")
                 continue
             if is_relevant:
                 zenn_articles.append(art)
     
-    # 3. 各アクティブトピックについて Gemini Web Search で最新技術情報を3件ずつ収集 (並行処理)
+    # 3. Collect 3 search trends for each active topic via Gemini Web Search (Parallel)
     web_articles = []
     if active_topics:
-        print(f"\\nアクティブトピック {len(active_topics)} 件についてWeb検索トレンドを収集中(並行処理)...")
+        print(f"\\nCollecting web search trends for {len(active_topics)} active topics (Parallel)...")
         web_tasks = [fetch_web_trends_via_gemini(topic["name"]) for topic in active_topics]
         web_results = await asyncio.gather(*web_tasks, return_exceptions=True)
         for topic, topic_articles in zip(active_topics, web_results):
             if isinstance(topic_articles, Exception):
-                print(f"  Web検索エラー ({topic['name']}): {topic_articles}")
+                print(f"  Web search error ({topic['name']}): {topic_articles}")
                 continue
             web_articles.extend(topic_articles)
         
-    # 有識者記事を先頭にマージし、最速で画面に表示させる
+    # Merge expert articles at the beginning to display them immediately on UI
     all_raw_articles = expert_articles + zenn_articles + web_articles
-    print(f"\\n合計 {len(all_raw_articles)} 件のフィルタ適用済み記事候補が集まりました。")
+    print(f"\\nTotal {len(all_raw_articles)} filter-applied candidate articles gathered.")
     
-    # 4. 重複排除とフィルタリング保存
+    # 4. Save to Firestore
     feed_ref = db.collection("dab_feeds")
     processed_count = 0
     
     for article in all_raw_articles:
-        # URLのハッシュ値をドキュメントIDとして使用（重複保存を防止）
         url_hash = hashlib.md5(article["url"].encode('utf-8')).hexdigest()
         
-        # 既にFirestoreに存在するかチェック
         doc_ref = feed_ref.document(url_hash)
         if doc_ref.get().exists:
             continue
             
-        print(f"\\n新着記事を処理中: {article['title']}")
+        print(f"\\nProcessing new article: {article['title']}")
         
         try:
-            # 一次的に関連度を測るため、またはサマリを作るための下地
             brief = article.get("brief_summary", "")
             
-            # コンサル向け構造化メタデータ（サマリ、おすすめ理由、優先度スコア）の一括生成
+            # Generate metadata
             meta = await generate_article_metadata(article["title"], article["url"], brief, active_topics)
             summary = meta["summary"]
             recommendation_reason = meta["recommendation_reason"]
             priority_score = article.get("priority_score", meta["priority_score"])
             
-            # 記事をアクティブなホットトピックにマッピング
+            # Map to topics
             mapped_topic_ids = await map_article_to_topics(article["title"], summary, active_topics)
             
-            # Zenn記事でどれにもマッピングされなかった場合は、ノイズとしてスキップ（ただし有識者投稿は除く）
+            # Skip noise (Zenn source without mapping and not expert)
             is_zenn_source = "Zenn" in article["source"]
             is_expert = bool(article.get("expert_id"))
             if not mapped_topic_ids and is_zenn_source and not is_expert:
-                print("  -> 現在のホットトピックに関連しないため、ノイズとしてスキップします。")
+                print("  -> Skipped as noise (not related to active hot topics).")
                 continue
                 
-            # マッピングされたトピック名を収集
             topic_names = []
             for t_id in mapped_topic_ids:
                 for t in active_topics:
@@ -193,7 +189,7 @@ while i < len(lines):
                         topic_names.append(t["name"])
                         break
             
-            # Firestoreへ保存
+            # Save to Firestore
             feed_data = {
                 "id": url_hash,
                 "title": article["title"],
@@ -207,34 +203,34 @@ while i < len(lines):
                 "user_evaluations": None,
                 "related_topics": topic_names,
                 "created_at": datetime.now(timezone.utc),
-                "author": article.get("author") or meta.get("author") or "不明",
-                "read_time": meta.get("read_time", "5分"),
-                "target_level": meta.get("target_level", "コンサル向け"),
-                "benefit": meta.get("benefit", "最新トレンド理解"),
+                "author": article.get("author") or meta.get("author") or "Unknown",
+                "read_time": meta.get("read_time", "5m"),
+                "target_level": meta.get("target_level", "Consultant"),
+                "benefit": meta.get("benefit", "Latest trend understanding"),
                 "mermaid_code": meta.get("mermaid_code", ""),
                 "image_url": meta.get("image_url"),
-                "expert_id": article.get("expert_id") # 有識者ID
+                "expert_id": article.get("expert_id")
             }
             
             doc_ref.set(feed_data)
-            print(f"  -> Firestoreに保存完了！ (関連トピック: {', '.join(topic_names)}) (優先度: {priority_score})")
+            print(f"  -> Saved to Firestore successfully! (Topics: {', '.join(topic_names)}) (Priority: {priority_score})")
             processed_count += 1
             
-            # APIレート制限への配慮（適度にウェイトを置く）
+            # Wait for API rate limit
             await asyncio.sleep(1)
             
         except Exception as item_err:
-            print(f"  -> 記事の処理・保存中にエラーが発生しました: {item_err}")
+            print(f"  -> Error occurred during processing: {item_err}")
             continue
         
-    print(f"=== DAB 情報収集パイプライン終了 (新規処理件数: {processed_count} 件) ===")
+    print(f"=== DAB Ingestion Pipeline Finished (Processed: {processed_count} items) ===")
 
 if __name__ == "__main__":
     import asyncio
     asyncio.run(run_ingestion_pipeline())
 """
         new_lines.append(new_pipeline)
-        break # 終わりまで挿入したのでループ終了
+        break
         
     new_lines.append(line)
     i += 1
