@@ -225,7 +225,8 @@ async def get_topics(db: firestore.Client = Depends(get_db)):
         topics = []
         for d in docs:
             data = d.to_dict()
-            topics.append(Topic(**data))
+            if data is not None:
+                topics.append(Topic(**data))  # type: ignore
         return topics
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -236,7 +237,9 @@ async def get_user_memory(db: firestore.Client = Depends(get_db)):
     try:
         doc = db.collection("dab_user_memory").document("default_user").get()
         if doc.exists:
-            return UserMemory(**doc.to_dict())
+            data = doc.to_dict()
+            if data is not None:
+                return UserMemory(**data)  # type: ignore
         raise HTTPException(status_code=404, detail="User memory profile not found.")
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -454,7 +457,8 @@ async def get_feed(db: firestore.Client = Depends(get_db)):
         feed_items = []
         for d in docs:
             data = d.to_dict()
-            feed_items.append(FeedItem(**data))
+            if data is not None:
+                feed_items.append(FeedItem(**data))  # type: ignore
         return feed_items
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -615,7 +619,9 @@ async def get_experts(db: firestore.Client = Depends(get_db)):
                         "zenn": "",
                         "github": "seattle-data-guy",
                         "website": "https://www.theseattledataguy.com",
-                        "x": "seattledataguy"
+                        "x": "seattledataguy",
+                        "qiita": "",
+                        "note": ""
                     },
                     "avatar_url": ""
                 },
@@ -627,7 +633,37 @@ async def get_experts(db: firestore.Client = Depends(get_db)):
                         "zenn": "",
                         "github": "chiphuyen",
                         "website": "https://chiphuyen.com",
-                        "x": "chiphuyen"
+                        "x": "chiphuyen",
+                        "qiita": "",
+                        "note": ""
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "yuzutas0",
+                    "name": "yuzutas0 (Data Engineering Expert)",
+                    "topic_ids": ["data_engineering", "data_lakehouse"],
+                    "accounts": {
+                        "zenn": "",
+                        "github": "yuzutas0",
+                        "website": "",
+                        "x": "yuzutas0",
+                        "qiita": "yuzutas0",
+                        "note": "yuzutas0"
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "opendataspace",
+                    "name": "OpenDataSpace (Official Update)",
+                    "topic_ids": ["ai_architecture"],
+                    "accounts": {
+                        "zenn": "",
+                        "github": "",
+                        "website": "https://opendataspace.org",
+                        "x": "",
+                        "qiita": "",
+                        "note": ""
                     },
                     "avatar_url": ""
                 }
@@ -646,12 +682,14 @@ async def get_experts(db: firestore.Client = Depends(get_db)):
         experts = []
         for d in docs:
             data = d.to_dict()
+            if not data:
+                continue
             # タイムスタンプのパースエラー回避
             if "created_at" in data and not data["created_at"]:
                 data["created_at"] = None
             if "updated_at" in data and not data["updated_at"]:
                 data["updated_at"] = None
-            experts.append(Expert(**data))
+            experts.append(Expert(**data))  # type: ignore
         return experts
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
@@ -665,7 +703,7 @@ async def create_expert(expert: Expert, db: firestore.Client = Depends(get_db)):
         expert_dict["created_at"] = datetime.now(timezone.utc)
         expert_dict["updated_at"] = datetime.now(timezone.utc)
         doc_ref.set(expert_dict)
-        return Expert(**expert_dict)
+        return Expert(**expert_dict)  # type: ignore
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -682,10 +720,14 @@ async def update_expert(expert_id: str, expert: Expert, db: firestore.Client = D
         
         # created_atを保持する
         existing_data = doc_ref.get().to_dict()
-        expert_dict["created_at"] = existing_data.get("created_at") if existing_data else datetime.now(timezone.utc)
+        expert_dict["created_at"] = (
+            existing_data.get("created_at")
+            if existing_data and isinstance(existing_data, dict)
+            else datetime.now(timezone.utc)
+        )
         
         doc_ref.set(expert_dict)
-        return Expert(**expert_dict)
+        return Expert(**expert_dict)  # type: ignore
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -763,16 +805,26 @@ async def discover_new_experts(db: firestore.Client = Depends(get_db)):
     try:
         # 現在のアクティブトピックと、ユーザーの長期記憶を取得
         topics_docs = db.collection("dab_hot_topics").where("status", "==", "ACTIVE").get()
-        active_topics = [doc.to_dict()["name"] for doc in topics_docs]
+        active_topics = []
+        for doc in topics_docs:
+            d_data = doc.to_dict()
+            if d_data and "name" in d_data:
+                active_topics.append(d_data["name"])
         
         memory_doc = db.collection("dab_user_memory").document("default_user").get()
-        memory_data = memory_doc.to_dict() if memory_doc.exists else {}
+        memory_data = memory_doc.to_dict() if memory_doc.exists else None
+        if not memory_data or not isinstance(memory_data, dict):
+            memory_data = {}
         known_concepts = memory_data.get("known_concepts", [])
         learning_goals = memory_data.get("learning_goals", "")
         
         # 既存の有識者名を取得して重複提案を避ける
         existing_experts_docs = db.collection("dab_experts").stream()
-        existing_names = [d.to_dict()["name"] for d in existing_experts_docs]
+        existing_names = []
+        for d in existing_experts_docs:
+            d_data = d.to_dict()
+            if d_data and "name" in d_data:
+                existing_names.append(d_data["name"])
         
         system_instruction = (
             "あなたはデータアーキテクチャ・AIレディデータ分野の専門家発信者を発見するスカウトエージェントです。\n"
