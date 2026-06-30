@@ -157,12 +157,28 @@ def fetch_github_release_atom(repo: str, expert_name: str, expert_id: str) -> Li
         
         articles = []
         for entry in root.findall('atom:entry', ns):
+            # ユーザー公開フィードの場合は最大5件に制限
+            if is_user_feed and len(articles) >= 5:
+                break
+                
             title_el = entry.find('atom:title', ns)
             link_el = entry.find('atom:link', ns)
             updated_el = entry.find('atom:updated', ns)
             
             title = title_el.text if title_el is not None else ("New Activity" if is_user_feed else "New Release")
             url = link_el.attrib.get('href') if link_el is not None else ""
+            
+            # ユーザー公開フィードの場合は開発ノイズ（スター、フォーク、コメント、イシュー起票/クローズ等）をスキップ
+            if is_user_feed and title:
+                lower_title = title.lower()
+                noise_keywords = [
+                    "starred", "forked", "commented on", 
+                    "opened a pull request", "opened an issue", 
+                    "closed a pull request", "closed an issue"
+                ]
+                if any(kw in lower_title for kw in noise_keywords):
+                    continue
+                    
             updated_str = updated_el.text if updated_el is not None else ""
             
             pub_date = None
