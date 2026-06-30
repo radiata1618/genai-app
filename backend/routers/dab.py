@@ -518,11 +518,12 @@ async def skip_all_feeds(req: SkipAllRequest, db: firestore.Client = Depends(get
         raise HTTPException(status_code=500, detail=str(e))
 
 @router.post("/ingest")
-async def trigger_ingestion(background_tasks: BackgroundTasks):
+async def trigger_ingestion(background_tasks: BackgroundTasks, expert_only: bool = True):
     """手動で情報収集インジェクションバッチをトリガーする"""
     try:
-        background_tasks.add_task(run_ingestion_pipeline)
-        return {"status": "success", "message": "DAB情報収集パイプラインをバックグラウンドで開始しました。"}
+        background_tasks.add_task(run_ingestion_pipeline, expert_only)
+        mode = "有識者のみ" if expert_only else "全体"
+        return {"status": "success", "message": f"DAB情報収集パイプライン({mode})をバックグラウンドで開始しました。"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -644,12 +645,54 @@ async def get_experts(db: firestore.Client = Depends(get_db)):
                     "name": "yuzutas0 (Data Engineering Expert)",
                     "topic_ids": ["data_engineering", "data_lakehouse"],
                     "accounts": {
-                        "zenn": "",
+                        "zenn": "yuzutas0",
                         "github": "yuzutas0",
                         "website": "",
                         "x": "yuzutas0",
                         "qiita": "yuzutas0",
                         "note": "yuzutas0"
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "sugimoto_kei",
+                    "name": "Kei Sugimoto (杉本 啓 / Modeling Expert)",
+                    "topic_ids": ["data_engineering", "data_lakehouse"],
+                    "accounts": {
+                        "zenn": "sugimoto_kei",
+                        "github": "sugimoto-kei",
+                        "website": "",
+                        "x": "sugimoto_kei",
+                        "qiita": "",
+                        "note": ""
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "chikathreesix",
+                    "name": "chikathreesix (Data Platform Engineer)",
+                    "topic_ids": ["data_engineering", "data_lakehouse"],
+                    "accounts": {
+                        "zenn": "chikathreesix",
+                        "github": "chikathreesix",
+                        "website": "",
+                        "x": "chikathreesix",
+                        "qiita": "",
+                        "note": ""
+                    },
+                    "avatar_url": ""
+                },
+                {
+                    "id": "reoring",
+                    "name": "reoring (Data Architect)",
+                    "topic_ids": ["data_engineering", "data_lakehouse"],
+                    "accounts": {
+                        "zenn": "reoring",
+                        "github": "reoring",
+                        "website": "",
+                        "x": "reoring",
+                        "qiita": "",
+                        "note": "reoring"
                     },
                     "avatar_url": ""
                 },
