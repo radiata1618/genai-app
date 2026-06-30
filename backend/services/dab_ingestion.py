@@ -2,6 +2,7 @@ import os
 import sys
 import urllib.request
 import xml.etree.ElementTree as ET
+import asyncio
 from datetime import datetime, timezone
 import json
 import hashlib
@@ -644,9 +645,9 @@ async def map_article_to_topics(article_title: str, summary: str, active_topics:
         print(f"トピックマッピングエラー: {e}")
         return []
 
-async def run_ingestion_pipeline():
+async def run_ingestion_pipeline(expert_only: bool = True):
     """Main batch process for DAB ingestion"""
-    print("=== DAB Ingestion Pipeline Start ===")
+    print(f"=== DAB Ingestion Pipeline Start (expert_only={expert_only}) ===")
     db = get_db()
     
     # 1. Get active topics (10 selected)
@@ -695,116 +696,131 @@ async def run_ingestion_pipeline():
     except Exception as exp_err:
         print(f"Expert articles collection error: {exp_err}")
         
-    # 2. Fetch fresh Zenn RSS articles and filter out noise (Parallel AI filtering)
-    raw_zenn_articles = fetch_zenn_rss()
     zenn_articles = []
-    
-    candidate_zenn_articles = []
-    for art in raw_zenn_articles:
-        url_hash = hashlib.md5(art["url"].encode('utf-8')).hexdigest()
-        if not db.collection("dab_feeds").document(url_hash).get().exists:
-            candidate_zenn_articles.append(art)
-            
-    if candidate_zenn_articles:
-        print(f"\nFiltering {len(candidate_zenn_articles)} candidate Zenn articles via AI (Parallel)...")
-        tasks = [filter_article_by_ai(art["title"], art["url"]) for art in candidate_zenn_articles]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        
-        for art, is_relevant in zip(candidate_zenn_articles, results):
-            if isinstance(is_relevant, Exception):
-                print(f"  AI filtering error ({art['title']}): {is_relevant}")
-                continue
-            if is_relevant:
-                zenn_articles.append(art)
-    
-    # 3. Collect 3 search trends for each active topic via Gemini Web Search (Parallel)
     web_articles = []
-    if active_topics:
-        print(f"\nCollecting web search trends for {len(active_topics)} active topics (Parallel)...")
-        web_tasks = [fetch_web_trends_via_gemini(topic["name"]) for topic in active_topics]
-        web_results = await asyncio.gather(*web_tasks, return_exceptions=True)
-        for topic, topic_articles in zip(active_topics, web_results):
-            if isinstance(topic_articles, Exception):
-                print(f"  Web search error ({topic['name']}): {topic_articles}")
-                continue
-            web_articles.extend(topic_articles)
+    
+    if not expert_only:
+        # 2. Fetch fresh Zenn RSS articles and filter out noise (Parallel AI filtering)
+        raw_zenn_articles = fetch_zenn_rss()
+        
+        candidate_zenn_articles = []
+        for art in raw_zenn_articles:
+            url_hash = hashlib.md5(art["url"].encode('utf-8')).hexdigest()
+            if not db.collection("dab_feeds").document(url_hash).get().exists:
+                candidate_zenn_articles.append(art)
+                
+        if candidate_zenn_articles:
+            print(f"\nFiltering {len(candidate_zenn_articles)} candidate Zenn articles via AI (Parallel)...")
+            tasks = [filter_article_by_ai(art["title"], art["url"]) for art in candidate_zenn_articles]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            
+            for art, is_relevant in zip(candidate_zenn_articles, results):
+                if isinstance(is_relevant, Exception):
+                    print(f"  AI filtering error ({art['title']}): {is_relevant}")
+                    continue
+                if is_relevant:
+                    zenn_articles.append(art)
+        
+        # 3. Collect 3 search trends for each active topic via Gemini Web Search (Parallel)
+        if active_topics:
+            print(f"\nCollecting web search trends for {len(active_topics)} active topics (Parallel)...")
+            web_tasks = [fetch_web_trends_via_gemini(topic["name"]) for topic in active_topics]
+            web_results = await asyncio.gather(*web_tasks, return_exceptions=True)
+            for topic, topic_articles in zip(active_topics, web_results):
+                if isinstance(topic_articles, Exception):
+                    print(f"  Web search error ({topic['name']}): {topic_articles}")
+                    continue
+                web_articles.extend(topic_articles)
+    else:
+        print("\nSkipping general Zenn feed and Web Search trends collection (expert_only=True)")
         
     # Merge expert articles at the beginning to display them immediately on UI
     all_raw_articles = expert_articles + zenn_articles + web_articles
     print(f"\nTotal {len(all_raw_articles)} filter-applied candidate articles gathered.")
     
-    # 4. Save to Firestore
+    # 4. Save to Firestore (Parallel processing with Semaphore)
     feed_ref = db.collection("dab_feeds")
-    processed_count = 0
     
+    new_articles = []
     for article in all_raw_articles:
         url_hash = hashlib.md5(article["url"].encode('utf-8')).hexdigest()
-        
+        if not feed_ref.document(url_hash).get().exists:
+            new_articles.append(article)
+            
+    print(f"New articles to process: {len(new_articles)}")
+    
+    semaphore = asyncio.Semaphore(3)
+    processed_count = 0
+    
+    async def process_and_save_article(article):
+        nonlocal processed_count
+        url_hash = hashlib.md5(article["url"].encode('utf-8')).hexdigest()
         doc_ref = feed_ref.document(url_hash)
-        if doc_ref.get().exists:
-            continue
-            
-        print(f"\nProcessing new article: {article['title']}")
         
-        try:
-            brief = article.get("brief_summary", "")
-            
-            # Generate metadata
-            meta = await generate_article_metadata(article["title"], article["url"], brief, active_topics)
-            summary = meta["summary"]
-            recommendation_reason = meta["recommendation_reason"]
-            priority_score = article.get("priority_score", meta["priority_score"])
-            
-            # Map to topics
-            mapped_topic_ids = await map_article_to_topics(article["title"], summary, active_topics)
-            
-            # Skip noise (Zenn source without mapping and not expert)
-            is_zenn_source = "Zenn" in article["source"]
-            is_expert = bool(article.get("expert_id"))
-            if not mapped_topic_ids and is_zenn_source and not is_expert:
-                print("  -> Skipped as noise (not related to active hot topics).")
-                continue
+        async with semaphore:
+            print(f"Processing new article (Parallel): {article['title']}")
+            try:
+                brief = article.get("brief_summary", "")
                 
-            topic_names = []
-            for t_id in mapped_topic_ids:
-                for t in active_topics:
-                    if t["id"] == t_id:
-                        topic_names.append(t["name"])
-                        break
-            
-            # Save to Firestore
-            feed_data = {
-                "id": url_hash,
-                "title": article["title"],
-                "url": article["url"],
-                "source": article["source"],
-                "published_at": article["published_at"],
-                "summary": summary,
-                "recommendation_reason": recommendation_reason,
-                "priority_score": priority_score,
-                "read_status": "UNREAD",
-                "user_evaluations": None,
-                "related_topics": topic_names,
-                "created_at": datetime.now(timezone.utc),
-                "author": article.get("author") or meta.get("author") or "Unknown",
-                "read_time": meta.get("read_time", "5m"),
-                "target_level": meta.get("target_level", "Consultant"),
-                "benefit": meta.get("benefit", "Latest trend understanding"),
-                "mermaid_code": meta.get("mermaid_code", ""),
-                "image_url": meta.get("image_url"),
-                "expert_id": article.get("expert_id")
-            }
-            
-            doc_ref.set(feed_data)
-            print(f"  -> Saved to Firestore successfully! (Topics: {', '.join(topic_names)}) (Priority: {priority_score})")
-            processed_count += 1
-            
-            # Wait for API rate limit
-            await asyncio.sleep(1)
-            
-        except Exception as item_err:
-            print(f"  -> Error occurred during processing: {item_err}")
-            continue
+                # Generate metadata
+                meta = await generate_article_metadata(article["title"], article["url"], brief, active_topics)
+                summary = meta["summary"]
+                recommendation_reason = meta["recommendation_reason"]
+                priority_score = article.get("priority_score", meta["priority_score"])
+                
+                # Map to topics
+                mapped_topic_ids = await map_article_to_topics(article["title"], summary, active_topics)
+                
+                # Skip noise (Zenn source without mapping and not expert)
+                is_zenn_source = "Zenn" in article["source"]
+                is_expert = bool(article.get("expert_id"))
+                if not mapped_topic_ids and is_zenn_source and not is_expert:
+                    print(f"  -> Skipped as noise: {article['title']}")
+                    return
+                    
+                topic_names = []
+                for t_id in mapped_topic_ids:
+                    for t in active_topics:
+                        if t["id"] == t_id:
+                            topic_names.append(t["name"])
+                            break
+                
+                # Save to Firestore
+                feed_data = {
+                    "id": url_hash,
+                    "title": article["title"],
+                    "url": article["url"],
+                    "source": article["source"],
+                    "published_at": article["published_at"],
+                    "summary": summary,
+                    "recommendation_reason": recommendation_reason,
+                    "priority_score": priority_score,
+                    "read_status": "UNREAD",
+                    "user_evaluations": None,
+                    "related_topics": topic_names,
+                    "created_at": datetime.now(timezone.utc),
+                    "author": article.get("author") or meta.get("author") or "Unknown",
+                    "read_time": meta.get("read_time", "5m"),
+                    "target_level": meta.get("target_level", "Consultant"),
+                    "benefit": meta.get("benefit", "Latest trend understanding"),
+                    "mermaid_code": meta.get("mermaid_code", ""),
+                    "image_url": meta.get("image_url"),
+                    "expert_id": article.get("expert_id")
+                }
+                
+                doc_ref.set(feed_data)
+                print(f"  -> Saved to Firestore successfully! {article['title']} (Topics: {', '.join(topic_names)}) (Priority: {priority_score})")
+                processed_count += 1
+                
+                # Wait for API rate limit
+                await asyncio.sleep(1)
+                
+            except Exception as item_err:
+                print(f"  -> Error occurred during processing '{article['title']}': {item_err}")
+
+    if new_articles:
+        tasks = [process_and_save_article(art) for art in new_articles]
+        await asyncio.gather(*tasks, return_exceptions=True)
         
     print(f"=== DAB Ingestion Pipeline Finished (Processed: {processed_count} items) ===")
 

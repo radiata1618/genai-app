@@ -132,8 +132,9 @@ export const dabApi = {
     },
 
     // 情報収集インジェクションバッチの手動トリガー
-    triggerIngest: async () => {
-        const res = await fetch(`${API_BASE}/ingest`, {
+    triggerIngest: async (expertOnly = false) => {
+        const url = `${API_BASE}/ingest` + (expertOnly ? '?expert_only=true' : '');
+        const res = await fetch(url, {
             method: 'POST',
         });
         if (!res.ok) throw new Error('情報収集バッチのトリガーに失敗しました');

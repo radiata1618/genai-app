@@ -322,7 +322,8 @@ function DabDashboard() {
     const [topics, setTopics] = useState([]);
     const [memory, setMemory] = useState(null);
     const [feed, setFeed] = useState([]);
-    const [feedFilter, setFeedFilter] = useState('unread'); // 'unread', 'all', 'read', 'expert'
+    const [statusFilter, setStatusFilter] = useState('unread'); // 'unread', 'evaluated', 'skipped', 'all'
+    const [expertFilter, setExpertFilter] = useState('all'); // 'all', 'expert', 'non_expert'
     const [feedSort, setFeedSort] = useState('priority'); // 'priority', 'newest'
 
     // 有識者（Expert）状態
@@ -940,11 +941,14 @@ function DabDashboard() {
     };
 
     // 手動バッチトリガーのハンドラ
-    const handleTriggerIngest = async () => {
+    const handleTriggerIngest = async (expertOnly = false) => {
         setIsIngesting(true);
         try {
-            await dabApi.triggerIngest();
-            alert('情報収集バッチをバックグラウンドで起動しました。最新記事の収集およびコンサル構造化サマリの生成が開始されます。約15秒後にフィードが自動更新されます。');
+            await dabApi.triggerIngest(expertOnly);
+            const msg = expertOnly 
+                ? '有識者のみの情報収集バッチをバックグラウンドで起動しました。最新記事の収集およびコンサル構造化サマリの生成が開始されます。約15秒後にフィードが自動更新されます。'
+                : '全体情報収集バッチをバックグラウンドで起動しました。最新記事の収集およびコンサル構造化サマリの生成が開始されます。約15秒後にフィードが自動更新されます。';
+            alert(msg);
 
             // 15秒後にデータを再読み込み
             setTimeout(async () => {
@@ -1022,13 +1026,20 @@ function DabDashboard() {
     const processedFeed = React.useMemo(() => {
         let list = [...feed];
 
-        // 1. フィルタリング
-        if (feedFilter === 'unread') {
+        // 1. ステータスフィルタリング
+        if (statusFilter === 'unread') {
             list = list.filter(item => !item.user_evaluations && item.read_status !== 'READ');
-        } else if (feedFilter === 'read') {
-            list = list.filter(item => !!item.user_evaluations || item.read_status === 'READ');
-        } else if (feedFilter === 'expert') {
+        } else if (statusFilter === 'evaluated') {
+            list = list.filter(item => item.user_evaluations && !item.user_evaluations.skipped);
+        } else if (statusFilter === 'skipped') {
+            list = list.filter(item => item.user_evaluations?.skipped === true);
+        }
+
+        // 2. 有識者フィルタリング
+        if (expertFilter === 'expert') {
             list = list.filter(item => !!item.expert_id);
+        } else if (expertFilter === 'non_expert') {
+            list = list.filter(item => !item.expert_id);
         }
 
         // 2. ソート
@@ -1050,7 +1061,7 @@ function DabDashboard() {
 
         // 3. 件数制限 (最大20件にスライス)
         return list.slice(0, 20);
-    }, [feed, feedFilter, feedSort]);
+    }, [feed, statusFilter, expertFilter, feedSort]);
 
     const displayedTopics = pendingChanges
         ? applyChangesLocal(topics, pendingChanges.changes)
@@ -1244,21 +1255,33 @@ function DabDashboard() {
                             {activeTab === 'feed' && (
                                 <div className="space-y-3 animate-in fade-in duration-200">
                                     {/* 手動バッチ起動ボタン */}
-                                    <div className="flex justify-between items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm gap-2">
+                                    <div className="flex flex-col sm:flex-row justify-between items-start sm:items-center bg-white p-3 rounded-lg border border-slate-200 shadow-sm gap-3">
                                         <div>
-                                            <h4 className="font-bold text-xs text-slate-800">最新トレンド情報の収集</h4>
-                                            <p className="text-[10px] text-slate-500 mt-0.5">Zenn RSSおよびGemini Web Searchから最新記事を収集し、AIで厳選要約します。</p>
+                                            <h4 className="font-bold text-xs text-slate-800">最新情報の収集</h4>
+                                            <p className="text-[10px] text-slate-500 mt-0.5">登録された有識者（Zenn/Note等）または全体から最新記事を収集・要約します。</p>
                                         </div>
-                                        <button
-                                            onClick={handleTriggerIngest}
-                                            disabled={isIngesting}
-                                            className={`px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-all flex-shrink-0 ${isIngesting
-                                                    ? 'bg-slate-100 text-slate-400 cursor-not-allowed animate-pulse border border-slate-250'
-                                                    : 'bg-indigo-600 hover:bg-indigo-700 text-white shadow-indigo-100'
-                                                }`}
-                                        >
-                                            {isIngesting ? '情報収集処理中...' : '最新情報を取得 🔄'}
-                                        </button>
+                                        <div className="flex gap-2 w-full sm:w-auto">
+                                            <button
+                                                onClick={() => handleTriggerIngest(true)}
+                                                disabled={isIngesting}
+                                                className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-all flex-shrink-0 ${isIngesting
+                                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-250'
+                                                        : 'bg-pink-600 hover:bg-pink-700 text-white shadow-pink-100'
+                                                    }`}
+                                            >
+                                                {isIngesting ? '処理中...' : '✨ 有識者のみ取得 🔄'}
+                                            </button>
+                                            <button
+                                                onClick={() => handleTriggerIngest(false)}
+                                                disabled={isIngesting}
+                                                className={`flex-1 sm:flex-initial px-3 py-1.5 rounded-lg text-xs font-semibold shadow transition-all border flex-shrink-0 ${isIngesting
+                                                        ? 'bg-slate-100 text-slate-400 cursor-not-allowed border border-slate-250'
+                                                        : 'bg-white hover:bg-slate-50 text-slate-700 border-slate-205'
+                                                    }`}
+                                            >
+                                                {isIngesting ? '処理中...' : '全体を取得 🔄'}
+                                            </button>
+                                        </div>
                                     </div>
 
                                     {/* 凡例 (Legend) */}
@@ -1270,68 +1293,104 @@ function DabDashboard() {
                                     </div>
 
                                     {/* フィルタ & ソートコントロール */}
-                                    <div className="flex flex-wrap items-center justify-between bg-white px-4 py-2.5 rounded-xl border border-slate-200 shadow-sm gap-3">
-                                        <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
-                                            <button
-                                                onClick={() => setFeedFilter('unread')}
-                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${feedFilter === 'unread'
-                                                        ? 'bg-white text-indigo-700 shadow-sm'
-                                                        : 'text-slate-650 hover:text-slate-900'
-                                                    }`}
-                                            >
-                                                📥 未読 (さばき待ち)
-                                            </button>
-                                            <button
-                                                onClick={() => setFeedFilter('read')}
-                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${feedFilter === 'read'
-                                                        ? 'bg-white text-indigo-700 shadow-sm'
-                                                        : 'text-slate-655 hover:text-slate-900'
-                                                    }`}
-                                            >
-                                                ✅ 評価済み
-                                            </button>
-                                            <button
-                                                onClick={() => setFeedFilter('all')}
-                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${feedFilter === 'all'
-                                                        ? 'bg-white text-indigo-700 shadow-sm'
-                                                        : 'text-slate-655 hover:text-slate-900'
-                                                    }`}
-                                            >
-                                                🌐 すべて
-                                            </button>
-                                            <button
-                                                onClick={() => setFeedFilter('expert')}
-                                                className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${feedFilter === 'expert'
-                                                        ? 'bg-white text-indigo-700 shadow-sm'
-                                                        : 'text-slate-655 hover:text-slate-900'
-                                                    }`}
-                                            >
-                                                ✨ 有識者
-                                            </button>
-                                        </div>
+                                    <div className="flex flex-col bg-white p-3 rounded-xl border border-slate-200 shadow-sm gap-3">
+                                        <div className="flex flex-wrap items-center justify-between gap-3">
+                                            <div className="flex flex-wrap items-center gap-2">
+                                                {/* ステータスフィルタ */}
+                                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                                                    <button
+                                                        onClick={() => setStatusFilter('unread')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${statusFilter === 'unread'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-900'
+                                                            }`}
+                                                    >
+                                                        📥 未読 (さばき待ち)
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setStatusFilter('evaluated')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${statusFilter === 'evaluated'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-950'
+                                                            }`}
+                                                    >
+                                                        ✅ 評価済み
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setStatusFilter('skipped')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${statusFilter === 'skipped'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-950'
+                                                            }`}
+                                                    >
+                                                        🧹 スキップ
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setStatusFilter('all')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${statusFilter === 'all'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-950'
+                                                            }`}
+                                                    >
+                                                        🌐 すべて
+                                                    </button>
+                                                </div>
 
-                                        <div className="flex items-center gap-3">
-                                            {/* 一括スキップボタン (未読フィルタかつ表示中のフィードがある場合のみ表示) */}
-                                            {feedFilter === 'unread' && processedFeed.length > 0 && (
-                                                <button
-                                                    onClick={handleSkipAll}
-                                                    className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-lg text-[10px] font-bold transition-all shadow-sm flex items-center gap-1"
-                                                    title="表示されているすべての未読記事をスキップして既読にします"
-                                                >
-                                                    <span>🧹</span> 表示中の {processedFeed.length} 件をスキップ
-                                                </button>
-                                            )}
+                                                {/* 発信者フィルタ */}
+                                                <div className="flex items-center gap-1 bg-slate-100 p-1 rounded-lg">
+                                                    <button
+                                                        onClick={() => setExpertFilter('all')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${expertFilter === 'all'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-650 hover:text-slate-900'
+                                                            }`}
+                                                    >
+                                                        👥 すべて
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setExpertFilter('expert')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${expertFilter === 'expert'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-900'
+                                                            }`}
+                                                    >
+                                                        ✨ 有識者のみ
+                                                    </button>
+                                                    <button
+                                                        onClick={() => setExpertFilter('non_expert')}
+                                                        className={`px-3 py-1 rounded-md text-[11px] font-bold transition-all ${expertFilter === 'non_expert'
+                                                                ? 'bg-white text-indigo-700 shadow-sm'
+                                                                : 'text-slate-655 hover:text-slate-900'
+                                                            }`}
+                                                    >
+                                                        👤 一般のみ
+                                                    </button>
+                                                </div>
+                                            </div>
 
-                                            <div className="flex items-center gap-1.5">
-                                                <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider">並び順:</span>
-                                                <select
-                                                    value={feedSort}
-                                                    onChange={(e) => setFeedSort(e.target.value)}
-                                                    className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm cursor-pointer"
-                                                >
-                                                    <option value="priority">🔥 優先度順</option>
-                                                    <option value="newest">📅 最新順</option>
-                                                </select>
+                                            <div className="flex items-center gap-3 ml-auto">
+                                                {/* 一括スキップボタン (未読フィルタかつ表示中のフィードがある場合のみ表示) */}
+                                                {statusFilter === 'unread' && processedFeed.length > 0 && (
+                                                    <button
+                                                        onClick={handleSkipAll}
+                                                        className="bg-amber-50 hover:bg-amber-100 border border-amber-250 text-amber-800 px-3 py-1 rounded-lg text-[10px] font-bold transition-all shadow-sm flex items-center gap-1"
+                                                        title="表示されているすべての未読記事をスキップして既読にします"
+                                                    >
+                                                        <span>🧹</span> 表示中の {processedFeed.length} 件をスキップ
+                                                    </button>
+                                                )}
+
+                                                <div className="flex items-center gap-1.5">
+                                                    <span className="text-[9px] font-bold text-slate-450 uppercase tracking-wider">並び順:</span>
+                                                    <select
+                                                        value={feedSort}
+                                                        onChange={(e) => setFeedSort(e.target.value)}
+                                                        className="bg-white border border-slate-200 rounded-lg px-2.5 py-1 text-xs text-slate-700 font-semibold focus:outline-none focus:ring-1 focus:ring-indigo-500 shadow-sm cursor-pointer"
+                                                    >
+                                                        <option value="priority">🔥 優先度順</option>
+                                                        <option value="newest">📅 最新順</option>
+                                                    </select>
+                                                </div>
                                             </div>
                                         </div>
                                     </div>
