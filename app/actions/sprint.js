@@ -3,6 +3,11 @@
 import { db } from '../lib/firebase';
 import { FieldPath } from 'firebase-admin/firestore';
 
+// インメモリキャッシュ（スプリント情報）
+let activeSprintCache = null;
+let activeSprintCacheTime = 0;
+const CACHE_TTL = 5 * 60 * 1000; // 5分間キャッシュ
+
 // Helper: Serialize Firestore data (Reused from backlog.js pattern)
 function serialize(obj) {
     if (obj === null || obj === undefined) return obj;
@@ -27,6 +32,7 @@ export async function createSprint(data) {
     if (active) {
         throw new Error("An active sprint already exists.");
     }
+    activeSprintCache = null; // キャッシュをクリア
 
     const docRef = db.collection('sprints').doc();
     const now = new Date();
@@ -48,13 +54,25 @@ export async function createSprint(data) {
 
 // Get the current active sprint
 export async function getCurrentSprint() {
+    const now = Date.now();
+    if (activeSprintCache && (now - activeSprintCacheTime < CACHE_TTL)) {
+        return activeSprintCache;
+    }
+
     const snap = await db.collection('sprints')
         .where('status', '==', 'ACTIVE')
         .limit(1)
         .get();
 
-    if (snap.empty) return null;
-    return serialize({ ...snap.docs[0].data(), id: snap.docs[0].id });
+    if (snap.empty) {
+        activeSprintCache = null;
+        activeSprintCacheTime = now;
+        return null;
+    }
+    const sprint = serialize({ ...snap.docs[0].data(), id: snap.docs[0].id });
+    activeSprintCache = sprint;
+    activeSprintCacheTime = now;
+    return sprint;
 }
 
 // Update Sprint Goal
@@ -71,6 +89,7 @@ export async function completeSprint(sprintId, retro) {
         retro: retro,
         completed_at: now
     });
+    activeSprintCache = null; // キャッシュをクリア
 
     // Optional: Archive tasks or handle them? 
     // For now, we leave them as is, or maybe they stay in BACKLOG/DONE? 
@@ -185,6 +204,7 @@ export async function deleteSprint(sprintId, unassignTasks = true) {
 
     // 2. Delete Sprint Doc
     await db.collection('sprints').doc(sprintId).delete();
+    activeSprintCache = null; // キャッシュをクリア
     return { status: 'deleted', sprintId };
 }
 

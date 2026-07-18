@@ -80,6 +80,12 @@ function DashboardContent() {
         }
     };
 
+    const mergeTempTasks = (currentTasks, fetchedTasks) => {
+        const tempTasks = currentTasks.filter(item => item.id && item.id.toString().startsWith('temp_'));
+        const filteredTemp = tempTasks.filter(temp => !fetchedTasks.some(real => real.title === temp.title));
+        return [...fetchedTasks, ...filteredTemp];
+    };
+
     const init = async (currentTodayStr) => {
         // Don't set loading=true here if we already have cache, to avoid flickering
         // Instead, we just fetch and update.
@@ -92,7 +98,7 @@ function DashboardContent() {
             ]);
 
             setRoutines(r.filter(x => x.routine_type === 'MINDSET'));
-            setTasks(t);
+            setTasks(prev => mergeTempTasks(prev, t));
             saveCache(t); // Update cache with fresh data
         } catch (e) {
             console.error(e);
@@ -188,8 +194,11 @@ function DashboardContent() {
 
     const handleQuickAdd = async (e) => {
         e.preventDefault();
+        if (isSubmitting) return;
         const titleVal = newTaskTitle.trim();
         if (!titleVal) return;
+
+        setIsSubmitting(true);
 
         // 1. Optimistic UI Update
         const tempId = `temp_${Date.now()}`;
@@ -220,7 +229,7 @@ function DashboardContent() {
 
             // Refresh in background to get real ID
             const t = await getDailyTasks(todayStr);
-            setTasks(t);
+            setTasks(prev => mergeTempTasks(prev, t));
             saveCache(t);
         } catch (e) {
             console.error(e);
@@ -231,6 +240,8 @@ function DashboardContent() {
                 return newTasks;
             });
             alert('Failed to add task');
+        } finally {
+            setIsSubmitting(false);
         }
     };
 
@@ -383,7 +394,7 @@ function DashboardContent() {
             setShowVoiceModal(false);
 
             const t = await getDailyTasks(todayStr);
-            setTasks(t);
+            setTasks(prev => mergeTempTasks(prev, t));
             saveCache(t);
         } catch (e) {
             console.error(e);
