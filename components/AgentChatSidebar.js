@@ -133,7 +133,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
 
     function interruptAudio() {
         console.log("DEBUG (Agent): interruptAudio triggered");
-        
+
         // 1. 再生中のすべてのソースを停止
         activeSourcesRef.current.forEach(source => {
             try {
@@ -143,7 +143,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
             }
         });
         activeSourcesRef.current = [];
-        
+
         // 2. 再生キューのタイムスタンプとバッファをリセット
         nextStartTimeRef.current = 0;
         jitterBufferSizeRef.current = 0.5;
@@ -177,7 +177,7 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
     function handlePTTStart(e) {
         e.preventDefault();
         if (isPTTActiveRef.current) return;
-        
+
         setIsPTTActive(true);
         isPTTActiveRef.current = true;
         console.log("DEBUG (Agent): PTT Started");
@@ -692,8 +692,8 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                             {status === "disconnected" && (selectedLanguage === "en" ? "Offline" : "オフライン")}
                             {status === "connecting" && (selectedLanguage === "en" ? "Connecting..." : "接続中...")}
                             {status === "connected" && (
-                                isModelSpeaking 
-                                    ? (selectedLanguage === "en" ? "Speaking..." : "アシスタント発話中...") 
+                                isModelSpeaking
+                                    ? (selectedLanguage === "en" ? "Speaking..." : "アシスタント発話中...")
                                     : (selectedLanguage === "en" ? "Listening..." : "リスニング中...")
                             )}
                         </div>
@@ -711,12 +711,12 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                                 sessionHandleRef.current = null;
                                 let initialContent = "";
                                 if (selectedMode === "dab") {
-                                    initialContent = selectedLanguage === "en" 
-                                        ? "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!" 
+                                    initialContent = selectedLanguage === "en"
+                                        ? "Hello! I am your AI Tech Coach. Let's discuss latest tech topics in English. Ask me anything or say 'hello' to start!"
                                         : "こんにちは！技術学習メンターです。DABの技術トピックについて日本語でディスカッションしましょう！";
                                 } else {
-                                    initialContent = selectedLanguage === "en" 
-                                        ? "Hello! I am your AI assistant. How can I help you today?" 
+                                    initialContent = selectedLanguage === "en"
+                                        ? "Hello! I am your AI assistant. How can I help you today?"
                                         : "こんにちは！私は統合AIアシスタントです。何かお手伝いできることはありますか？";
                                 }
                                 setMessages([{ role: 'model', content: initialContent }]);
@@ -822,33 +822,30 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                         <button
                             onClick={() => changeMicMode("hands-free")}
                             type="button"
-                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
-                                micMode === "hands-free"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${micMode === "hands-free"
                                     ? "bg-cyan-600 text-white shadow-sm"
                                     : "text-slate-400 hover:text-white"
-                            }`}
+                                }`}
                         >
                             Hands-Free
                         </button>
                         <button
                             onClick={() => changeMicMode("push-to-talk")}
                             type="button"
-                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
-                                micMode === "push-to-talk"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${micMode === "push-to-talk"
                                     ? "bg-cyan-600 text-white shadow-sm"
                                     : "text-slate-400 hover:text-white"
-                            }`}
+                                }`}
                         >
                             Push-to-Talk
                         </button>
                         <button
                             onClick={() => changeMicMode("muted")}
                             type="button"
-                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${
-                                micMode === "muted"
+                            className={`flex-1 text-center py-1 text-[10px] font-bold rounded transition-all cursor-pointer ${micMode === "muted"
                                     ? "bg-rose-600 text-white shadow-sm"
                                     : "text-slate-400 hover:text-white"
-                            }`}
+                                }`}
                         >
                             Muted
                         </button>
@@ -871,15 +868,14 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                                 onTouchStart={handlePTTStart}
                                 onTouchEnd={handlePTTEnd}
                                 type="button"
-                                className={`w-full py-2 rounded-full font-bold text-[11px] flex items-center justify-center gap-1.5 select-none shadow-md transition-all transform active:scale-95 cursor-pointer ${
-                                    isPTTActive
+                                className={`w-full py-2 rounded-full font-bold text-[11px] flex items-center justify-center gap-1.5 select-none shadow-md transition-all transform active:scale-95 cursor-pointer ${isPTTActive
                                         ? "bg-cyan-500 text-white scale-98 shadow-inner animate-pulse"
                                         : "bg-slate-750 text-slate-200 border border-slate-700 hover:bg-slate-700"
-                                }`}
+                                    }`}
                             >
                                 <span className="text-xs">{isPTTActive ? "🎙️" : "🤫"}</span>
-                                {isPTTActive 
-                                    ? (selectedLanguage === "en" ? "Speaking... (Hold)" : "話しかけてください (長押し中)") 
+                                {isPTTActive
+                                    ? (selectedLanguage === "en" ? "Speaking... (Hold)" : "話しかけてください (長押し中)")
                                     : (selectedLanguage === "en" ? "Hold to Talk" : "ボタンを押しながら話す")}
                             </button>
                         )}
@@ -902,8 +898,8 @@ export default function AgentChatSidebar({ isOpen, onClose }) {
                         value={input}
                         onChange={(e) => setInput(e.target.value)}
                         placeholder={
-                            status === "connected" 
-                                ? (selectedLanguage === "en" ? "Type a message..." : "メッセージを入力...") 
+                            status === "connected"
+                                ? (selectedLanguage === "en" ? "Type a message..." : "メッセージを入力...")
                                 : (selectedLanguage === "en" ? "Click 'Start' to talk" : "Startを押して会話を開始してください")
                         }
                         disabled={status !== "connected"}
