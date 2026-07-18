@@ -218,21 +218,10 @@ export async function addQuickTask(title, dateStr) {
     const dailyId = `${backlogId}_${dateStr}`;
     const dailyRef = db.collection('daily_tasks').doc(dailyId);
 
-    // Calculate max order in memory to avoid "Missing Index" error and reduce index cost
-    const dailyTasksSnap = await db.collection('daily_tasks')
-        .where('target_date', '==', dateStr)
-        .get();
-
-    let maxOrder = 0;
-    if (!dailyTasksSnap.empty) {
-        // In-memory max calculation
-        dailyTasksSnap.docs.forEach(doc => {
-            const d = doc.data();
-            if (d.order && d.order > maxOrder) {
-                maxOrder = d.order;
-            }
-        });
-    }
+    // maxOrder計算のためのFirestore読み込みクエリを廃止し、Date.now()をデフォルト順序として使用します。
+    // 新しく追加されたタスクは自動的に最後尾（最大のorder）に配置されます。
+    // ドラッグ＆ドロップによる手動ソート時は既存の reorder 処理がインデックスを再書き込みするため影響ありません。
+    const maxOrder = Date.now();
 
     const dailyTask = {
         id: dailyId,
@@ -242,7 +231,7 @@ export async function addQuickTask(title, dateStr) {
         status: 'TODO',
         created_at: now, // server time
         title: title,
-        order: maxOrder + 1,
+        order: maxOrder,
         is_highlighted: false
     };
     batch.set(dailyRef, dailyTask);
