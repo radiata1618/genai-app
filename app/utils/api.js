@@ -221,5 +221,48 @@ export const api = {
         });
         if (!res.ok) throw new Error('Failed to update task title');
         return res.json();
+    },
+
+    // GCS Bucket Management
+    gcsListFiles: async (path = "") => {
+        const res = await fetch(`${BASE_URL}/api/gcs/files?path=${encodeURIComponent(path)}`);
+        if (!res.ok) throw new Error('Failed to fetch GCS files');
+        return res.json();
+    },
+
+    gcsCreateFolder: async (parentPath, folderName) => {
+        const res = await fetch(`${BASE_URL}/api/gcs/create-folder`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ parent_path: parentPath, folder_name: folderName }),
+        });
+        if (!res.ok) throw new Error('Failed to create folder');
+        return res.json();
+    },
+
+    gcsUploadFile: async (path, file) => {
+        const formData = new FormData();
+        formData.append('path', path);
+        formData.append('file', file);
+        const res = await fetch(`${BASE_URL}/api/gcs/upload`, {
+            method: 'POST',
+            body: formData,
+        });
+        if (!res.ok) throw new Error('Failed to upload file');
+        return res.json();
+    },
+
+    gcsDelete: async (path, type) => {
+        const res = await fetch(`${BASE_URL}/api/gcs/delete`, {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ path, type }),
+        });
+        if (!res.ok) throw new Error('Failed to delete item');
+        return res.json();
+    },
+
+    gcsGetViewUrl: (path) => {
+        return `${BASE_URL}/api/gcs/view?path=${encodeURIComponent(path)}`;
     }
 };
