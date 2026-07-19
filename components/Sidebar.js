@@ -83,6 +83,7 @@ export const navItems = [
         items: [
             { name: "Multimodal（テ）", icon: "📝", href: "/multimodal" },
             { name: "ファイル管理（テ）", icon: "📂", href: "/files" },
+            { name: "バケット管理", icon: "🪣", href: "/gcs-bucket" },
         ],
     },
 ];
